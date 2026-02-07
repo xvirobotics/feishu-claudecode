@@ -23,7 +23,7 @@ A bridge service connecting Feishu (Lark) Bot to Claude Code CLI. Chat with Clau
 ### Prerequisites
 
 - **Node.js 18+**
-- **Anthropic API Key** - Set `ANTHROPIC_API_KEY` environment variable
+- **Claude Code authentication** - Either logged in via `claude login` (subscription) or `ANTHROPIC_API_KEY` env var
 - **Feishu Open Platform account** - To create a bot application
 
 ### Feishu Bot Setup
@@ -166,7 +166,7 @@ Feishu User
 ### 前置条件
 
 - **Node.js 18+**
-- **Anthropic API Key** - 设置环境变量 `ANTHROPIC_API_KEY`
+- **Claude Code 认证** - 通过 `claude login` 登录（订阅用户），或设置 `ANTHROPIC_API_KEY` 环境变量
 - **飞书开放平台账号** - 用于创建机器人应用
 
 ---
@@ -261,9 +261,21 @@ CLAUDE_MODEL=
 LOG_LEVEL=info
 ```
 
-#### 关于 Anthropic API Key
+#### 关于 Claude Code 认证
 
-确保你的机器上已设置 `ANTHROPIC_API_KEY` 环境变量：
+有两种方式，任选其一：
+
+**方式一：订阅用户（推荐）**
+
+如果你有 Claude Pro/Max 订阅，直接登录即可：
+
+```bash
+claude login
+```
+
+**方式二：API Key**
+
+设置 `ANTHROPIC_API_KEY` 环境变量：
 
 ```bash
 # 加到你的 ~/.bashrc 或 ~/.zshrc 中

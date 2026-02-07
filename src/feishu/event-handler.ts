@@ -51,6 +51,15 @@ export function createEventDispatcher(
           return;
         }
 
+        // In group chats, only respond when the bot is @mentioned
+        const mentions = message.mentions;
+        if (chatType === 'group') {
+          if (!mentions || mentions.length === 0) {
+            logger.debug('Ignoring group message without @mention');
+            return;
+          }
+        }
+
         let text = '';
         let imageKey: string | undefined;
 
