@@ -1,0 +1,24 @@
+{
+  "name": "feishu-claudecode",
+  "version": "1.0.0",
+  "description": "Bridge service connecting Feishu Bot to Claude Code CLI",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "@larksuiteoapi/node-sdk": "^1.58.0",
+    "dotenv": "^16.4.0",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
