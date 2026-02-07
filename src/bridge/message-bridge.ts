@@ -27,7 +27,7 @@ interface RunningTask {
 export class MessageBridge {
   private executor: ClaudeExecutor;
   private sessionManager: SessionManager;
-  private runningTasks = new Map<string, RunningTask>(); // keyed by userId
+  private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
 
   constructor(
     private config: Config,
@@ -48,7 +48,7 @@ export class MessageBridge {
     }
 
     // Check working directory
-    if (!this.sessionManager.hasWorkingDirectory(userId)) {
+    if (!this.sessionManager.hasWorkingDirectory(chatId)) {
       await this.sender.sendCard(
         chatId,
         buildTextCard(
@@ -60,8 +60,8 @@ export class MessageBridge {
       return;
     }
 
-    // Check if user already has a running task
-    if (this.runningTasks.has(userId)) {
+    // Check if this chat already has a running task
+    if (this.runningTasks.has(chatId)) {
       await this.sender.sendCard(
         chatId,
         buildTextCard(
@@ -118,7 +118,7 @@ export class MessageBridge {
           return;
         }
 
-        this.sessionManager.setWorkingDirectory(userId, resolvedPath);
+        this.sessionManager.setWorkingDirectory(chatId, resolvedPath);
         await this.sender.sendCard(
           chatId,
           buildTextCard('✅ Working Directory Set', `\`${resolvedPath}\``, 'green'),
@@ -127,7 +127,7 @@ export class MessageBridge {
       }
 
       case '/reset':
-        this.sessionManager.resetSession(userId);
+        this.sessionManager.resetSession(chatId);
         await this.sender.sendCard(
           chatId,
           buildTextCard('✅ Session Reset', 'Conversation cleared. Working directory preserved.', 'green'),
@@ -135,10 +135,10 @@ export class MessageBridge {
         break;
 
       case '/stop': {
-        const task = this.runningTasks.get(userId);
+        const task = this.runningTasks.get(chatId);
         if (task) {
           task.abortController.abort();
-          this.runningTasks.delete(userId);
+          this.runningTasks.delete(chatId);
           await this.sender.sendCard(
             chatId,
             buildTextCard('🛑 Stopped', 'Current task has been aborted.', 'orange'),
@@ -153,8 +153,8 @@ export class MessageBridge {
       }
 
       case '/status': {
-        const session = this.sessionManager.getSession(userId);
-        const isRunning = this.runningTasks.has(userId);
+        const session = this.sessionManager.getSession(chatId);
+        const isRunning = this.runningTasks.has(chatId);
         await this.sender.sendCard(
           chatId,
           buildStatusCard(userId, session.workingDirectory, session.sessionId, isRunning),
@@ -172,16 +172,16 @@ export class MessageBridge {
 
   private async executeQuery(msg: IncomingMessage): Promise<void> {
     const { userId, chatId, text, imageKey, messageId: msgId } = msg;
-    const session = this.sessionManager.getSession(userId);
+    const session = this.sessionManager.getSession(chatId);
     const cwd = session.workingDirectory!;
     const abortController = new AbortController();
 
     // Register running task
-    this.runningTasks.set(userId, { abortController, startTime: Date.now() });
+    this.runningTasks.set(chatId, { abortController, startTime: Date.now() });
 
     // Setup timeout
     const timeoutId = setTimeout(() => {
-      this.logger.warn({ userId }, 'Task timeout, aborting');
+      this.logger.warn({ chatId, userId }, 'Task timeout, aborting');
       abortController.abort();
     }, TASK_TIMEOUT_MS);
 
@@ -214,7 +214,7 @@ export class MessageBridge {
 
     if (!messageId) {
       this.logger.error('Failed to send initial card, aborting');
-      this.runningTasks.delete(userId);
+      this.runningTasks.delete(chatId);
       clearTimeout(timeoutId);
       return;
     }
@@ -239,7 +239,7 @@ export class MessageBridge {
         // Update session ID if discovered
         const newSessionId = processor.getSessionId();
         if (newSessionId && newSessionId !== session.sessionId) {
-          this.sessionManager.setSessionId(userId, newSessionId);
+          this.sessionManager.setSessionId(chatId, newSessionId);
         }
 
         // Throttled card update for non-final states
@@ -259,7 +259,7 @@ export class MessageBridge {
       // Send any images produced by Claude
       await this.sendOutputImages(chatId, processor, lastState);
     } catch (err: any) {
-      this.logger.error({ err, userId }, 'Claude execution error');
+      this.logger.error({ err, chatId, userId }, 'Claude execution error');
 
       const errorState: CardState = {
         status: 'error',
@@ -272,7 +272,7 @@ export class MessageBridge {
       await this.sender.updateCard(messageId, buildCard(errorState));
     } finally {
       clearTimeout(timeoutId);
-      this.runningTasks.delete(userId);
+      this.runningTasks.delete(chatId);
       // Cleanup temp image
       if (imagePath) {
         try { fs.unlinkSync(imagePath); } catch { /* ignore */ }
@@ -313,9 +313,9 @@ export class MessageBridge {
 
   destroy(): void {
     // Abort all running tasks
-    for (const [userId, task] of this.runningTasks) {
+    for (const [chatId, task] of this.runningTasks) {
       task.abortController.abort();
-      this.logger.info({ userId }, 'Aborted running task during shutdown');
+      this.logger.info({ chatId }, 'Aborted running task during shutdown');
     }
     this.runningTasks.clear();
     this.sessionManager.destroy();

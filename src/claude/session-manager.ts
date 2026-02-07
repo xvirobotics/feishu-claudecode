@@ -20,48 +20,48 @@ export class SessionManager {
     this.cleanupTimer = setInterval(() => this.cleanupExpired(), 60 * 60 * 1000);
   }
 
-  getSession(userId: string): UserSession {
-    let session = this.sessions.get(userId);
+  getSession(chatId: string): UserSession {
+    let session = this.sessions.get(chatId);
     if (!session) {
       session = {
         sessionId: undefined,
         workingDirectory: this.defaultWorkingDirectory,
         lastUsed: Date.now(),
       };
-      this.sessions.set(userId, session);
+      this.sessions.set(chatId, session);
     }
     session.lastUsed = Date.now();
     return session;
   }
 
-  setSessionId(userId: string, sessionId: string): void {
-    const session = this.getSession(userId);
+  setSessionId(chatId: string, sessionId: string): void {
+    const session = this.getSession(chatId);
     session.sessionId = sessionId;
-    this.logger.debug({ userId, sessionId: sessionId.slice(0, 8) }, 'Session ID updated');
+    this.logger.debug({ chatId, sessionId: sessionId.slice(0, 8) }, 'Session ID updated');
   }
 
-  setWorkingDirectory(userId: string, directory: string): void {
-    const session = this.getSession(userId);
+  setWorkingDirectory(chatId: string, directory: string): void {
+    const session = this.getSession(chatId);
     // Reset session when directory changes (old session is bound to old cwd)
     if (session.workingDirectory !== directory && session.sessionId) {
       session.sessionId = undefined;
-      this.logger.info({ userId }, 'Session reset due to directory change');
+      this.logger.info({ chatId }, 'Session reset due to directory change');
     }
     session.workingDirectory = directory;
-    this.logger.info({ userId, directory }, 'Working directory updated');
+    this.logger.info({ chatId, directory }, 'Working directory updated');
   }
 
-  resetSession(userId: string): void {
-    const session = this.sessions.get(userId);
+  resetSession(chatId: string): void {
+    const session = this.sessions.get(chatId);
     if (session) {
       session.sessionId = undefined;
       // Keep working directory
-      this.logger.info({ userId }, 'Session reset');
+      this.logger.info({ chatId }, 'Session reset');
     }
   }
 
-  hasWorkingDirectory(userId: string): boolean {
-    const session = this.getSession(userId);
+  hasWorkingDirectory(chatId: string): boolean {
+    const session = this.getSession(chatId);
     return !!session.workingDirectory;
   }
 

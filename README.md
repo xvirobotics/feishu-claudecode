@@ -19,7 +19,7 @@ A bridge service connecting Feishu (Lark) Bot to Claude Code CLI. Chat with Clau
 
 - **Remote access** - Use Claude Code from any Feishu device, including mobile
 - **Streaming updates** - Real-time execution progress via interactive card updates
-- **Multi-user parallel** - Independent sessions and working directories per user
+- **Multi-user parallel** - Independent sessions and working directories per chat (each group/DM has its own session)
 - **Multi-turn conversations** - Automatic context persistence across messages
 - **Image support** - Send images to Claude for analysis; Claude-generated images are sent back
 - **MCP integration** - Automatically loads MCP server configs from Claude Code settings
@@ -162,7 +162,7 @@ Feishu User
 
 - **远程访问** - 在飞书任意设备上使用 Claude Code，手机也能写代码
 - **流式更新** - 通过飞书交互卡片实时展示执行进度
-- **多用户并行** - 每个用户独立会话和工作目录，互不干扰
+- **多用户并行** - 每个会话（群聊/私聊）独立会话和工作目录，互不干扰
 - **多轮对话** - 自动维护对话上下文，支持连续交互
 - **图片支持** - 发图片给 Claude 分析；Claude 生成的图片自动回传飞书
 - **MCP 集成** - 自动加载 Claude Code 配置文件中的 MCP 服务器
@@ -366,10 +366,10 @@ Bot：✅ Session Reset - 开始新对话
 
 ### 多用户说明
 
-- 会话按**用户**（open_id）隔离，不同用户互不影响
-- 同一用户在私聊和群组中共享同一个会话
-- 每个用户可以通过 `/cd` 设置自己的工作目录
-- 用户 A 在执行任务时，用户 B 可以同时发起新任务
+- 会话按**聊天**（chat_id）隔离，每个群聊和私聊都有独立的会话
+- 同一用户在不同群组中拥有不同的会话和工作目录
+- 每个聊天可以通过 `/cd` 设置各自的工作目录
+- 不同聊天的任务可以同时并行执行
 
 ---
 
