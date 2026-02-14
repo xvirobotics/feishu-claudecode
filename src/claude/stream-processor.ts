@@ -35,6 +35,11 @@ export class StreamProcessor {
       case 'stream_event':
         this.processStreamEvent(message);
         break;
+
+      case 'task_notification':
+      case 'tool_use_summary':
+        // SDK 0.2 message types — no action needed for card display
+        break;
     }
 
     // Determine running status
