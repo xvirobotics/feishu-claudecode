@@ -360,12 +360,16 @@ export class MessageBridge {
           runningTask.questionTimeoutId = undefined;
         }
 
-        // Throttled card update for non-final states
-        if (state.status !== 'complete' && state.status !== 'error') {
-          rateLimiter.schedule(() => {
-            this.sender.updateCard(messageId, buildCard(state));
-          });
+        // Break on final result — the stream won't end on its own because
+        // the AsyncQueue is still open waiting for more user messages.
+        if (state.status === 'complete' || state.status === 'error') {
+          break;
         }
+
+        // Throttled card update for non-final states
+        rateLimiter.schedule(() => {
+          this.sender.updateCard(messageId, buildCard(state));
+        });
       }
 
       // Flush any pending update
