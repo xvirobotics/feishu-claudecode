@@ -1,5 +1,5 @@
 import type { SDKMessage } from './executor.js';
-import type { CardState, ToolCall } from '../feishu/card-builder.js';
+import type { CardState, ToolCall, PendingQuestion } from '../feishu/card-builder.js';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.tiff']);
 
@@ -11,6 +11,7 @@ export class StreamProcessor {
   private costUsd: number | undefined;
   private durationMs: number | undefined;
   private _imagePaths: Set<string> = new Set();
+  private _pendingQuestion: PendingQuestion | null = null;
 
   constructor(private userPrompt: string) {}
 
@@ -44,7 +45,9 @@ export class StreamProcessor {
 
     // Determine running status
     const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
-    const status = hasActiveTools ? 'running' : this.responseText ? 'running' : 'thinking';
+    const status = this._pendingQuestion
+      ? 'waiting_for_input'
+      : hasActiveTools ? 'running' : this.responseText ? 'running' : 'thinking';
 
     return {
       status,
@@ -53,6 +56,7 @@ export class StreamProcessor {
       toolCalls: [...this.toolCalls],
       costUsd: this.costUsd,
       durationMs: this.durationMs,
+      pendingQuestion: this._pendingQuestion || undefined,
     };
   }
 
@@ -68,6 +72,11 @@ export class StreamProcessor {
         }
       } else if (block.type === 'tool_use' && block.name) {
         this.addToolCall(block.name, block.input);
+        // Detect AskUserQuestion tool use at top level
+        if (block.name === 'AskUserQuestion' && block.id && block.input &&
+            (message.parent_tool_use_id === null || message.parent_tool_use_id === undefined)) {
+          this.extractPendingQuestion(block.id, block.input);
+        }
       } else if (block.type === 'tool_result') {
         this.completeCurrentTool();
       }
@@ -155,6 +164,35 @@ export class StreamProcessor {
     }
   }
 
+  private extractPendingQuestion(toolUseId: string, input: unknown): void {
+    if (!input || typeof input !== 'object') return;
+    const inp = input as Record<string, unknown>;
+    const questions = inp.questions;
+    if (!Array.isArray(questions)) return;
+
+    const parsed = questions.map((q: any) => ({
+      question: String(q.question || ''),
+      header: String(q.header || ''),
+      options: Array.isArray(q.options)
+        ? q.options.map((o: any) => ({
+            label: String(o.label || ''),
+            description: String(o.description || ''),
+          }))
+        : [],
+      multiSelect: Boolean(q.multiSelect),
+    }));
+
+    this._pendingQuestion = { toolUseId, questions: parsed };
+  }
+
+  clearPendingQuestion(): void {
+    this._pendingQuestion = null;
+  }
+
+  getPendingQuestion(): PendingQuestion | null {
+    return this._pendingQuestion;
+  }
+
   getSessionId(): string | undefined {
     return this.sessionId;
   }
@@ -200,6 +238,14 @@ function formatToolDetail(name: string, input: unknown): string {
       return inp.url ? `\`${truncate(inp.url as string, 60)}\`` : '';
     case 'Task':
       return inp.description ? `${inp.description}` : '';
+    case 'AskUserQuestion': {
+      const qs = inp.questions;
+      if (Array.isArray(qs) && qs.length > 0) {
+        const first = qs[0] as Record<string, unknown>;
+        return first.question ? truncate(String(first.question), 50) : '';
+      }
+      return '';
+    }
     default:
       return '';
   }

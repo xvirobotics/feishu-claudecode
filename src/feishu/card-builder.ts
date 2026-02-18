@@ -1,9 +1,19 @@
-export type CardStatus = 'thinking' | 'running' | 'complete' | 'error';
+export type CardStatus = 'thinking' | 'running' | 'complete' | 'error' | 'waiting_for_input';
 
 export interface ToolCall {
   name: string;
   detail: string;
   status: 'running' | 'done';
+}
+
+export interface PendingQuestion {
+  toolUseId: string;
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect: boolean;
+  }>;
 }
 
 export interface CardState {
@@ -14,6 +24,7 @@ export interface CardState {
   costUsd?: number;
   durationMs?: number;
   errorMessage?: string;
+  pendingQuestion?: PendingQuestion;
 }
 
 const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: string }> = {
@@ -21,6 +32,7 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
   running: { color: 'blue', title: 'Running...', icon: '🔵' },
   complete: { color: 'green', title: 'Complete', icon: '🟢' },
   error: { color: 'red', title: 'Error', icon: '🔴' },
+  waiting_for_input: { color: 'yellow', title: 'Waiting for Input', icon: '🟡' },
 };
 
 const MAX_CONTENT_LENGTH = 28000;
@@ -62,6 +74,26 @@ export function buildCard(state: CardState): string {
     elements.push({
       tag: 'markdown',
       content: '_Claude is thinking..._',
+    });
+  }
+
+  // Pending question section
+  if (state.pendingQuestion) {
+    elements.push({ tag: 'hr' });
+    const questionLines: string[] = [];
+    for (const q of state.pendingQuestion.questions) {
+      questionLines.push(`**[${q.header}] ${q.question}**`);
+      questionLines.push('');
+      q.options.forEach((opt, i) => {
+        questionLines.push(`**${i + 1}.** ${opt.label} — _${opt.description}_`);
+      });
+      questionLines.push(`**${q.options.length + 1}.** Other（输入自定义回答）`);
+      questionLines.push('');
+    }
+    questionLines.push('_回复数字选择，或直接输入自定义答案_');
+    elements.push({
+      tag: 'markdown',
+      content: questionLines.join('\n'),
     });
   }
 
