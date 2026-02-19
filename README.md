@@ -3,8 +3,7 @@
 [English](#english) | [中文](#中文)
 
 <p align="center">
-  <img src="docs/screenshot-help.png" width="45%" />
-  <img src="docs/screenshot-chat.png" width="45%" />
+  <img src="resources/feishu_claudecode.png" width="100%" />
 </p>
 
 ---
