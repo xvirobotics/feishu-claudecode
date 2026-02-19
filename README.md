@@ -103,11 +103,24 @@ If `BOTS_CONFIG` is not set, a single bot is configured from env vars:
 ### Usage
 
 ```bash
-# Development
+# Development (hot reload)
 npm run dev
 
-# Production
-npm run build && npm start
+# Production (PM2 — auto-restart on crash & code changes)
+pm2 start ecosystem.config.cjs
+
+# PM2 common commands
+pm2 status              # View process status
+pm2 logs                # Tail logs in real-time
+pm2 restart all         # Manual restart
+pm2 stop all            # Stop service
+```
+
+To enable auto-start on server reboot:
+
+```bash
+pm2 startup             # Follow the printed sudo command
+pm2 save                # Save current process list
 ```
 
 ### Commands
@@ -333,18 +346,39 @@ export ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxx
 npm run dev
 ```
 
-#### 生产模式
+#### 生产模式（PM2）
+
+使用 PM2 进程管理器，支持崩溃自动重启、代码变更自动重启：
 
 ```bash
-npm run build
-npm start
+# 安装 PM2（如未安装）
+npm install -g pm2
+
+# 启动服务
+pm2 start ecosystem.config.cjs
+```
+
+PM2 常用命令：
+
+```bash
+pm2 status              # 查看进程状态
+pm2 logs                # 实时查看日志
+pm2 restart all         # 手动重启
+pm2 stop all            # 停止服务
+```
+
+设置开机自启：
+
+```bash
+pm2 startup             # 按照提示执行打印出的 sudo 命令
+pm2 save                # 保存当前进程列表
 ```
 
 看到类似以下日志表示启动成功：
 
 ```
-[INFO] Starting feishu-claudecode bridge...
-[INFO] feishu-claudecode bridge is running
+[INFO] All bots started — bots: ["feishu-claudecode"]
+[ws] ws client ready
 ```
 
 ---

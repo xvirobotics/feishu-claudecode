@@ -2,5 +2,7 @@ node_modules/
 dist/
 .env
 bots.json
+logs/
+nohup.out
 *.log
 .DS_Store
