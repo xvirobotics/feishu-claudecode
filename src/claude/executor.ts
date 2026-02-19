@@ -9,6 +9,7 @@ export interface ExecutorOptions {
   cwd: string;
   sessionId?: string;
   abortController: AbortController;
+  outputsDir?: string;
 }
 
 export type SDKMessage = {
@@ -63,7 +64,7 @@ export class ClaudeExecutor {
     private logger: Logger,
   ) {}
 
-  private buildQueryOptions(cwd: string, sessionId: string | undefined, abortController: AbortController): Record<string, unknown> {
+  private buildQueryOptions(cwd: string, sessionId: string | undefined, abortController: AbortController, outputsDir?: string): Record<string, unknown> {
     const queryOptions: Record<string, unknown> = {
       allowedTools: this.config.claude.allowedTools,
       maxTurns: this.config.claude.maxTurns,
@@ -80,6 +81,14 @@ export class ClaudeExecutor {
       pathToClaudeCodeExecutable: process.env.CLAUDE_EXECUTABLE_PATH || '/usr/local/bin/claude',
     };
 
+    if (outputsDir) {
+      queryOptions.systemPrompt = {
+        type: 'preset',
+        preset: 'claude_code',
+        append: `\n\n## Output Files\nWhen producing output files for the user (images, PDFs, documents, archives, code files, etc.), copy them to: ${outputsDir}\nUse \`cp\` via the Bash tool. The bridge will automatically send files placed there to the user in Feishu.`,
+      };
+    }
+
     if (this.config.claude.model) {
       queryOptions.model = this.config.claude.model;
     }
@@ -92,7 +101,7 @@ export class ClaudeExecutor {
   }
 
   startExecution(options: ExecutorOptions): ExecutionHandle {
-    const { prompt, cwd, sessionId, abortController } = options;
+    const { prompt, cwd, sessionId, abortController, outputsDir } = options;
 
     this.logger.info({ cwd, hasSession: !!sessionId }, 'Starting Claude execution (multi-turn)');
 
@@ -110,7 +119,7 @@ export class ClaudeExecutor {
     };
     inputQueue.enqueue(initialMessage);
 
-    const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController);
+    const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController, outputsDir);
 
     const stream = query({
       prompt: inputQueue,
@@ -161,11 +170,11 @@ export class ClaudeExecutor {
   }
 
   async *execute(options: ExecutorOptions): AsyncGenerator<SDKMessage> {
-    const { prompt, cwd, sessionId, abortController } = options;
+    const { prompt, cwd, sessionId, abortController, outputsDir } = options;
 
     this.logger.info({ cwd, hasSession: !!sessionId }, 'Starting Claude execution');
 
-    const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController);
+    const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController, outputsDir);
 
     const stream = query({
       prompt,

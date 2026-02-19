@@ -17,6 +17,7 @@ import { ClaudeExecutor, type ExecutionHandle } from '../claude/executor.js';
 import { StreamProcessor, extractImagePaths } from '../claude/stream-processor.js';
 import { SessionManager } from '../claude/session-manager.js';
 import { RateLimiter } from './rate-limiter.js';
+import { OutputsManager } from './outputs-manager.js';
 
 const TASK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
@@ -36,6 +37,7 @@ interface RunningTask {
 export class MessageBridge {
   private executor: ClaudeExecutor;
   private sessionManager: SessionManager;
+  private outputsManager: OutputsManager;
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
 
   constructor(
@@ -45,6 +47,7 @@ export class MessageBridge {
   ) {
     this.executor = new ClaudeExecutor(config, logger);
     this.sessionManager = new SessionManager(config.claude.defaultWorkingDirectory, logger);
+    this.outputsManager = new OutputsManager(config.claude.outputsBaseDir, logger);
   }
 
   async handleMessage(msg: IncomingMessage): Promise<void> {
@@ -266,6 +269,9 @@ export class MessageBridge {
       }
     }
 
+    // Prepare per-chat outputs directory
+    const outputsDir = this.outputsManager.prepareDir(chatId);
+
     // Send initial "thinking" card
     const displayPrompt = imageKey ? '🖼️ ' + text : text;
     const processor = new StreamProcessor(displayPrompt);
@@ -289,6 +295,7 @@ export class MessageBridge {
       cwd,
       sessionId: session.sessionId,
       abortController,
+      outputsDir,
     });
 
     const rateLimiter = new RateLimiter(1500);
@@ -374,8 +381,8 @@ export class MessageBridge {
       // Send final card
       await this.sender.updateCard(messageId, buildCard(lastState));
 
-      // Send any images produced by Claude
-      await this.sendOutputImages(chatId, processor, lastState);
+      // Send any output files produced by Claude
+      await this.sendOutputFiles(chatId, outputsDir, processor, lastState);
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'Claude execution error');
 
@@ -399,31 +406,54 @@ export class MessageBridge {
       if (imagePath) {
         try { fs.unlinkSync(imagePath); } catch { /* ignore */ }
       }
+      // Safety net: clean up outputs directory
+      this.outputsManager.cleanup(outputsDir);
     }
   }
 
-  private async sendOutputImages(
+  private async sendOutputFiles(
     chatId: string,
+    outputsDir: string,
     processor: StreamProcessor,
     state: CardState,
   ): Promise<void> {
-    // Collect image paths from tool calls and response text
-    const imagePaths = new Set<string>(processor.getImagePaths());
+    const sentPaths = new Set<string>();
 
-    // Also scan response text for image paths
+    // 1. Scan the outputs directory for any files Claude placed there
+    const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+    for (const file of outputFiles) {
+      try {
+        if (file.isImage && file.sizeBytes < 10 * 1024 * 1024) {
+          this.logger.info({ filePath: file.filePath }, 'Sending output image from outputs dir');
+          await this.sender.sendImageFile(chatId, file.filePath);
+        } else if (!file.isImage && file.sizeBytes < 30 * 1024 * 1024) {
+          const feishuType = OutputsManager.feishuFileType(file.extension);
+          this.logger.info({ filePath: file.filePath, feishuType }, 'Sending output file from outputs dir');
+          await this.sender.sendLocalFile(chatId, file.filePath, file.fileName, feishuType);
+        } else {
+          this.logger.warn({ filePath: file.filePath, sizeBytes: file.sizeBytes }, 'Output file too large to send');
+        }
+        sentPaths.add(file.filePath);
+      } catch (err) {
+        this.logger.warn({ err, filePath: file.filePath }, 'Failed to send output file');
+      }
+    }
+
+    // 2. Fallback: send images detected via old method (Write tool tracking + response text scanning)
+    const imagePaths = new Set<string>(processor.getImagePaths());
     if (state.responseText) {
       for (const p of extractImagePaths(state.responseText)) {
         imagePaths.add(p);
       }
     }
 
-    // Send each image that exists on disk
     for (const imgPath of imagePaths) {
+      if (sentPaths.has(imgPath)) continue; // Already sent from outputs dir
       try {
         if (fs.existsSync(imgPath) && fs.statSync(imgPath).isFile()) {
           const size = fs.statSync(imgPath).size;
-          if (size > 0 && size < 10 * 1024 * 1024) { // Feishu limit: 10MB
-            this.logger.info({ imgPath }, 'Sending output image to Feishu');
+          if (size > 0 && size < 10 * 1024 * 1024) {
+            this.logger.info({ imgPath }, 'Sending output image (fallback)');
             await this.sender.sendImageFile(chatId, imgPath);
           }
         }

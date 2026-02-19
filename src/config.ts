@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 export interface Config {
   feishu: {
@@ -15,6 +17,7 @@ export interface Config {
     maxTurns: number;
     maxBudgetUsd: number;
     model: string | undefined;
+    outputsBaseDir: string;
   };
   log: {
     level: string;
@@ -52,6 +55,7 @@ export function loadConfig(): Config {
       maxTurns: parseInt(process.env.CLAUDE_MAX_TURNS || '50', 10),
       maxBudgetUsd: parseFloat(process.env.CLAUDE_MAX_BUDGET_USD || '1.0'),
       model: process.env.CLAUDE_MODEL || undefined,
+      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), 'feishu-claudecode-outputs'),
     },
     log: {
       level: process.env.LOG_LEVEL || 'info',

@@ -39,6 +39,19 @@ Feishu WSClient → EventHandler (auth, parse, @mention filter) → MessageBridg
 - **`src/feishu/message-sender.ts`** — Feishu API wrapper for sending/updating cards, uploading/downloading images, sending text.
 - **`src/bridge/rate-limiter.ts`** — Throttles card updates to avoid Feishu API rate limits (default 1.5s interval). Keeps only the latest pending update.
 
+### Outputs Directory Pattern
+
+When Claude produces output files (images, PDFs, documents, etc.), they are automatically sent to the user in Feishu:
+
+1. **Per-chat outputs directory** — Before each execution, a fresh directory is created at `/tmp/feishu-claudecode-outputs/<chatId>/`.
+2. **System prompt injection** — Claude is told about the directory via `systemPrompt.append`, instructing it to `cp` output files there.
+3. **Post-execution scan** — After execution completes, the bridge scans the directory and sends all files found.
+4. **File type routing** — Images (png/jpg/gif/etc.) are sent via `im.v1.image.create`, other files (pdf/docx/zip/etc.) via `im.v1.file.create`.
+5. **Size limits** — Images up to 10MB, other files up to 30MB (Feishu API limits).
+6. **Fallback** — The old image detection (Write tool file_path tracking + response text regex) still works as a fallback for images not placed in the outputs directory.
+
+Key module: **`src/bridge/outputs-manager.ts`** — Encapsulates the outputs dir lifecycle (prepare, scan, cleanup, file type mapping).
+
 ### Session Isolation
 
 Sessions are keyed by `chatId` (not `userId`), so each group chat and DM gets its own independent session, working directory, and conversation history.
