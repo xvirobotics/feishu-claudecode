@@ -126,9 +126,8 @@ export function loadAppConfig(): AppConfig {
     bots = [botFromEnv()];
   }
 
-  const metaMemoryDir = path.resolve(
-    process.env.META_MEMORY_DIR || path.join(os.homedir(), '.feishu-claudecode', 'metamemory'),
-  );
+  const rawMetaMemoryDir = process.env.META_MEMORY_DIR || path.join(os.homedir(), '.feishu-claudecode', 'metamemory');
+  const metaMemoryDir = path.resolve(rawMetaMemoryDir.replace(/^~(?=$|\/)/, os.homedir()));
   fs.mkdirSync(metaMemoryDir, { recursive: true });
 
   return {
