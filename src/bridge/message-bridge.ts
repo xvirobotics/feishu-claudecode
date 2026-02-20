@@ -196,18 +196,21 @@ export class MessageBridge {
   }
 
   private async executeQuery(msg: IncomingMessage): Promise<void> {
-    const { userId, chatId, text, imageKey, messageId: msgId } = msg;
+    const { userId, chatId, text, imageKey, fileKey, fileName, messageId: msgId } = msg;
     const session = this.sessionManager.getSession(chatId);
     const cwd = session.workingDirectory;
     const abortController = new AbortController();
 
+    // Prepare downloads directory (bot-isolated)
+    const downloadsDir = this.config.claude.downloadsDir;
+    fs.mkdirSync(downloadsDir, { recursive: true });
+
     // Handle image download if present
     let prompt = text;
     let imagePath: string | undefined;
+    let filePath: string | undefined;
     if (imageKey) {
-      const tmpDir = path.join(os.tmpdir(), 'feishu-claudecode');
-      fs.mkdirSync(tmpDir, { recursive: true });
-      imagePath = path.join(tmpDir, `${imageKey}.png`);
+      imagePath = path.join(downloadsDir, `${imageKey}.png`);
       const ok = await this.sender.downloadImage(msgId, imageKey, imagePath);
       if (ok) {
         prompt = `${text}\n\n[Image saved at: ${imagePath}]\nPlease use the Read tool to read and analyze this image file.`;
@@ -216,11 +219,22 @@ export class MessageBridge {
       }
     }
 
+    // Handle file download if present
+    if (fileKey && fileName) {
+      filePath = path.join(downloadsDir, `${fileKey}_${fileName}`);
+      const ok = await this.sender.downloadFile(msgId, fileKey, filePath);
+      if (ok) {
+        prompt = `${text}\n\n[File saved at: ${filePath}]\nPlease use the Read tool (for text/code files, images, PDFs) or Bash tool (for other formats) to read and analyze this file.`;
+      } else {
+        prompt = `${text}\n\n(Note: Failed to download the file from Feishu)`;
+      }
+    }
+
     // Prepare per-chat outputs directory
     const outputsDir = this.outputsManager.prepareDir(chatId);
 
     // Send initial "thinking" card
-    const displayPrompt = imageKey ? '🖼️ ' + text : text;
+    const displayPrompt = fileKey ? '📎 ' + text : imageKey ? '🖼️ ' + text : text;
     const processor = new StreamProcessor(displayPrompt);
     const initialState: CardState = {
       status: 'thinking',
@@ -384,9 +398,12 @@ export class MessageBridge {
       }
       executionHandle.finish();
       this.runningTasks.delete(chatId);
-      // Cleanup temp image
+      // Cleanup temp downloaded files
       if (imagePath) {
         try { fs.unlinkSync(imagePath); } catch { /* ignore */ }
+      }
+      if (filePath) {
+        try { fs.unlinkSync(filePath); } catch { /* ignore */ }
       }
       // Safety net: clean up outputs directory
       this.outputsManager.cleanup(outputsDir);

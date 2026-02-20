@@ -20,6 +20,7 @@ export interface BotConfig {
     maxBudgetUsd: number | undefined;
     model: string | undefined;
     outputsBaseDir: string;
+    downloadsDir: string;
   };
 }
 
@@ -55,6 +56,7 @@ interface BotJsonEntry {
   maxBudgetUsd?: number;
   model?: string;
   outputsBaseDir?: string;
+  downloadsDir?: string;
 }
 
 function botFromJson(entry: BotJsonEntry): BotConfig {
@@ -76,6 +78,7 @@ function botFromJson(entry: BotJsonEntry): BotConfig {
       maxBudgetUsd: entry.maxBudgetUsd ?? (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
       model: entry.model || process.env.CLAUDE_MODEL || undefined,
       outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), 'feishu-claudecode-outputs'),
+      downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), 'feishu-claudecode-downloads'),
     },
   };
 }
@@ -100,6 +103,7 @@ function botFromEnv(): BotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || undefined,
       outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), 'feishu-claudecode-outputs'),
+      downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), 'feishu-claudecode-downloads'),
     },
   };
 }

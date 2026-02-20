@@ -9,6 +9,8 @@ export interface IncomingMessage {
   userId: string;
   text: string;
   imageKey?: string;
+  fileKey?: string;
+  fileName?: string;
 }
 
 export type MessageHandler = (msg: IncomingMessage) => void;
@@ -30,8 +32,8 @@ export function createEventDispatcher(
 
         const msgType = message.message_type;
 
-        // Only handle text, post (rich text), and image messages
-        if (msgType !== 'text' && msgType !== 'post' && msgType !== 'image') {
+        // Only handle text, post (rich text), image, and file messages
+        if (msgType !== 'text' && msgType !== 'post' && msgType !== 'image' && msgType !== 'file') {
           logger.debug({ type: msgType }, 'Ignoring unsupported message type');
           return;
         }
@@ -73,6 +75,8 @@ export function createEventDispatcher(
 
         let text = '';
         let imageKey: string | undefined;
+        let fileKey: string | undefined;
+        let fileName: string | undefined;
 
         if (msgType === 'image') {
           // Image message: extract image_key
@@ -89,6 +93,22 @@ export function createEventDispatcher(
           }
           text = '请分析这张图片';
           logger.info({ userId, chatId, chatType, imageKey }, 'Received image message');
+        } else if (msgType === 'file') {
+          // File message: extract file_key and file_name
+          try {
+            const content = JSON.parse(message.content);
+            fileKey = content.file_key;
+            fileName = content.file_name;
+          } catch {
+            logger.warn('Failed to parse file message content');
+            return;
+          }
+          if (!fileKey || !fileName) {
+            logger.warn('File message missing file_key or file_name');
+            return;
+          }
+          text = '请分析这个文件';
+          logger.info({ userId, chatId, chatType, fileKey, fileName }, 'Received file message');
         } else if (msgType === 'post') {
           // Rich text (post) message: extract plain text from nested structure
           try {
@@ -127,7 +147,7 @@ export function createEventDispatcher(
           logger.info({ userId, chatId, chatType, text: text.slice(0, 100) }, 'Received message');
         }
 
-        onMessage({ messageId, chatId, chatType, userId, text, imageKey });
+        onMessage({ messageId, chatId, chatType, userId, text, imageKey, fileKey, fileName });
       } catch (err) {
         logger.error({ err }, 'Error handling message event');
       }

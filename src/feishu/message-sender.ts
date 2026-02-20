@@ -61,6 +61,26 @@ export class MessageSender {
     }
   }
 
+  async downloadFile(messageId: string, fileKey: string, savePath: string): Promise<boolean> {
+    try {
+      const resp = await this.client.im.v1.messageResource.get({
+        path: { message_id: messageId, file_key: fileKey },
+        params: { type: 'file' },
+      });
+
+      if (resp) {
+        await (resp as any).writeFile(savePath);
+        this.logger.info({ messageId, fileKey, savePath }, 'File downloaded');
+        return true;
+      }
+      this.logger.error({ messageId, fileKey }, 'Empty response when downloading file');
+      return false;
+    } catch (err) {
+      this.logger.error({ err, messageId, fileKey }, 'Failed to download file');
+      return false;
+    }
+  }
+
   async uploadImage(filePath: string): Promise<string | undefined> {
     try {
       const resp = await this.client.im.v1.image.create({
