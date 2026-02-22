@@ -52,31 +52,47 @@ export class MemoryClient {
   }
 
   async health(): Promise<HealthStatus> {
-    return this.request<HealthStatus>('/api/health');
+    const raw = await this.request<unknown>('/api/health');
+    if (raw && typeof raw === 'object') {
+      const obj = raw as Record<string, unknown>;
+      return {
+        status: String(obj.status || 'unknown'),
+        document_count: Number(obj.document_count || 0),
+        folder_count: Number(obj.folder_count || 0),
+      };
+    }
+    return { status: 'unknown', document_count: 0, folder_count: 0 };
   }
 
   async listFolderTree(): Promise<FolderTreeNode> {
-    return this.request<FolderTreeNode>('/api/folders');
+    const raw = await this.request<unknown>('/api/folders');
+    return this.unwrapSingle<FolderTreeNode>(raw, 'folders');
   }
 
   async listDocuments(folderId?: string, limit = 50): Promise<DocumentSummary[]> {
     const params = new URLSearchParams();
     if (folderId) params.set('folder_id', folderId);
     params.set('limit', String(limit));
-    return this.request<DocumentSummary[]>(`/api/documents?${params}`);
+    const raw = await this.request<unknown>(`/api/documents?${params}`);
+    return this.unwrapArray<DocumentSummary>(raw, 'documents');
   }
 
   async search(query: string, limit = 20): Promise<SearchResult[]> {
-    return this.request<SearchResult[]>(`/api/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+    const raw = await this.request<unknown>(`/api/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+    return this.unwrapArray<SearchResult>(raw, 'results');
   }
 
   /** Format folder tree as indented text for Feishu card display */
   formatFolderTree(node: FolderTreeNode, depth = 0): string {
+    if (!node || typeof node !== 'object') return 'No folder data available.';
+    const name = node.name || 'unknown';
+    const children = Array.isArray(node.children) ? node.children : [];
+    const docCount = node.document_count || 0;
     const indent = '  '.repeat(depth);
-    const icon = node.children.length > 0 ? '📂' : '📁';
-    const count = node.document_count > 0 ? ` (${node.document_count})` : '';
-    let result = `${indent}${icon} ${node.name}${count}\n`;
-    for (const child of node.children) {
+    const icon = children.length > 0 ? '📂' : '📁';
+    const count = docCount > 0 ? ` (${docCount})` : '';
+    let result = `${indent}${icon} ${name}${count}\n`;
+    for (const child of children) {
       result += this.formatFolderTree(child, depth + 1);
     }
     return result;
@@ -84,12 +100,48 @@ export class MemoryClient {
 
   /** Format search results as text for Feishu card display */
   formatSearchResults(results: SearchResult[]): string {
-    if (results.length === 0) return 'No results found.';
+    if (!Array.isArray(results) || results.length === 0) return 'No results found.';
     return results.map((r, i) => {
-      const tags = r.tags.length > 0 ? ` [${r.tags.join(', ')}]` : '';
+      const tags = Array.isArray(r.tags) && r.tags.length > 0 ? ` [${r.tags.join(', ')}]` : '';
       // Strip HTML tags from snippet
-      const snippet = r.snippet.replace(/<[^>]*>/g, '');
+      const snippet = (r.snippet || '').replace(/<[^>]*>/g, '');
       return `${i + 1}. **${r.title}**${tags}\n   ${snippet}`;
     }).join('\n\n');
+  }
+
+  /**
+   * Unwrap API responses that may come as:
+   * - A plain array: [...]
+   * - An object with a specific key: { <key>: [...] }
+   * - An object with 'results' key: { results: [...] }
+   */
+  private unwrapArray<T>(data: unknown, key: string): T[] {
+    if (Array.isArray(data)) return data as T[];
+    if (data && typeof data === 'object') {
+      const obj = data as Record<string, unknown>;
+      if (Array.isArray(obj[key])) return obj[key] as T[];
+      if (Array.isArray(obj.results)) return obj.results as T[];
+      if (Array.isArray(obj.data)) return obj.data as T[];
+    }
+    this.logger.warn({ responseType: typeof data, key }, 'Unexpected array response format from memory server');
+    return [];
+  }
+
+  /**
+   * Unwrap single-object API responses that may come as:
+   * - The object directly: { id, name, ... }
+   * - Wrapped in a key: { <key>: { id, name, ... } }
+   */
+  private unwrapSingle<T>(data: unknown, key: string): T {
+    if (data && typeof data === 'object') {
+      const obj = data as Record<string, unknown>;
+      // If the response has the expected key, return its value
+      if (obj[key] && typeof obj[key] === 'object') return obj[key] as T;
+      // If the response looks like the object itself (has expected fields), return directly
+      if ('id' in obj || 'name' in obj || 'path' in obj || 'children' in obj) return data as T;
+    }
+    this.logger.warn({ responseType: typeof data, key }, 'Unexpected single-object response format from memory server');
+    // Return a safe fallback
+    return { id: '', name: 'root', path: '/', children: [], document_count: 0 } as unknown as T;
   }
 }

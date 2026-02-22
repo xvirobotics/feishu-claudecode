@@ -364,7 +364,7 @@ export class MessageBridge {
           lastState = {
             ...lastState,
             status: 'error',
-            errorMessage: 'Task timed out (10 min limit)',
+            errorMessage: 'Task timed out (1 hour limit)',
           };
         } else if (abortController.signal.aborted) {
           lastState = {
