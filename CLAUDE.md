@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A bridge service that connects Feishu (Lark) Bot to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode since there's no terminal for interactive approval.
+MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode since there's no terminal for interactive approval.
 
 ## Commands
 
@@ -44,7 +44,7 @@ Feishu WSClient → EventHandler (auth, parse, @mention filter) → MessageBridg
 
 When Claude produces output files (images, PDFs, documents, etc.), they are automatically sent to the user in Feishu:
 
-1. **Per-chat outputs directory** — Before each execution, a fresh directory is created at `/tmp/feishu-claudecode-outputs/<chatId>/`.
+1. **Per-chat outputs directory** — Before each execution, a fresh directory is created at `/tmp/metabot-outputs/<chatId>/`.
 2. **System prompt injection** — Claude is told about the directory via `systemPrompt.append`, instructing it to `cp` output files there.
 3. **Post-execution scan** — After execution completes, the bridge scans the directory and sends all files found.
 4. **File type routing** — Images (png/jpg/gif/etc.) are sent via `im.v1.image.create`, other files (pdf/docx/zip/etc.) via `im.v1.file.create`.
@@ -187,14 +187,14 @@ The bot starts but replies with this error when you message it. This means the A
 claude login
 
 # Option B: API key — add to .env
-echo 'ANTHROPIC_API_KEY=sk-ant-your-key' >> /path/to/feishu-claudecode/.env
+echo 'ANTHROPIC_API_KEY=sk-ant-your-key' >> /path/to/metabot/.env
 ```
 
 Then restart the service:
 
 ```bash
 pkill -f "tsx src/index.ts"
-cd /path/to/feishu-claudecode && npm run dev
+cd /path/to/metabot && npm run dev
 ```
 
 ### Service won't connect to Feishu

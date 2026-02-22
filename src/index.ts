@@ -73,7 +73,7 @@ async function main() {
   const appConfig = loadAppConfig();
   const logger = createLogger(appConfig.log.level);
 
-  logger.info({ botCount: appConfig.bots.length, memoryServerUrl: appConfig.memoryServerUrl }, 'Starting feishu-claudecode bridge...');
+  logger.info({ botCount: appConfig.bots.length, memoryServerUrl: appConfig.memoryServerUrl }, 'Starting MetaBot bridge...');
 
   const handles: BotHandle[] = await Promise.all(
     appConfig.bots.map((botConfig) => startBot(botConfig, logger, appConfig.memoryServerUrl)),

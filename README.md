@@ -1,8 +1,8 @@
-# feishu-claudecode
+# MetaBot
 
-[![CI](https://github.com/xvirobotics/feishu-claudecode/actions/workflows/ci.yml/badge.svg)](https://github.com/xvirobotics/feishu-claudecode/actions/workflows/ci.yml)
+[![CI](https://github.com/xvirobotics/metabot/actions/workflows/ci.yml/badge.svg)](https://github.com/xvirobotics/metabot/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![GitHub stars](https://img.shields.io/github/stars/xvirobotics/feishu-claudecode?style=social)](https://github.com/xvirobotics/feishu-claudecode)
+[![GitHub stars](https://img.shields.io/github/stars/xvirobotics/metabot?style=social)](https://github.com/xvirobotics/metabot)
 
 [English](#english) | [中文](#中文)
 
@@ -16,7 +16,7 @@
 
 ## English
 
-A bridge service connecting Feishu (Lark) Bot to Claude Code CLI. Chat with Claude Code from Feishu on any device (including mobile), with real-time streaming updates via interactive cards.
+MetaBot — A bridge service connecting IM bots (Feishu/Lark) to Claude Code Agent SDK. Chat with Claude Code from Feishu on any device (including mobile), with real-time streaming updates via interactive cards.
 
 ### Features
 
@@ -54,7 +54,7 @@ A bridge service connecting Feishu (Lark) Bot to Claude Code CLI. Chat with Clau
 
 ```bash
 git clone <your-repo-url>
-cd feishu-claudecode
+cd metabot
 ./setup.sh
 ```
 
@@ -223,7 +223,7 @@ Feishu User
 
 ## 中文
 
-飞书 Bot 连接 Claude Code 的桥接服务。在飞书（包括手机端）通过聊天远程控制本机的 Claude Code，实时查看执行过程和结果。
+MetaBot — 飞书 Bot 连接 Claude Code 的桥接服务。在飞书（包括手机端）通过聊天远程控制本机的 Claude Code，实时查看执行过程和结果。
 
 ### 功能特性
 
@@ -292,7 +292,7 @@ Feishu User
 
 ```bash
 git clone <your-repo-url>
-cd feishu-claudecode
+cd metabot
 ./setup.sh
 ```
 
@@ -411,7 +411,7 @@ pm2 save                # 保存当前进程列表
 看到类似以下日志表示启动成功：
 
 ```
-[INFO] All bots started — bots: ["feishu-claudecode"]
+[INFO] All bots started — bots: ["metabot"]
 [ws] ws client ready
 ```
 

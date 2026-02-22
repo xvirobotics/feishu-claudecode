@@ -15,7 +15,7 @@ fail()  { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
 
 echo ""
 echo "========================================="
-echo "  feishu-claudecode Setup"
+echo "  MetaBot Setup"
 echo "========================================="
 echo ""
 
@@ -110,7 +110,7 @@ echo ""
 info "Starting service with PM2..."
 
 # Stop existing instance if running
-pm2 delete feishu-claudecode 2>/dev/null || true
+pm2 delete metabot 2>/dev/null || true
 pm2 start ecosystem.config.cjs
 
 echo ""

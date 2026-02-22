@@ -1,7 +1,7 @@
 {
-  "name": "feishu-claudecode",
+  "name": "metabot",
   "version": "1.0.0",
-  "description": "Bridge service connecting Feishu Bot to Claude Code CLI",
+  "description": "MetaBot — Bridge service connecting IM bots (Feishu/Lark) to Claude Code Agent SDK",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {

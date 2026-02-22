@@ -1,10 +1,10 @@
 module.exports = {
   apps: [
     {
-      name: 'feishu-claudecode',
+      name: 'metabot',
       script: 'src/index.ts',
       interpreter: 'node_modules/.bin/tsx',
-      cwd: '/home/floodsung/feishu-claudecode',
+      cwd: '/home/floodsung/metabot',
 
       // Watch for code changes and auto-restart
       watch: ['src', 'bots.json'],
