@@ -1,5 +1,9 @@
 # feishu-claudecode
 
+[![CI](https://github.com/xvirobotics/feishu-claudecode/actions/workflows/ci.yml/badge.svg)](https://github.com/xvirobotics/feishu-claudecode/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![GitHub stars](https://img.shields.io/github/stars/xvirobotics/feishu-claudecode?style=social)](https://github.com/xvirobotics/feishu-claudecode)
+
 [English](#english) | [中文](#中文)
 
 <p align="center">
