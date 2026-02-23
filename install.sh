@@ -108,6 +108,9 @@ prompt_yn() {
 # ============================================================================
 # Phase 0: Banner + detect OS/arch
 # ============================================================================
+# Ensure CWD is valid (may be a deleted directory when running via curl|bash)
+cd "$HOME" 2>/dev/null || cd /
+
 banner
 
 OS="$(uname -s)"
