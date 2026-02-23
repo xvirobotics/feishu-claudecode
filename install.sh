@@ -543,6 +543,7 @@ if prompt_yn "Install MetaMemory server (knowledge persistence)?"; then
       fi
 
       # 7c. Create venv + pip install
+      # The metamemory repo has its server code under server/ with its own requirements.txt
       cd "$METAMEMORY_HOME"
       if [[ ! -d "venv" ]]; then
         info "Creating Python virtual environment..."
@@ -550,7 +551,9 @@ if prompt_yn "Install MetaMemory server (knowledge persistence)?"; then
       fi
       info "Installing Python dependencies..."
       source venv/bin/activate
-      if [[ -f "requirements.txt" ]]; then
+      if [[ -f "server/requirements.txt" ]]; then
+        pip install -r server/requirements.txt -q
+      elif [[ -f "requirements.txt" ]]; then
         pip install -r requirements.txt -q
       elif [[ -f "pyproject.toml" ]]; then
         pip install -e . -q
@@ -591,9 +594,13 @@ if prompt_yn "Install MetaMemory server (knowledge persistence)?"; then
       fi
 
       # 7e. Start MetaMemory via PM2
-      # Detect the entry point
+      # The metamemory repo structure: server/app/main.py → uvicorn app.main:app --cwd server/
       METAMEMORY_ENTRY=""
-      if [[ -f "$METAMEMORY_HOME/main.py" ]]; then
+      METAMEMORY_CWD="$METAMEMORY_HOME"
+      if [[ -f "$METAMEMORY_HOME/server/app/main.py" ]]; then
+        METAMEMORY_ENTRY="app.main:app"
+        METAMEMORY_CWD="$METAMEMORY_HOME/server"
+      elif [[ -f "$METAMEMORY_HOME/main.py" ]]; then
         METAMEMORY_ENTRY="main:app"
       elif [[ -f "$METAMEMORY_HOME/app.py" ]]; then
         METAMEMORY_ENTRY="app:app"
@@ -609,7 +616,7 @@ if prompt_yn "Install MetaMemory server (knowledge persistence)?"; then
           info "Starting MetaMemory with PM2..."
           pm2 start "$METAMEMORY_HOME/venv/bin/python" \
             --name metamemory \
-            --cwd "$METAMEMORY_HOME" \
+            --cwd "$METAMEMORY_CWD" \
             -- -m uvicorn "$METAMEMORY_ENTRY" --host 0.0.0.0 --port 8100
         fi
 
@@ -623,7 +630,7 @@ if prompt_yn "Install MetaMemory server (knowledge persistence)?"; then
           METAMEMORY_INSTALLED=true
         fi
       else
-        warn "Could not detect MetaMemory entry point (no main.py/app.py/server.py)"
+        warn "Could not detect MetaMemory entry point"
         warn "You may need to start MetaMemory manually."
         METAMEMORY_INSTALLED=true
       fi
