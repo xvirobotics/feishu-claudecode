@@ -95,13 +95,16 @@ export class ClaudeExecutor {
     }
 
     if (apiContext) {
-      // Set env vars for the metabot-api skill to pick up via shell expansion
+      // Port and secret are process-global (same for all chats) — safe as env vars
       process.env.METABOT_API_PORT = String(apiContext.port);
-      process.env.METABOT_BOT_NAME = apiContext.botName;
-      process.env.METABOT_CHAT_ID = apiContext.chatId;
       if (apiContext.secret) {
         process.env.METABOT_API_SECRET = apiContext.secret;
       }
+      // botName and chatId are per-session — inject into system prompt to avoid
+      // race conditions when multiple chats run concurrently
+      appendSections.push(
+        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot-api skill for full API documentation (agent bus, scheduling, bot management).`
+      );
     }
 
     if (appendSections.length > 0) {

@@ -10,9 +10,9 @@ MetaBot exposes an HTTP API for agent-to-agent collaboration, task scheduling, a
 ### Connection Info
 
 Base URL: !`echo http://localhost:${METABOT_API_PORT:-9100}`
-Bot name: !`echo ${METABOT_BOT_NAME:-unknown}`
-Chat ID: !`echo ${METABOT_CHAT_ID:-unknown}`
 Auth header: !`echo ${METABOT_API_SECRET:+Authorization: Bearer $METABOT_API_SECRET}`
+
+Your bot name and chat ID are provided in the system prompt (look for "You are running as bot ... in chat ..."). Use those values for `botName` and `chatId` in the API calls below.
 
 All requests below require the auth header if shown above.
 
@@ -45,7 +45,7 @@ Schedule a task to run after a delay:
 curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/schedule \
   -H "Authorization: Bearer $METABOT_API_SECRET" \
   -H "Content-Type: application/json" \
-  -d '{"botName":"'$METABOT_BOT_NAME'","chatId":"'$METABOT_CHAT_ID'","prompt":"check on experiment results","delaySeconds":3600,"label":"optional label"}'
+  -d '{"botName":"<your-bot-name>","chatId":"<your-chat-id>","prompt":"check on experiment results","delaySeconds":3600,"label":"optional label"}'
 ```
 
 List pending scheduled tasks:
