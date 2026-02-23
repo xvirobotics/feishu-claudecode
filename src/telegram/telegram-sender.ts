@@ -49,7 +49,7 @@ function renderCardHtml(state: CardState): string {
 
   // Response text
   if (state.responseText) {
-    parts.push(escapeHtml(state.responseText));
+    parts.push(markdownToTelegramHtml(state.responseText));
   } else if (state.status === 'thinking') {
     parts.push('<i>Claude is thinking...</i>');
   }
@@ -101,7 +101,7 @@ function renderNoticeHtml(title: string, content: string): string {
   const parts: string[] = [];
   parts.push(`<b>${escapeHtml(title)}</b>`);
   parts.push('');
-  parts.push(escapeHtml(content));
+  parts.push(markdownToTelegramHtml(content));
   return truncateMessage(parts.join('\n'));
 }
 
@@ -110,6 +110,147 @@ function escapeHtml(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Converts Markdown text to Telegram-compatible HTML.
+ * Handles: fenced code blocks, inline code, bold, italic, strikethrough, links, headings.
+ * All non-markdown text is HTML-escaped to prevent injection.
+ */
+function markdownToTelegramHtml(md: string): string {
+  const lines = md.split('\n');
+  const result: string[] = [];
+  let inCodeBlock = false;
+  let codeBlockLang = '';
+  let codeBlockLines: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Fenced code block start/end
+    if (line.trimStart().startsWith('```')) {
+      if (!inCodeBlock) {
+        inCodeBlock = true;
+        codeBlockLang = line.trimStart().slice(3).trim();
+        codeBlockLines = [];
+      } else {
+        // End of code block
+        inCodeBlock = false;
+        const codeContent = escapeHtml(codeBlockLines.join('\n'));
+        if (codeBlockLang) {
+          result.push(`<pre><code class="language-${escapeHtml(codeBlockLang)}">${codeContent}</code></pre>`);
+        } else {
+          result.push(`<pre>${codeContent}</pre>`);
+        }
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBlockLines.push(line);
+      continue;
+    }
+
+    // Convert inline markdown for non-code-block lines
+    result.push(convertInlineMarkdown(line));
+  }
+
+  // If code block was never closed, render what we have
+  if (inCodeBlock) {
+    const codeContent = escapeHtml(codeBlockLines.join('\n'));
+    result.push(`<pre>${codeContent}</pre>`);
+  }
+
+  return result.join('\n');
+}
+
+/**
+ * Converts inline Markdown syntax to Telegram HTML for a single line.
+ */
+function convertInlineMarkdown(line: string): string {
+  // Headings: # Heading → <b>Heading</b>
+  const headingMatch = line.match(/^(#{1,6})\s+(.+)$/);
+  if (headingMatch) {
+    return `<b>${convertInlineFormatting(headingMatch[2])}</b>`;
+  }
+
+  // Horizontal rule: --- or *** or ___
+  if (/^(\s*[-*_]\s*){3,}$/.test(line)) {
+    return '---';
+  }
+
+  // Unordered list: - item or * item
+  const ulMatch = line.match(/^(\s*)[-*]\s+(.+)$/);
+  if (ulMatch) {
+    return `${ulMatch[1]}• ${convertInlineFormatting(ulMatch[2])}`;
+  }
+
+  // Ordered list: 1. item
+  const olMatch = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
+  if (olMatch) {
+    return `${olMatch[1]}${olMatch[2]}. ${convertInlineFormatting(olMatch[3])}`;
+  }
+
+  // Blockquote: > text
+  const bqMatch = line.match(/^>\s?(.*)$/);
+  if (bqMatch) {
+    return `┃ <i>${convertInlineFormatting(bqMatch[1])}</i>`;
+  }
+
+  return convertInlineFormatting(line);
+}
+
+/**
+ * Converts inline formatting: bold, italic, strikethrough, code, links.
+ */
+function convertInlineFormatting(text: string): string {
+  // Split out inline code spans first to avoid processing markdown inside them
+  const parts: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > 0) {
+    const codeMatch = remaining.match(/`([^`]+)`/);
+    if (!codeMatch || codeMatch.index === undefined) {
+      parts.push(formatNonCode(remaining));
+      break;
+    }
+    // Text before inline code
+    if (codeMatch.index > 0) {
+      parts.push(formatNonCode(remaining.slice(0, codeMatch.index)));
+    }
+    // Inline code — only escape HTML, no further formatting
+    parts.push(`<code>${escapeHtml(codeMatch[1])}</code>`);
+    remaining = remaining.slice(codeMatch.index + codeMatch[0].length);
+  }
+
+  return parts.join('');
+}
+
+/**
+ * Apply formatting (bold, italic, strikethrough, links) to non-code text.
+ */
+function formatNonCode(text: string): string {
+  let result = escapeHtml(text);
+
+  // Links: [text](url)
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+
+  // Bold + Italic: ***text*** or ___text___
+  result = result.replace(/\*\*\*(.+?)\*\*\*/g, '<b><i>$1</i></b>');
+  result = result.replace(/___(.+?)___/g, '<b><i>$1</i></b>');
+
+  // Bold: **text** or __text__
+  result = result.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  result = result.replace(/__(.+?)__/g, '<b>$1</b>');
+
+  // Italic: *text* or _text_ (avoid matching mid-word underscores like variable_name)
+  result = result.replace(/\*(.+?)\*/g, '<i>$1</i>');
+  result = result.replace(/(?<!\w)_(.+?)_(?!\w)/g, '<i>$1</i>');
+
+  // Strikethrough: ~~text~~
+  result = result.replace(/~~(.+?)~~/g, '<s>$1</s>');
+
+  return result;
 }
 
 function truncateMessage(text: string): string {
