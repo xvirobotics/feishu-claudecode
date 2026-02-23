@@ -455,18 +455,26 @@ step "Phase 6: Installing skills"
 SKILLS_DIR="$HOME/.claude/skills"
 mkdir -p "$SKILLS_DIR"
 
-# metaskill: clone xvirobotics/metaskill → ~/.claude/skills/metaskill
-if [[ -d "$SKILLS_DIR/metaskill/.git" ]]; then
-  info "metaskill exists, pulling latest..."
-  (cd "$SKILLS_DIR/metaskill" && git pull --ff-only) || warn "metaskill pull failed, using existing"
-  success "metaskill updated"
+# metaskill: clone repo to ~/metaskill, then extract skill/ to ~/.claude/skills/metaskill
+METASKILL_HOME="${METASKILL_HOME:-$HOME/metaskill}"
+if [[ -d "$METASKILL_HOME/.git" ]]; then
+  info "metaskill repo exists, pulling latest..."
+  (cd "$METASKILL_HOME" && git pull --ff-only) || warn "metaskill pull failed, using existing"
 else
   info "Cloning metaskill..."
-  if git clone https://github.com/xvirobotics/metaskill.git "$SKILLS_DIR/metaskill" 2>/dev/null; then
-    success "metaskill cloned → $SKILLS_DIR/metaskill"
+  if git clone https://github.com/xvirobotics/metaskill.git "$METASKILL_HOME" 2>/dev/null; then
+    success "metaskill cloned → $METASKILL_HOME"
   else
     warn "Failed to clone metaskill (network issue or repo not accessible)"
   fi
+fi
+# Extract skill files to ~/.claude/skills/metaskill
+if [[ -d "$METASKILL_HOME/skill" ]]; then
+  mkdir -p "$SKILLS_DIR/metaskill"
+  cp -r "$METASKILL_HOME/skill/." "$SKILLS_DIR/metaskill/"
+  success "Installed metaskill skill → $SKILLS_DIR/metaskill"
+elif [[ -d "$METASKILL_HOME" ]]; then
+  warn "metaskill repo missing skill/ directory"
 fi
 
 # Determine working directory for skill deployment
