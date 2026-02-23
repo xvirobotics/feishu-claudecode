@@ -99,14 +99,16 @@ MetaMemory is an embedded knowledge store. Agents autonomously save and retrieve
 
 ```bash
 # Agents use curl to read/write (via the metamemory skill)
-curl -s localhost:8100/api/search?q=project+architecture
+curl -s -H "Authorization: Bearer $MEMORY_SECRET" localhost:8100/api/search?q=project+architecture
 curl -s -X POST localhost:8100/api/documents \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $MEMORY_SECRET" \
   -d '{"title":"Sprint Review","content":"# Findings...","tags":["review"]}'
 ```
 
 - **SQLite + FTS5** — full-text search with ranked results
-- **Web UI** — browse documents at `http://localhost:8100`
+- **Web UI** — browse at `http://localhost:8100?token=YOUR_SECRET` (token saved to localStorage)
+- **Bearer auth** — `MEMORY_SECRET` (defaults to `API_SECRET` if not set separately)
 - **Zero dependencies** — embedded in MetaBot, no Python/FastAPI needed
 - **Chat commands** — `/memory list`, `/memory search <query>`, `/memory status`
 
@@ -184,6 +186,7 @@ Communication is currently **one-directional** (requester → target). Full bidi
 | `MEMORY_ENABLED` | true | Enable embedded MetaMemory server |
 | `MEMORY_PORT` | 8100 | MetaMemory port |
 | `MEMORY_DATABASE_DIR` | ./data | SQLite database directory |
+| `MEMORY_SECRET` | `API_SECRET` | MetaMemory Bearer auth (defaults to `API_SECRET`) |
 | `LOG_LEVEL` | info | Log level |
 
 ### Third-Party AI Providers
@@ -232,6 +235,8 @@ ANTHROPIC_AUTH_TOKEN=your-key
 | `/memory list` | Show folder tree |
 | `/memory search <query>` | Search knowledge base |
 | `/help` | Show help |
+| `/metaskill ...` | Trigger MetaSkill (passed to Claude Code) |
+| `/anything` | Any unrecognized `/command` is forwarded to Claude Code as a skill trigger |
 
 ### Production Deployment
 
@@ -265,7 +270,8 @@ MetaBot runs Claude Code in **`bypassPermissions` mode** — no interactive appr
 - Use `maxBudgetUsd` to cap per-request cost
 - Use `authorizedUserIds` to restrict access
 - **Never point a bot at directories with sensitive data without access controls**
-- `API_SECRET` enables Bearer token auth on the API server
+- `API_SECRET` enables Bearer token auth on both the API server and MetaMemory
+- **MetaMemory Web UI** — access with `?token=SECRET` in URL (token is saved to browser)
 
 ### Prerequisites
 
@@ -366,7 +372,8 @@ MetaSkill 是一个 Agent 工厂。它先调研最佳实践，然后生成完整
 MetaMemory 是内嵌的知识存储。Agent 跨会话自主保存和检索知识。
 
 - **SQLite + FTS5** — 全文搜索，排名返回
-- **Web UI** — 浏览器打开 `http://localhost:8100` 查看文档
+- **Web UI** — 浏览器打开 `http://localhost:8100?token=你的密钥` 查看文档（token 自动存入浏览器）
+- **Bearer 认证** — `MEMORY_SECRET`（未设置时自动复用 `API_SECRET`）
 - **零依赖** — 内嵌在 MetaBot 中，不需要 Python
 - **聊天命令** — `/memory list`、`/memory search 关键词`、`/memory status`
 
@@ -377,16 +384,19 @@ Agent 通过 HTTP API 互相通信。Claude 知道这些 API（注入了系统�
 ```bash
 # Bot A 委派任务给 Bot B（同步）
 curl -X POST localhost:9100/api/tasks \
+  -H "Authorization: Bearer $API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"botName":"backend-bot","chatId":"oc_xxx","prompt":"跑一下迁移脚本"}'
 
 # Bot A 安排 1 小时后的跟进检查
 curl -X POST localhost:9100/api/schedule \
+  -H "Authorization: Bearer $API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"botName":"backend-bot","chatId":"oc_xxx","prompt":"检查迁移结果","delaySeconds":3600}'
 
 # Bot A 运行时创建新 Bot
 curl -X POST localhost:9100/api/bots \
+  -H "Authorization: Bearer $API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"platform":"telegram","name":"data-bot","telegramBotToken":"...","defaultWorkingDirectory":"/home/user/data","installSkills":true}'
 ```
@@ -440,6 +450,7 @@ curl -X POST localhost:9100/api/bots \
 | `MEMORY_ENABLED` | true | 启用内嵌 MetaMemory |
 | `MEMORY_PORT` | 8100 | MetaMemory 端口 |
 | `MEMORY_DATABASE_DIR` | ./data | SQLite 数据库目录 |
+| `MEMORY_SECRET` | `API_SECRET` | MetaMemory 认证（默认复用 `API_SECRET`） |
 | `LOG_LEVEL` | info | 日志级别 |
 
 ### 第三方 AI 服务商
@@ -484,6 +495,8 @@ ANTHROPIC_MODEL=glm-4.5
 | `/memory list` | 文件夹树 |
 | `/memory search 关键词` | 搜索知识库 |
 | `/help` | 帮助 |
+| `/metaskill ...` | 触发 MetaSkill（透传给 Claude Code） |
+| `/任意命令` | 非内置命令自动转发给 Claude Code，触发对应 Skill |
 
 ### 生产部署
 
@@ -502,6 +515,8 @@ MetaBot 以 **`bypassPermissions` 模式** 运行 Claude Code — 无交互式�
 - 用 `maxBudgetUsd` 限制单次花费
 - 用 `authorizedUserIds` 限制访问者
 - **不要将 Bot 指向含敏感数据的目录**
+- `API_SECRET` 同时保护 API 服务器和 MetaMemory
+- **MetaMemory Web UI** — URL 带 `?token=密钥` 访问（token 自动存入浏览器）
 
 ### 前置条件
 
