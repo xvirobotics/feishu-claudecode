@@ -173,7 +173,15 @@ step "Phase 2: Setting up MetaBot at ${METABOT_HOME}"
 if [[ -d "$METABOT_HOME/.git" ]]; then
   info "Existing installation found, pulling latest..."
   cd "$METABOT_HOME"
+  OLD_HEAD="$(git rev-parse HEAD)"
   git pull --ff-only || warn "git pull failed, continuing with existing code"
+  NEW_HEAD="$(git rev-parse HEAD)"
+  # Re-exec with the updated install.sh if it changed (avoids running stale code from memory)
+  if [[ "$OLD_HEAD" != "$NEW_HEAD" && -z "${METABOT_REEXEC:-}" ]]; then
+    info "install.sh updated, re-launching..."
+    export METABOT_REEXEC=1
+    exec bash "$METABOT_HOME/install.sh"
+  fi
 else
   info "Cloning MetaBot..."
   git clone "$METABOT_REPO" "$METABOT_HOME"
