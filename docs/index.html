@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MetaBot — Infrastructure for the Agent-Native Organization</title>
+    <meta name="description" content="MetaBot: Infrastructure for building a supervised, self-improving agent organization. Run Claude Code from Feishu & Telegram with shared memory, agent factory, and communication bus.">
+    <meta property="og:title" content="MetaBot — Infrastructure for the Agent-Native Organization">
+    <meta property="og:description" content="Give every AI agent a Claude Code brain, shared memory, and a communication bus. Accessible from your phone.">
+    <meta property="og:image" content="https://raw.githubusercontent.com/xvirobotics/metabot/main/resources/metabot.png">
+    <meta property="og:url" content="https://xvirobotics.github.io/metabot">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #0a0a0a;
+            --surface: #141414;
+            --surface-2: #1e1e1e;
+            --border: #2a2a2a;
+            --text: #e8e8e8;
+            --text-dim: #888;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.15);
+            --green: #22c55e;
+            --orange: #f59e0b;
+            --purple: #a855f7;
+        }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            overflow-x: hidden;
+        }
+
+        a { color: var(--accent); text-decoration: none; transition: opacity 0.2s; }
+        a:hover { opacity: 0.8; }
+
+        /* Header */
+        header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 16px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+            background: rgba(10, 10, 10, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 500;
+            color: var(--text);
+            letter-spacing: -0.02em;
+        }
+
+        .logo span { color: var(--text-dim); font-weight: 400; }
+
+        .nav-links { display: flex; gap: 32px; align-items: center; }
+
+        .nav-link {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            letter-spacing: 0.02em;
+            transition: color 0.2s;
+        }
+        .nav-link:hover { color: var(--text); opacity: 1; }
+
+        .github-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 18px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: var(--text);
+            transition: all 0.2s;
+        }
+        .github-btn:hover { background: var(--surface); border-color: var(--text-dim); opacity: 1; }
+        .github-btn svg { width: 18px; height: 18px; fill: currentColor; }
+
+        /* Hero */
+        .hero {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 140px 24px 80px;
+            position: relative;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            pointer-events: none;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            margin-bottom: 32px;
+        }
+        .badge-dot {
+            width: 6px; height: 6px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 5vw, 3.8rem);
+            font-weight: 700;
+            letter-spacing: -0.03em;
+            line-height: 1.15;
+            max-width: 800px;
+            margin-bottom: 24px;
+        }
+
+        .hero-sub {
+            font-size: clamp(1rem, 2vw, 1.25rem);
+            color: var(--text-dim);
+            max-width: 600px;
+            margin-bottom: 48px;
+            font-weight: 300;
+        }
+
+        .cta-group { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+
+        .cta-primary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            background: var(--accent);
+            color: #fff;
+            border-radius: 10px;
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+        }
+        .cta-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+
+        .cta-secondary {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border: 1px solid var(--border);
+            color: var(--text);
+            border-radius: 10px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        .cta-secondary:hover { border-color: var(--text-dim); opacity: 1; }
+
+        /* Architecture diagram */
+        .arch-section {
+            padding: 40px 24px 100px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .arch-img {
+            max-width: 900px;
+            width: 100%;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+
+        /* Pillars */
+        .pillars {
+            padding: 100px 24px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .section-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--accent);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 16px;
+        }
+
+        h2 {
+            font-size: clamp(1.6rem, 3vw, 2.4rem);
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            margin-bottom: 60px;
+        }
+
+        .pillar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .pillar-card {
+            padding: 32px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            transition: border-color 0.3s;
+        }
+        .pillar-card:hover { border-color: var(--text-dim); }
+
+        .pillar-icon {
+            width: 48px; height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            margin-bottom: 20px;
+        }
+
+        .pillar-card:nth-child(1) .pillar-icon { background: rgba(59,130,246,0.15); }
+        .pillar-card:nth-child(2) .pillar-icon { background: rgba(34,197,94,0.15); }
+        .pillar-card:nth-child(3) .pillar-icon { background: rgba(168,85,247,0.15); }
+
+        .pillar-card h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .pillar-card p {
+            font-size: 0.95rem;
+            color: var(--text-dim);
+            line-height: 1.7;
+        }
+
+        /* Components */
+        .components {
+            padding: 100px 24px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .comp-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+
+        .comp-card {
+            padding: 28px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            gap: 16px;
+            align-items: flex-start;
+        }
+
+        .comp-card .icon {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            padding: 6px 10px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            white-space: nowrap;
+            color: var(--text-dim);
+        }
+
+        .comp-card h4 { font-size: 1rem; font-weight: 600; margin-bottom: 6px; }
+        .comp-card p { font-size: 0.85rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* Install */
+        .install {
+            padding: 100px 24px;
+            text-align: center;
+        }
+
+        .install-box {
+            max-width: 640px;
+            margin: 0 auto;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+
+        .install-header {
+            padding: 12px 20px;
+            background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot-r { background: #ff5f57; }
+        .dot-y { background: #febc2e; }
+        .dot-g { background: #28c840; }
+
+        .install-code {
+            padding: 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            text-align: left;
+            color: var(--text);
+            overflow-x: auto;
+        }
+
+        .install-code .comment { color: var(--text-dim); }
+        .install-code .cmd { color: var(--green); }
+
+        /* Use Cases */
+        .usecases {
+            padding: 100px 24px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .usecase-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 20px;
+        }
+
+        .usecase-item {
+            padding: 28px;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            transition: border-color 0.3s;
+        }
+        .usecase-item:hover { border-color: var(--text-dim); }
+
+        .usecase-item .emoji { font-size: 1.6rem; margin-bottom: 16px; display: block; }
+        .usecase-item h4 { font-size: 1rem; font-weight: 600; margin-bottom: 8px; }
+        .usecase-item p { font-size: 0.85rem; color: var(--text-dim); line-height: 1.6; }
+
+        /* Footer */
+        footer {
+            padding: 60px 24px 40px;
+            text-align: center;
+            border-top: 1px solid var(--border);
+        }
+
+        .footer-logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+        }
+
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        .footer-links a {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+        }
+
+        .copyright {
+            font-size: 0.75rem;
+            color: #555;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header { padding: 12px 20px; }
+            .nav-links { gap: 16px; }
+            .nav-link { display: none; }
+            .hero { padding: 120px 20px 60px; }
+            .pillars, .components, .usecases { padding: 60px 20px; }
+            .comp-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo">MetaBot <span>by XVI Robotics</span></div>
+        <nav class="nav-links">
+            <a href="#pillars" class="nav-link">Pillars</a>
+            <a href="#components" class="nav-link">Components</a>
+            <a href="#install" class="nav-link">Install</a>
+            <a href="https://github.com/xvirobotics/metabot" class="github-btn">
+                <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                GitHub
+            </a>
+        </nav>
+    </header>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="badge">
+            <span class="badge-dot"></span>
+            Open Source &middot; MIT License
+        </div>
+        <h1>Infrastructure for the Agent-Native Organization</h1>
+        <p class="hero-sub">
+            Give every AI agent a Claude Code brain, persistent shared memory, and a communication bus. Supervised by humans on Feishu or Telegram.
+        </p>
+        <div class="cta-group">
+            <a href="#install" class="cta-primary">Get Started</a>
+            <a href="https://github.com/xvirobotics/metabot" class="cta-secondary">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                Star on GitHub
+            </a>
+        </div>
+    </section>
+
+    <!-- Architecture -->
+    <section class="arch-section">
+        <img src="https://raw.githubusercontent.com/xvirobotics/metabot/main/resources/metabot.png" alt="MetaBot Architecture" class="arch-img">
+    </section>
+
+    <!-- Three Pillars -->
+    <section class="pillars" id="pillars">
+        <p class="section-label">// Three Pillars</p>
+        <h2>A self-improving agent organization</h2>
+        <div class="pillar-grid">
+            <div class="pillar-card">
+                <div class="pillar-icon">&#x1f441;</div>
+                <h3>Supervised</h3>
+                <p>Real-time streaming cards show every tool call. Humans monitor agents from Feishu or Telegram on their phone. Access control via user/chat allowlists. You see everything agents do.</p>
+            </div>
+            <div class="pillar-card">
+                <div class="pillar-icon">&#x1f9e0;</div>
+                <h3>Self-Improving</h3>
+                <p>MetaMemory is a shared knowledge store. Agents write what they learn, other agents retrieve it. The organization gets smarter every day without retraining any model.</p>
+            </div>
+            <div class="pillar-card">
+                <div class="pillar-icon">&#x1f3ed;</div>
+                <h3>Agent Organization</h3>
+                <p>One command generates a full agent team. Agents delegate tasks to each other via the Agent Bus. Scheduled tasks run autonomously. Agents can even create new agents.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Core Components -->
+    <section class="components" id="components">
+        <p class="section-label">// Core Components</p>
+        <h2>What's inside</h2>
+        <div class="comp-grid">
+            <div class="comp-card">
+                <div class="icon">SDK</div>
+                <div>
+                    <h4>Claude Code Kernel</h4>
+                    <p>Every bot is a full Claude Code instance &mdash; Read, Write, Edit, Bash, Glob, Grep, WebSearch, MCP, and more. Autonomous operation via bypassPermissions mode.</p>
+                </div>
+            </div>
+            <div class="comp-card">
+                <div class="icon">/skill</div>
+                <div>
+                    <h4>MetaSkill</h4>
+                    <p>Agent factory. <code>/metaskill ios app</code> generates a complete agent team (tech-lead + specialists + code-reviewer) after researching best practices.</p>
+                </div>
+            </div>
+            <div class="comp-card">
+                <div class="icon">MEM</div>
+                <div>
+                    <h4>MetaMemory</h4>
+                    <p>Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. Shared by all agents.</p>
+                </div>
+            </div>
+            <div class="comp-card">
+                <div class="icon">IM</div>
+                <div>
+                    <h4>IM Bridge</h4>
+                    <p>Chat with any agent from Feishu/Lark or Telegram, including mobile. Streaming cards with color-coded status and tool call tracking.</p>
+                </div>
+            </div>
+            <div class="comp-card">
+                <div class="icon">API</div>
+                <div>
+                    <h4>Agent Bus</h4>
+                    <p>REST API on port 9100. Agents delegate tasks to each other via curl. Create and remove bots at runtime. Exposed as the /metabot-api skill.</p>
+                </div>
+            </div>
+            <div class="comp-card">
+                <div class="icon">CRON</div>
+                <div>
+                    <h4>Task Scheduler</h4>
+                    <p>Agents schedule future work &mdash; "check back in 2 hours". Persists across restarts, auto-retries when busy.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Install -->
+    <section class="install" id="install">
+        <p class="section-label">// Get Started</p>
+        <h2>One command to install</h2>
+        <div class="install-box">
+            <div class="install-header">
+                <span class="dot dot-r"></span>
+                <span class="dot dot-y"></span>
+                <span class="dot dot-g"></span>
+            </div>
+            <div class="install-code">
+                <span class="comment"># Install MetaBot (interactive setup)</span><br>
+                <span class="cmd">curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash</span><br><br>
+                <span class="comment"># Or manual install</span><br>
+                <span class="cmd">git clone https://github.com/xvirobotics/metabot.git</span><br>
+                <span class="cmd">cd metabot && npm install</span><br>
+                <span class="cmd">cp bots.example.json bots.json && cp .env.example .env</span><br>
+                <span class="cmd">npm run dev</span>
+            </div>
+        </div>
+        <p style="margin-top: 24px; font-size: 0.85rem; color: var(--text-dim);">
+            Prerequisites: Node.js 18+, <a href="https://github.com/anthropics/claude-code">Claude Code CLI</a> installed and authenticated.
+        </p>
+    </section>
+
+    <!-- Use Cases -->
+    <section class="usecases" id="usecases">
+        <p class="section-label">// What You Can Build</p>
+        <h2>Use cases</h2>
+        <div class="usecase-list">
+            <div class="usecase-item">
+                <span class="emoji">&#x1f4f1;</span>
+                <h4>Solo AI Developer</h4>
+                <p>Full Claude Code from your phone, bound to your project. Code on the go via Feishu or Telegram.</p>
+            </div>
+            <div class="usecase-item">
+                <span class="emoji">&#x1f465;</span>
+                <h4>Multi-Agent Team</h4>
+                <p>Frontend bot, backend bot, infra bot. Each in their own workspace, talking via the Agent Bus.</p>
+            </div>
+            <div class="usecase-item">
+                <span class="emoji">&#x1f331;</span>
+                <h4>Self-Growing Org</h4>
+                <p>A manager bot that creates new agents on demand, assigns tasks, and schedules follow-ups.</p>
+            </div>
+            <div class="usecase-item">
+                <span class="emoji">&#x1f50d;</span>
+                <h4>Research Pipeline</h4>
+                <p>Agents that search, analyze, save findings to MetaMemory, and schedule next steps autonomously.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p class="footer-logo">MetaBot &middot; by XVI Robotics</p>
+        <div class="footer-links">
+            <a href="https://github.com/xvirobotics/metabot">GitHub</a>
+            <a href="https://github.com/xvirobotics/metabot/blob/main/README.md">Docs</a>
+            <a href="https://github.com/xvirobotics/metabot/issues">Issues</a>
+            <a href="https://xvirobotics.ai">XVI Robotics</a>
+        </div>
+        <p class="copyright">&copy; 2025 XVI Robotics. MIT License.</p>
+    </footer>
+</body>
+</html>
