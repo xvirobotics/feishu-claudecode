@@ -8,6 +8,7 @@ export interface ApiContext {
   port: number;
   botName: string;
   chatId: string;
+  secret?: string;
 }
 
 export interface ExecutorOptions {
@@ -94,10 +95,17 @@ export class ClaudeExecutor {
     }
 
     if (apiContext) {
+      const authHeader = apiContext.secret
+        ? `  -H 'Authorization: Bearer ${apiContext.secret}' \\\n`
+        : '';
+      const authNote = apiContext.secret
+        ? `\nAll requests require: Authorization: Bearer <secret>`
+        : '';
+
       appendSections.push([
         `## MetaBot API`,
         `You are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".`,
-        `Available at http://localhost:${apiContext.port}`,
+        `Available at http://localhost:${apiContext.port}${authNote}`,
         ``,
         `POST /api/tasks — delegate a task to another bot (synchronous, returns result)`,
         `  Body: {"botName":"<name>","chatId":"<chatId>","prompt":"<prompt>","sendCards":false}`,
@@ -109,10 +117,22 @@ export class ClaudeExecutor {
         `GET /api/bots — discover available bots`,
         `GET /api/health — service health check`,
         ``,
+        `### Bot Management (Self-Replication)`,
+        `POST /api/bots — create a new bot (auto-activates via PM2 restart)`,
+        `  Feishu: {"platform":"feishu","name":"<name>","feishuAppId":"...","feishuAppSecret":"...","defaultWorkingDirectory":"/path","installSkills":true}`,
+        `  Telegram: {"platform":"telegram","name":"<name>","telegramBotToken":"...","defaultWorkingDirectory":"/path","installSkills":true}`,
+        `GET /api/bots/<name> — get bot details`,
+        `DELETE /api/bots/<name> — remove a bot`,
+        ``,
+        `When asked to create a bot:`,
+        `1. Ask user for platform + credentials + project name + working directory`,
+        `2. POST /api/bots with installSkills:true`,
+        `3. Report success — new bot activates within ~3 seconds via PM2 file-watch`,
+        ``,
         `### Self-Scheduling Example`,
         `\`\`\`bash`,
         `curl -s -X POST http://localhost:${apiContext.port}/api/schedule \\`,
-        `  -H 'Content-Type: application/json' \\`,
+        `${authHeader}  -H 'Content-Type: application/json' \\`,
         `  -d '{"botName":"${apiContext.botName}","chatId":"${apiContext.chatId}","prompt":"check on experiment results","delaySeconds":3600}'`,
         `\`\`\``,
       ].join('\n'));

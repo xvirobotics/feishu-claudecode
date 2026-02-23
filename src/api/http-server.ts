@@ -1,7 +1,10 @@
+import * as fs from 'node:fs';
 import * as http from 'node:http';
 import type { Logger } from '../utils/logger.js';
 import type { BotRegistry } from './bot-registry.js';
 import type { TaskScheduler } from '../scheduler/task-scheduler.js';
+import { addBot, removeBot, getBotEntry } from './bots-config-writer.js';
+import { installSkillsToWorkDir } from './skills-installer.js';
 
 interface ApiServerOptions {
   port: number;
@@ -9,6 +12,7 @@ interface ApiServerOptions {
   registry: BotRegistry;
   scheduler: TaskScheduler;
   logger: Logger;
+  botsConfigPath?: string;
 }
 
 interface JsonBody {
@@ -38,7 +42,7 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   const server = http.createServer(async (req, res) => {
@@ -210,6 +214,167 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           jsonResponse(res, 200, { id, status: 'cancelled' });
         } else {
           jsonResponse(res, 404, { error: `Task not found or not cancellable: ${id}` });
+        }
+        return;
+      }
+
+      // Route: POST /api/bots — create a new bot
+      if (method === 'POST' && url === '/api/bots') {
+        if (!botsConfigPath) {
+          jsonResponse(res, 400, { error: 'Bot CRUD requires BOTS_CONFIG to be set' });
+          return;
+        }
+        const body = await parseJsonBody(req);
+        const platform = body.platform as string;
+        const name = body.name as string;
+
+        if (!platform || !name) {
+          jsonResponse(res, 400, { error: 'Missing required fields: platform, name' });
+          return;
+        }
+        if (platform !== 'feishu' && platform !== 'telegram') {
+          jsonResponse(res, 400, { error: 'platform must be "feishu" or "telegram"' });
+          return;
+        }
+
+        let entry: Record<string, unknown>;
+        if (platform === 'feishu') {
+          const appId = body.feishuAppId as string;
+          const appSecret = body.feishuAppSecret as string;
+          const workDir = body.defaultWorkingDirectory as string;
+          if (!appId || !appSecret || !workDir) {
+            jsonResponse(res, 400, { error: 'Feishu bot requires: feishuAppId, feishuAppSecret, defaultWorkingDirectory' });
+            return;
+          }
+          entry = {
+            name,
+            feishuAppId: appId,
+            feishuAppSecret: appSecret,
+            defaultWorkingDirectory: workDir,
+            ...(body.allowedTools ? { allowedTools: body.allowedTools } : {}),
+            ...(body.authorizedUserIds ? { authorizedUserIds: body.authorizedUserIds } : {}),
+            ...(body.authorizedChatIds ? { authorizedChatIds: body.authorizedChatIds } : {}),
+            ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
+            ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
+            ...(body.model ? { model: body.model } : {}),
+          };
+        } else {
+          const token = body.telegramBotToken as string;
+          const workDir = body.defaultWorkingDirectory as string;
+          if (!token || !workDir) {
+            jsonResponse(res, 400, { error: 'Telegram bot requires: telegramBotToken, defaultWorkingDirectory' });
+            return;
+          }
+          entry = {
+            name,
+            telegramBotToken: token,
+            defaultWorkingDirectory: workDir,
+            ...(body.allowedTools ? { allowedTools: body.allowedTools } : {}),
+            ...(body.authorizedUserIds ? { authorizedUserIds: body.authorizedUserIds } : {}),
+            ...(body.authorizedChatIds ? { authorizedChatIds: body.authorizedChatIds } : {}),
+            ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
+            ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
+            ...(body.model ? { model: body.model } : {}),
+          };
+        }
+
+        try {
+          // Ensure working directory exists
+          const workDir = (body.defaultWorkingDirectory as string);
+          fs.mkdirSync(workDir, { recursive: true });
+
+          addBot(botsConfigPath, platform, entry as any);
+          logger.info({ name, platform }, 'Bot added to config');
+
+          // Optionally install skills
+          if (body.installSkills) {
+            installSkillsToWorkDir(workDir, logger);
+          }
+
+          jsonResponse(res, 201, {
+            name,
+            platform,
+            workingDirectory: workDir,
+            message: 'Bot added. PM2 will restart to activate it.',
+          });
+        } catch (err: any) {
+          if (err.message?.includes('already exists')) {
+            jsonResponse(res, 409, { error: err.message });
+          } else {
+            throw err;
+          }
+        }
+        return;
+      }
+
+      // Route: GET /api/bots/:name — get bot details
+      if (method === 'GET' && url.startsWith('/api/bots/')) {
+        const name = decodeURIComponent(url.slice('/api/bots/'.length));
+        if (!name) {
+          jsonResponse(res, 400, { error: 'Missing bot name' });
+          return;
+        }
+
+        // Check running registry first
+        const running = registry.get(name);
+        const runningInfo = running
+          ? { running: true, workingDirectory: running.config.claude.defaultWorkingDirectory, allowedTools: running.config.claude.allowedTools }
+          : { running: false };
+
+        // Check config file if available
+        if (botsConfigPath) {
+          const found = getBotEntry(botsConfigPath, name);
+          if (found) {
+            jsonResponse(res, 200, {
+              name,
+              platform: found.platform,
+              ...runningInfo,
+              config: found.entry,
+            });
+            return;
+          }
+        }
+
+        if (running) {
+          jsonResponse(res, 200, {
+            name,
+            platform: running.platform,
+            ...runningInfo,
+          });
+          return;
+        }
+
+        jsonResponse(res, 404, { error: `Bot not found: ${name}` });
+        return;
+      }
+
+      // Route: DELETE /api/bots/:name — remove a bot
+      if (method === 'DELETE' && url.startsWith('/api/bots/')) {
+        const name = decodeURIComponent(url.slice('/api/bots/'.length));
+        if (!name) {
+          jsonResponse(res, 400, { error: 'Missing bot name' });
+          return;
+        }
+        if (!botsConfigPath) {
+          jsonResponse(res, 400, { error: 'Bot CRUD requires BOTS_CONFIG to be set' });
+          return;
+        }
+
+        try {
+          const removed = removeBot(botsConfigPath, name);
+          if (!removed) {
+            jsonResponse(res, 404, { error: `Bot not found: ${name}` });
+            return;
+          }
+          registry.deregister(name);
+          logger.info({ name }, 'Bot removed from config');
+          jsonResponse(res, 200, { name, removed: true, message: 'Bot removed. PM2 will restart to deactivate it.' });
+        } catch (err: any) {
+          if (err.message?.includes('Cannot remove the last bot')) {
+            jsonResponse(res, 400, { error: err.message });
+          } else {
+            throw err;
+          }
         }
         return;
       }

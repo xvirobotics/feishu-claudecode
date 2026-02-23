@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import * as lark from '@larksuiteoapi/node-sdk';
 import { loadAppConfig, type BotConfig } from './config.js';
 import { createLogger, type Logger } from './utils/logger.js';
@@ -99,9 +100,10 @@ async function main() {
     ? await Promise.all(appConfig.telegramBots.map((bot) => startTelegramBot(bot, logger, appConfig.memoryServerUrl)))
     : [];
 
-  // Register all bots in the registry and set API port on bridges
+  // Register all bots in the registry and set API port/secret on bridges
   for (const handle of feishuHandles) {
     handle.bridge.setApiPort(appConfig.api.port);
+    handle.bridge.setApiSecret(appConfig.api.secret);
     registry.register({
       name: handle.name,
       platform: 'feishu',
@@ -113,6 +115,7 @@ async function main() {
 
   for (const handle of telegramHandles) {
     handle.bridge.setApiPort(appConfig.api.port);
+    handle.bridge.setApiSecret(appConfig.api.secret);
     registry.register({
       name: handle.name,
       platform: 'telegram',
@@ -128,6 +131,11 @@ async function main() {
   // Create task scheduler
   const scheduler = new TaskScheduler(registry, logger);
 
+  // Resolve bots config path for API-driven bot CRUD
+  const botsConfigPath = process.env.BOTS_CONFIG
+    ? path.resolve(process.env.BOTS_CONFIG)
+    : undefined;
+
   // Start API server
   const apiServer = startApiServer({
     port: appConfig.api.port,
@@ -135,6 +143,7 @@ async function main() {
     registry,
     scheduler,
     logger,
+    botsConfigPath,
   });
 
   // Graceful shutdown

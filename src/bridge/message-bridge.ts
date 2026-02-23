@@ -49,6 +49,7 @@ export class MessageBridge {
   private memoryClient: MemoryClient;
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private apiPort: number | undefined;
+  private apiSecret: string | undefined;
 
   constructor(
     private config: BotConfigBase,
@@ -64,6 +65,10 @@ export class MessageBridge {
 
   setApiPort(port: number): void {
     this.apiPort = port;
+  }
+
+  setApiSecret(secret: string | undefined): void {
+    this.apiSecret = secret;
   }
 
   isBusy(chatId: string): boolean {
@@ -282,7 +287,7 @@ export class MessageBridge {
 
     // Build apiContext for system prompt injection
     const apiContext = this.apiPort
-      ? { port: this.apiPort, botName: this.config.name, chatId }
+      ? { port: this.apiPort, botName: this.config.name, chatId, secret: this.apiSecret }
       : undefined;
 
     // Start multi-turn execution
@@ -478,7 +483,7 @@ export class MessageBridge {
 
     // Build apiContext for system prompt injection
     const apiContext = this.apiPort
-      ? { port: this.apiPort, botName: this.config.name, chatId }
+      ? { port: this.apiPort, botName: this.config.name, chatId, secret: this.apiSecret }
       : undefined;
 
     // Start execution

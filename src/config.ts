@@ -64,7 +64,7 @@ function commaSplit(value: string | undefined): string[] {
 
 // --- Feishu JSON entry (used in bots.json) ---
 
-interface FeishuBotJsonEntry {
+export interface FeishuBotJsonEntry {
   name: string;
   feishuAppId: string;
   feishuAppSecret: string;
@@ -96,7 +96,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
 
 // --- Telegram JSON entry (used in bots.json) ---
 
-interface TelegramBotJsonEntry {
+export interface TelegramBotJsonEntry {
   name: string;
   telegramBotToken: string;
   defaultWorkingDirectory: string;
@@ -200,7 +200,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
 
 // --- New bots.json format ---
 
-interface BotsJsonNewFormat {
+export interface BotsJsonNewFormat {
   feishuBots?: FeishuBotJsonEntry[];
   telegramBots?: TelegramBotJsonEntry[];
 }

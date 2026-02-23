@@ -4,7 +4,7 @@ module.exports = {
       name: 'metabot',
       script: 'src/index.ts',
       interpreter: 'node_modules/.bin/tsx',
-      cwd: '/home/floodsung/metabot',
+      cwd: __dirname,
 
       // Watch for code changes and auto-restart
       watch: ['src', 'bots.json'],

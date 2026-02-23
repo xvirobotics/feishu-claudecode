@@ -33,6 +33,10 @@ export class BotRegistry {
     return this.bots.get(name);
   }
 
+  deregister(name: string): boolean {
+    return this.bots.delete(name);
+  }
+
   list(): BotInfo[] {
     return Array.from(this.bots.values()).map((b) => ({
       name: b.name,
