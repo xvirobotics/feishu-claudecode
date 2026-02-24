@@ -607,6 +607,12 @@ MMEOF
   if [[ -n "${API_SECRET:-}" ]]; then
     sed -i "s|\${API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
   fi
+  # Ensure ~/.bashrc sources ~/.bash_aliases (Ubuntu default, but not universal)
+  if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'bash_aliases' "$HOME/.bashrc"; then
+    echo -e '\n# Load bash aliases\nif [ -f ~/.bash_aliases ]; then\n    . ~/.bash_aliases\nfi' >> "$HOME/.bashrc"
+  fi
+  # Source it in the current shell so mm works immediately after install
+  source "$BASH_ALIASES" 2>/dev/null || true
   success "mm() shortcut installed → $BASH_ALIASES"
 else
   info "mm() shortcut already exists, skipping"
