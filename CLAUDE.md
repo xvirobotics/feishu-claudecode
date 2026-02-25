@@ -14,7 +14,11 @@ npm run build        # TypeScript compile to dist/
 npm start            # Run compiled output (dist/index.js)
 ```
 
-No test framework is configured. No linter is configured.
+```bash
+npm test             # Run tests (vitest)
+npm run lint         # ESLint check
+npm run format       # Prettier format
+```
 
 ## Architecture
 
@@ -23,14 +27,14 @@ The app is a TypeScript ESM project (`"type": "module"`, all imports use `.js` e
 ### Message Flow
 
 ```
-Feishu WSClient → EventHandler (auth, parse, @mention filter) → MessageBridge → ClaudeExecutor → StreamProcessor → Feishu card updates
+Feishu WSClient → EventHandler (parse, @mention filter) → MessageBridge → ClaudeExecutor → StreamProcessor → Feishu card updates
 ```
 
 ### Key Modules
 
 - **`src/index.ts`** — Entrypoint. Creates Feishu WS client, fetches bot info for @mention detection, wires up the event dispatcher and bridge, handles graceful shutdown.
 - **`src/config.ts`** — Loads config. `BotConfig` is the per-bot type; `AppConfig` wraps `{ bots, log }`. `loadAppConfig()` reads `BOTS_CONFIG` JSON file or falls back to single-bot mode from env vars.
-- **`src/feishu/event-handler.ts`** — Registers `im.message.receive_v1` on the Lark `EventDispatcher`. Handles auth checks, text/image parsing, @mention stripping, group chat filtering (only responds when @mentioned). Exports `IncomingMessage` type.
+- **`src/feishu/event-handler.ts`** — Registers `im.message.receive_v1` on the Lark `EventDispatcher`. Handles text/image parsing, @mention stripping, group chat filtering (only responds when @mentioned). Exports `IncomingMessage` type.
 - **`src/bridge/message-bridge.ts`** — Core orchestrator. Routes commands (`/reset`, `/stop`, `/status`, `/help`, `/memory`), manages running tasks per chat (one task at a time per `chatId`), executes Claude queries with streaming card updates, handles image input/output, enforces 1-hour timeout.
 - **`src/memory/memory-client.ts`** — Lightweight HTTP client for the MetaMemory server. Used by `/memory` commands (list, search, status) for quick Feishu responses without spawning Claude.
 - **`src/claude/executor.ts`** — Wraps `query()` from the Agent SDK as an async generator yielding `SDKMessage`. Configures permissionMode, allowedTools, MCP settings, session resume.
@@ -65,7 +69,7 @@ All config is via environment variables in `.env` (see `.env.example`). Required
 
 ### Multi-Bot Mode
 
-Set `BOTS_CONFIG=./bots.json` (or any path) to run multiple Feishu bots in a single process. Each bot gets its own Feishu app credentials, working directory, auth settings, and WebSocket connection. See `bots.example.json` for the file format.
+Set `BOTS_CONFIG=./bots.json` (or any path) to run multiple Feishu bots in a single process. Each bot gets its own Feishu app credentials, working directory, and WebSocket connection. See `bots.example.json` for the file format.
 
 Per-bot config fields (JSON array entries):
 - **`name`** (required) — Bot identifier, used in log context
@@ -93,7 +97,7 @@ Knowledge persistence is handled by an external **MetaMemory server** (FastAPI +
 
 Before running the service, ensure:
 
-1. **Node.js 18+** is installed.
+1. **Node.js 20+** is installed.
 2. **Claude Code CLI is installed and authenticated** — The Agent SDK spawns `claude` as a subprocess; it must be able to run independently.
    - Install: `npm install -g @anthropic-ai/claude-code`
    - Authenticate (one of):

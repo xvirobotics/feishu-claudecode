@@ -45,7 +45,7 @@ We built MetaBot to run [XVI Robotics](https://github.com/xvirobotics) as an **a
 
 | Pillar | Component | What it does |
 |--------|-----------|-------------|
-| **Supervised** | IM Bridge + Auth | Real-time streaming cards show every tool call. Access control via user/chat allowlists. Humans see everything agents do. |
+| **Supervised** | IM Bridge | Real-time streaming cards show every tool call. Humans see everything agents do. Access control via Feishu/Telegram platform settings. |
 | **Self-Improving** | MetaMemory | Shared knowledge store. Agents write what they learn, other agents retrieve it. The organization gets smarter every day without retraining. |
 | **Agent Organization** | MetaSkill + Scheduler + Agent Bus | One command generates a full agent team. Agents delegate tasks to each other. Scheduled tasks run autonomously. Agents can create new agents. |
 
@@ -59,7 +59,7 @@ We built MetaBot to run [XVI Robotics](https://github.com/xvirobotics) as an **a
 | **IM Bridge** | Chat with any agent from Feishu/Lark or Telegram (including mobile). Streaming cards with color-coded status and tool call tracking. |
 | **Agent Bus** | REST API on port 9100. Agents delegate tasks to each other via `curl`. Create/remove bots at runtime. Exposed as the `/metabot-api` skill — loaded on demand, not injected into every prompt. |
 | **Task Scheduler** | Agents schedule future work — "check back in 2 hours". Persists across restarts, auto-retries when busy. |
-| **CLI Tools** | `mm` and `mb` commands installed to `~/.local/bin/`. Manage MetaMemory and Agent Bus from any terminal — no shell sourcing required. |
+| **CLI Tools** | `metabot`, `mm`, and `mb` commands installed to `~/.local/bin/`. `metabot update` to pull/rebuild/restart. `mm` for MetaMemory, `mb` for Agent Bus. |
 
 ## Install
 
@@ -80,7 +80,7 @@ cp .env.example .env              # edit global settings
 npm run dev
 ```
 
-Prerequisites: Node.js 18+, [Claude Code CLI](https://github.com/anthropics/claude-code) installed and authenticated.
+Prerequisites: Node.js 20+, [Claude Code CLI](https://github.com/anthropics/claude-code) installed and authenticated.
 
 </details>
 
@@ -233,9 +233,17 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 
 ## CLI Tools
 
-The installer places `mm` and `mb` executables in `~/.local/bin/` — available immediately, no `source` needed.
+The installer places `metabot`, `mm`, and `mb` executables in `~/.local/bin/` — available immediately, no `source` needed.
 
 ```bash
+# MetaBot management
+metabot update                      # pull latest, rebuild, restart
+metabot start                       # start with PM2
+metabot stop                        # stop
+metabot restart                     # restart
+metabot logs                        # view live logs
+metabot status                      # PM2 process status
+
 # MetaMemory — read
 mm search "deployment guide"        # full-text search
 mm list                             # list documents
@@ -269,8 +277,9 @@ npm run build        # TypeScript compile to dist/
 ## Production
 
 ```bash
-pm2 start ecosystem.config.cjs
-pm2 startup && pm2 save
+metabot start                       # or: pm2 start ecosystem.config.cjs
+metabot update                      # pull + rebuild + restart
+pm2 startup && pm2 save             # auto-start on boot
 ```
 
 ## FAQ

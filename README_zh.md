@@ -45,7 +45,7 @@ MetaBot 解放了它。给每个 Agent 一个 Claude Code 大脑、持久化的�
 
 | 支柱 | 组件 | 作用 |
 |------|------|------|
-| **受监督 (Supervised)** | IM Bridge + 权限控制 | 实时流式卡片展示每一步工具调用。用户/群白名单访问控制。人类看到 Agent 做的一切。 |
+| **受监督 (Supervised)** | IM Bridge | 实时流式卡片展示每一步工具调用。人类看到 Agent 做的一切。通过飞书/Telegram 平台设置控制访问。 |
 | **自我进化 (Self-Improving)** | MetaMemory | 共享知识库。Agent 写入学到的东西，其他 Agent 检索引用。组织每天都在变聪明，无需重新训练。 |
 | **Agent 组织 (Organization)** | MetaSkill + 调度器 + Agent 总线 | 一个命令生成完整 Agent 团队。Agent 互相委派任务。定时任务自主运行。Agent 可以创建新 Agent。 |
 
@@ -59,7 +59,7 @@ MetaBot 解放了它。给每个 Agent 一个 Claude Code 大脑、持久化的�
 | **IM Bridge** | 飞书或 Telegram（含手机端）与任意 Agent 对话。带颜色状态的流式卡片 + 工具调用追踪。 |
 | **Agent 总线** | 9100 端口 REST API。Agent 通过 `curl` 互相委派任务。运行时创建/删除 Bot。以 `/metabot-api` skill 形式按需加载，不注入每次对话。 |
 | **定时任务调度器** | Agent 安排未来的工作 —— "2小时后检查一下"。跨重启持久化，忙时自动重试。 |
-| **CLI 工具** | `mm` 和 `mb` 命令安装到 `~/.local/bin/`。在任意终端管理 MetaMemory 和 Agent 总线 —— 无需 source。 |
+| **CLI 工具** | `metabot`、`mm`、`mb` 命令安装到 `~/.local/bin/`。`metabot update` 一键更新重启。`mm` 管理 MetaMemory，`mb` 管理 Agent 总线。 |
 
 ## 安装
 
@@ -80,7 +80,7 @@ cp .env.example .env              # 编辑全局设置
 npm run dev
 ```
 
-前置条件：Node.js 18+，[Claude Code CLI](https://github.com/anthropics/claude-code) 已安装并认证。
+前置条件：Node.js 20+，[Claude Code CLI](https://github.com/anthropics/claude-code) 已安装并认证。
 
 </details>
 
@@ -230,9 +230,17 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 
 ## CLI 工具
 
-安装器将 `mm` 和 `mb` 可执行文件放到 `~/.local/bin/`，安装后立即可用，无需 `source`。
+安装器将 `metabot`、`mm`、`mb` 可执行文件放到 `~/.local/bin/`，安装后立即可用，无需 `source`。
 
 ```bash
+# MetaBot 管理
+metabot update                      # 拉取最新代码，重新构建，重启
+metabot start                       # 启动（PM2）
+metabot stop                        # 停止
+metabot restart                     # 重启
+metabot logs                        # 查看实时日志
+metabot status                      # PM2 进程状态
+
 # MetaMemory — 读
 mm search "部署指南"                 # 全文搜索
 mm list                             # 列出文档
@@ -266,8 +274,9 @@ npm run build        # TypeScript 编译到 dist/
 ## 生产部署
 
 ```bash
-pm2 start ecosystem.config.cjs
-pm2 startup && pm2 save
+metabot start                       # 或: pm2 start ecosystem.config.cjs
+metabot update                      # 拉取 + 构建 + 重启
+pm2 startup && pm2 save             # 开机自启
 ```
 
 ## FAQ
