@@ -14,29 +14,6 @@ export interface TelegramBotHandle {
   sender: IMessageSender;
 }
 
-function isAuthorized(config: TelegramBotConfig, userId: string, chatId: string): boolean {
-  const { authorizedUserIds, authorizedChatIds, allowAll } = config.auth;
-
-  // Explicit allowAll flag (or no restrictions in env mode for backward compat)
-  if (allowAll) {
-    return true;
-  }
-
-  // In multi-bot (bots.json) mode, default is deny-all if no lists and no allowAll
-  if (authorizedUserIds.length === 0 && authorizedChatIds.length === 0) {
-    return false;
-  }
-
-  if (authorizedUserIds.length > 0 && authorizedUserIds.includes(userId)) {
-    return true;
-  }
-
-  if (authorizedChatIds.length > 0 && authorizedChatIds.includes(chatId)) {
-    return true;
-  }
-
-  return false;
-}
 
 export async function startTelegramBot(
   config: TelegramBotConfig,
@@ -61,11 +38,6 @@ export async function startTelegramBot(
     const userId = ctx.from.id.toString();
     const chatId = ctx.chat.id.toString();
     const chatType = ctx.chat.type; // 'private', 'group', 'supergroup'
-
-    if (!isAuthorized(config, userId, chatId)) {
-      botLogger.warn({ userId, chatId }, 'Unauthorized Telegram message');
-      return;
-    }
 
     let text = ctx.message.text || '';
 
@@ -111,11 +83,6 @@ export async function startTelegramBot(
     const chatId = ctx.chat.id.toString();
     const chatType = ctx.chat.type;
 
-    if (!isAuthorized(config, userId, chatId)) {
-      botLogger.warn({ userId, chatId }, 'Unauthorized Telegram photo');
-      return;
-    }
-
     // Get the largest photo (last in the array)
     const photos = ctx.message.photo;
     const largestPhoto = photos[photos.length - 1];
@@ -139,11 +106,6 @@ export async function startTelegramBot(
     const userId = ctx.from.id.toString();
     const chatId = ctx.chat.id.toString();
     const chatType = ctx.chat.type;
-
-    if (!isAuthorized(config, userId, chatId)) {
-      botLogger.warn({ userId, chatId }, 'Unauthorized Telegram document');
-      return;
-    }
 
     const doc = ctx.message.document;
 

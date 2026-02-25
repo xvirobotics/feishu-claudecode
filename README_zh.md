@@ -151,8 +151,6 @@ curl -X POST localhost:9100/api/bots \
 | `defaultWorkingDirectory` | 是 | — | Claude 的工作目录 |
 | `feishuAppId` / `feishuAppSecret` | 飞书 | — | 飞书应用凭证 |
 | `telegramBotToken` | Telegram | — | Telegram Bot Token |
-| `allowAll` | 否 | `true` | 允许所有用户（跳过鉴权） |
-| `authorizedUserIds` | 否 | — | 用户 ID 白名单 |
 | `allowedTools` | 否 | Read,Edit,Write,Glob,Grep,Bash | Claude 可用工具 |
 | `maxTurns` / `maxBudgetUsd` | 否 | 不限 | 执行限制 |
 | `model` | 否 | SDK 默认 | Claude 模型 |
@@ -194,7 +192,7 @@ ANTHROPIC_AUTH_TOKEN=你的key
 MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认：
 
 - Claude 对工作目录有完整读写执行权限
-- 用 `authorizedUserIds` 限制谁可以和 Bot 对话
+- 通过飞书/Telegram 平台设置控制访问（应用可见范围、群成员管理）
 - 用 `allowedTools` 限制工具（去掉 `Bash` = 只读模式）
 - 用 `maxBudgetUsd` 限制单次花费
 - `API_SECRET` 同时保护 API 服务器和 MetaMemory

@@ -151,8 +151,6 @@ curl -X POST localhost:9100/api/bots \
 | `defaultWorkingDirectory` | Yes | — | Working directory for Claude |
 | `feishuAppId` / `feishuAppSecret` | Feishu | — | Feishu app credentials |
 | `telegramBotToken` | Telegram | — | Telegram bot token |
-| `allowAll` | No | `true` | Allow all users (skip auth check) |
-| `authorizedUserIds` | No | — | User ID allowlist |
 | `allowedTools` | No | Read,Edit,Write,Glob,Grep,Bash | Claude tools whitelist |
 | `maxTurns` / `maxBudgetUsd` | No | unlimited | Execution limits |
 | `model` | No | SDK default | Claude model |
@@ -196,7 +194,7 @@ ANTHROPIC_AUTH_TOKEN=your-key
 MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval. Understand the implications:
 
 - Claude has full read/write/execute access to the working directory
-- Use `authorizedUserIds` to restrict who can talk to each bot
+- Control access via Feishu/Telegram platform settings (app visibility, group membership)
 - Use `allowedTools` to restrict capabilities (remove `Bash` for read-only)
 - Use `maxBudgetUsd` to cap cost per request
 - `API_SECRET` enables Bearer auth on both the API server and MetaMemory

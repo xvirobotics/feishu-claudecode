@@ -41,12 +41,6 @@ export function createEventDispatcher(
         const chatType = message.chat_type;
         const messageId = message.message_id;
 
-        // Authorization check
-        if (!isAuthorized(config, userId, chatId)) {
-          logger.warn({ userId, chatId }, 'Unauthorized message');
-          return;
-        }
-
         // In group chats, only respond when the bot is @mentioned
         const mentions = message.mentions;
         if (chatType === 'group') {
@@ -206,28 +200,3 @@ function extractTextFromPost(content: Record<string, unknown>): string {
   return '';
 }
 
-function isAuthorized(config: BotConfig, userId: string, chatId: string): boolean {
-  const { authorizedUserIds, authorizedChatIds, allowAll } = config.auth;
-
-  // Explicit allowAll flag (or no restrictions in env mode for backward compat)
-  if (allowAll) {
-    return true;
-  }
-
-  // In multi-bot (bots.json) mode, default is deny-all if no lists and no allowAll
-  if (authorizedUserIds.length === 0 && authorizedChatIds.length === 0) {
-    return false;
-  }
-
-  // Check user authorization
-  if (authorizedUserIds.length > 0 && authorizedUserIds.includes(userId)) {
-    return true;
-  }
-
-  // Check chat authorization
-  if (authorizedChatIds.length > 0 && authorizedChatIds.includes(chatId)) {
-    return true;
-  }
-
-  return false;
-}

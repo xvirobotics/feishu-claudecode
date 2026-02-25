@@ -71,7 +71,6 @@ Per-bot config fields (JSON array entries):
 - **`name`** (required) — Bot identifier, used in log context
 - **`feishuAppId`** / **`feishuAppSecret`** (required) — Feishu app credentials
 - **`defaultWorkingDirectory`** (required) — Fixed working directory for Claude sessions
-- **`authorizedUserIds`** / **`authorizedChatIds`** — Access control lists (empty = allow all)
 - **`allowedTools`** — Claude tools whitelist (defaults to env var or `Read,Edit,Write,Glob,Grep,Bash`)
 - **`maxTurns`** / **`maxBudgetUsd`** / **`model`** — Claude execution limits (defaults from env vars)
 - **`outputsBaseDir`** — Base directory for output files
