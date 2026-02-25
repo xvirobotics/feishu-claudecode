@@ -99,7 +99,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     auth: {
       authorizedUserIds: entry.authorizedUserIds || [],
       authorizedChatIds: entry.authorizedChatIds || [],
-      allowAll: entry.allowAll ?? false,
+      allowAll: entry.allowAll ?? true,
     },
     claude: buildClaudeConfig(entry),
   };
@@ -131,7 +131,7 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
     auth: {
       authorizedUserIds: entry.authorizedUserIds || [],
       authorizedChatIds: entry.authorizedChatIds || [],
-      allowAll: entry.allowAll ?? false,
+      allowAll: entry.allowAll ?? true,
     },
     claude: buildClaudeConfig(entry),
   };
