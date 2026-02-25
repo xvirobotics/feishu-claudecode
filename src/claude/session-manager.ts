@@ -16,6 +16,7 @@ interface PersistedSession {
 }
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_SESSIONS = 10_000;
 
 export class SessionManager {
   private sessions = new Map<string, UserSession>();
@@ -42,6 +43,10 @@ export class SessionManager {
   getSession(chatId: string): UserSession {
     let session = this.sessions.get(chatId);
     if (!session) {
+      // Evict least-recently-used session if at capacity
+      if (this.sessions.size >= MAX_SESSIONS) {
+        this.evictOldest();
+      }
       session = {
         sessionId: undefined,
         workingDirectory: this.defaultWorkingDirectory,
@@ -51,6 +56,21 @@ export class SessionManager {
     }
     session.lastUsed = Date.now();
     return session;
+  }
+
+  private evictOldest(): void {
+    let oldestKey: string | undefined;
+    let oldestTime = Infinity;
+    for (const [key, s] of this.sessions) {
+      if (s.lastUsed < oldestTime) {
+        oldestTime = s.lastUsed;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) {
+      this.sessions.delete(oldestKey);
+      this.logger.debug({ chatId: oldestKey }, 'Evicted oldest session (capacity limit)');
+    }
   }
 
   setSessionId(chatId: string, sessionId: string): void {

@@ -27,18 +27,38 @@ function jsonResponse(res: http.ServerResponse, status: number, body: unknown): 
   res.end(json);
 }
 
+const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1 MB
+
 function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    let totalSize = 0;
+    req.on('data', (chunk: Buffer) => {
+      totalSize += chunk.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new PayloadTooLargeError());
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString()));
     req.on('error', reject);
   });
 }
 
+class PayloadTooLargeError extends Error {
+  statusCode = 413;
+  constructor() { super('Request body too large (max 1 MB)'); }
+}
+
 async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
   const raw = await readBody(req);
-  return JSON.parse(raw) as JsonBody;
+  try {
+    return JSON.parse(raw) as JsonBody;
+  } catch {
+    throw Object.assign(new Error('Invalid JSON in request body'), { statusCode: 400 });
+  }
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
@@ -382,8 +402,11 @@ export function startApiServer(options: ApiServerOptions): http.Server {
       // 404 fallback
       jsonResponse(res, 404, { error: 'Not found' });
     } catch (err: any) {
-      logger.error({ err, method, url }, 'API request error');
-      jsonResponse(res, 500, { error: err.message || 'Internal server error' });
+      const statusCode = err.statusCode || 500;
+      if (statusCode >= 500) {
+        logger.error({ err, method, url }, 'API request error');
+      }
+      jsonResponse(res, statusCode, { error: err.message || 'Internal server error' });
     }
   });
 

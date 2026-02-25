@@ -13,6 +13,7 @@ import { MemoryClient } from '../memory/memory-client.js';
 
 const TASK_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
+const MAX_QUEUE_SIZE = 5; // max queued messages per chat
 
 interface RunningTask {
   abortController: AbortController;
@@ -48,6 +49,7 @@ export class MessageBridge {
   private outputsManager: OutputsManager;
   private memoryClient: MemoryClient;
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
+  private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
 
   constructor(
     private config: BotConfigBase,
@@ -67,6 +69,22 @@ export class MessageBridge {
     return this.runningTasks.has(chatId);
   }
 
+  private processQueue(chatId: string): void {
+    const queue = this.messageQueues.get(chatId);
+    if (!queue || queue.length === 0) {
+      this.messageQueues.delete(chatId);
+      return;
+    }
+    const next = queue.shift()!;
+    if (queue.length === 0) {
+      this.messageQueues.delete(chatId);
+    }
+    // Fire and forget — executeQuery handles its own errors
+    this.executeQuery(next).catch((err) => {
+      this.logger.error({ err, chatId }, 'Error processing queued message');
+    });
+  }
+
   async handleMessage(msg: IncomingMessage): Promise<void> {
     const { userId, chatId, text } = msg;
 
@@ -83,13 +101,25 @@ export class MessageBridge {
       return;
     }
 
-    // Check if this chat already has a running task
+    // If a task is running, queue the message instead of rejecting
     if (this.runningTasks.has(chatId)) {
+      const queue = this.messageQueues.get(chatId) || [];
+      if (queue.length >= MAX_QUEUE_SIZE) {
+        await this.sender.sendTextNotice(
+          chatId,
+          '⏳ Queue Full',
+          `Queue is full (${MAX_QUEUE_SIZE} pending). Use \`/stop\` to abort the current task, or wait.`,
+          'orange',
+        );
+        return;
+      }
+      queue.push(msg);
+      this.messageQueues.set(chatId, queue);
       await this.sender.sendTextNotice(
         chatId,
-        '⏳ Task In Progress',
-        'You have a running task. Use `/stop` to abort it, or wait for it to finish.',
-        'orange',
+        '📋 Queued',
+        `Your message has been queued (position #${queue.length}). It will run after the current task finishes.`,
+        'blue',
       );
       return;
     }
@@ -443,8 +473,10 @@ export class MessageBridge {
       if (runningTask.questionTimeoutId) {
         clearTimeout(runningTask.questionTimeoutId);
       }
-      executionHandle.finish();
+      try { executionHandle.finish(); } catch (e) { this.logger.warn({ err: e, chatId }, 'Error finishing execution handle'); }
       this.runningTasks.delete(chatId);
+      // Process queued messages for this chat
+      this.processQueue(chatId);
       // Cleanup temp downloaded files
       if (imagePath) {
         try { fs.unlinkSync(imagePath); } catch { /* ignore */ }
@@ -453,7 +485,7 @@ export class MessageBridge {
         try { fs.unlinkSync(filePath); } catch { /* ignore */ }
       }
       // Safety net: clean up outputs directory
-      this.outputsManager.cleanup(outputsDir);
+      try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
   }
 
@@ -619,9 +651,10 @@ export class MessageBridge {
       };
     } finally {
       clearTimeout(timeoutId);
-      executionHandle.finish();
+      try { executionHandle.finish(); } catch (e) { this.logger.warn({ err: e, chatId }, 'Error finishing execution handle'); }
       this.runningTasks.delete(chatId);
-      this.outputsManager.cleanup(outputsDir);
+      this.processQueue(chatId);
+      try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
   }
 

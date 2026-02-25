@@ -335,21 +335,40 @@ function truncateMessage(text: string): string {
  * Telegram implementation of IMessageSender.
  * Uses grammY Bot API for sending/updating messages.
  */
+const MESSAGE_MAP_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 export class TelegramSender implements IMessageSender {
-  /** Map of messageId (string) to { chatId, messageIdNum } for updates. */
-  private messageMap = new Map<string, { chatId: number; messageId: number }>();
+  /** Map of messageId (string) to { chatId, messageIdNum, createdAt } for updates. */
+  private messageMap = new Map<string, { chatId: number; messageId: number; createdAt: number }>();
+  private cleanupTimer: ReturnType<typeof setInterval>;
 
   constructor(
     private bot: Bot,
     private logger: Logger,
-  ) {}
+  ) {
+    // Periodically clean up stale entries to prevent memory leak
+    this.cleanupTimer = setInterval(() => this.cleanupMessageMap(), MESSAGE_MAP_TTL_MS);
+  }
+
+  destroy(): void {
+    clearInterval(this.cleanupTimer);
+  }
+
+  private cleanupMessageMap(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.messageMap) {
+      if (now - entry.createdAt > MESSAGE_MAP_TTL_MS) {
+        this.messageMap.delete(key);
+      }
+    }
+  }
 
   async sendCard(chatId: string, state: CardState): Promise<string | undefined> {
     try {
       const html = renderCardHtml(state);
       const msg = await this.bot.api.sendMessage(Number(chatId), html, { parse_mode: 'HTML' });
       const msgIdStr = `tg:${chatId}:${msg.message_id}`;
-      this.messageMap.set(msgIdStr, { chatId: Number(chatId), messageId: msg.message_id });
+      this.messageMap.set(msgIdStr, { chatId: Number(chatId), messageId: msg.message_id, createdAt: Date.now() });
       return msgIdStr;
     } catch (err) {
       this.logger.error({ err, chatId }, 'Failed to send Telegram message');
