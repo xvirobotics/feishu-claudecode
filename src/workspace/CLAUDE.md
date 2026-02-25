@@ -26,7 +26,17 @@ mm folders              # Browse folder tree
 For full API (create with tags, update, delete), use the `/metamemory` skill.
 
 ### /metabot-api — Agent Bus, Scheduling & Bot Management
-Delegate tasks to other bots, schedule future tasks, and create/remove bots via the MetaBot HTTP API.
+Use the `mb` shell shortcut for quick operations:
+
+```bash
+mb bots                                    # List all bots
+mb task <botName> <chatId> <prompt>        # Delegate task
+mb schedule list                           # List scheduled tasks
+mb schedule add <bot> <chatId> <sec> <prompt>  # Schedule a task
+mb health                                  # Health check
+```
+
+For full API (create bots, update tasks, sendCards), use the `/metabot-api` skill.
 
 ## Guidelines
 

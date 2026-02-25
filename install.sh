@@ -607,16 +607,117 @@ MMEOF
   if [[ -n "${API_SECRET:-}" ]]; then
     sed -i "s|\${API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
   fi
-  # Ensure ~/.bashrc sources ~/.bash_aliases (Ubuntu default, but not universal)
-  if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'bash_aliases' "$HOME/.bashrc"; then
-    echo -e '\n# Load bash aliases\nif [ -f ~/.bash_aliases ]; then\n    . ~/.bash_aliases\nfi' >> "$HOME/.bashrc"
-  fi
-  # Source it in the current shell so mm works immediately after install
-  source "$BASH_ALIASES" 2>/dev/null || true
-  success "mm() shortcut installed → $BASH_ALIASES"
+  success "mm() shortcut installed"
 else
   info "mm() shortcut already exists, skipping"
 fi
+
+# Install mb() shell shortcut for MetaBot API (Agent Bus, Scheduling, Bot Management)
+if ! grep -q 'mb()' "$BASH_ALIASES" 2>/dev/null; then
+  info "Installing mb() shell shortcut..."
+  cat >> "$BASH_ALIASES" << 'MBEOF'
+
+# MetaBot API shortcuts (installed by MetaBot)
+export METABOT_URL="http://localhost:${METABOT_API_PORT:-9100}"
+export METABOT_AUTH="Authorization: Bearer ${METABOT_API_SECRET:-changeme}"
+
+mb() {
+  local cmd="${1:-help}"
+  shift 2>/dev/null
+  case "$cmd" in
+    # --- Bot management ---
+    bots|b)
+      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots"
+      ;;
+    bot)
+      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots/$1" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots/$1"
+      ;;
+    # --- Task delegation ---
+    task|t)
+      local bot="$1" chat="$2"; shift 2 2>/dev/null
+      local prompt="$*"
+      if [[ -z "$bot" || -z "$chat" || -z "$prompt" ]]; then
+        echo "Usage: mb task <botName> <chatId> <prompt>"
+        return 1
+      fi
+      curl -s -X POST "$METABOT_URL/api/tasks" \
+        -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+        -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"prompt\":\"$prompt\",\"sendCards\":false}"
+      ;;
+    # --- Scheduling ---
+    schedule|sched|sc)
+      local subcmd="${1:-list}"; shift 2>/dev/null
+      case "$subcmd" in
+        list|ls)
+          curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/schedule" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/schedule"
+          ;;
+        add|a)
+          local bot="$1" chat="$2" delay="$3"; shift 3 2>/dev/null
+          local prompt="$*"
+          if [[ -z "$bot" || -z "$chat" || -z "$delay" || -z "$prompt" ]]; then
+            echo "Usage: mb schedule add <botName> <chatId> <delaySeconds> <prompt>"
+            return 1
+          fi
+          curl -s -X POST "$METABOT_URL/api/schedule" \
+            -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+            -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"delaySeconds\":$delay,\"prompt\":\"$prompt\"}"
+          ;;
+        cancel|rm)
+          if [[ -z "$1" ]]; then echo "Usage: mb schedule cancel <id>"; return 1; fi
+          curl -s -X DELETE "$METABOT_URL/api/schedule/$1" -H "$METABOT_AUTH"
+          ;;
+        *)
+          echo "mb schedule - Task scheduling"
+          echo "  mb schedule list                                    - List pending tasks"
+          echo "  mb schedule add <bot> <chatId> <delaySec> <prompt>  - Schedule a task"
+          echo "  mb schedule cancel <id>                             - Cancel a task"
+          ;;
+      esac
+      ;;
+    # --- Health ---
+    health|h)
+      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health"
+      ;;
+    # --- Help ---
+    *)
+      echo "mb - MetaBot API CLI"
+      echo ""
+      echo "  Bots:"
+      echo "    mb bots                          - List all bots"
+      echo "    mb bot <name>                    - Get bot details"
+      echo ""
+      echo "  Tasks:"
+      echo "    mb task <bot> <chatId> <prompt>  - Delegate task to a bot"
+      echo ""
+      echo "  Scheduling:"
+      echo "    mb schedule list                 - List pending scheduled tasks"
+      echo "    mb schedule add <bot> <chatId> <delaySec> <prompt>"
+      echo "    mb schedule cancel <id>          - Cancel a scheduled task"
+      echo ""
+      echo "  System:"
+      echo "    mb health                        - Health check"
+      ;;
+  esac
+}
+MBEOF
+  # Patch the actual secrets into the file
+  if [[ -n "${API_PORT:-}" ]]; then
+    sed -i "s|\${METABOT_API_PORT:-9100}|${API_PORT}|g" "$BASH_ALIASES"
+  fi
+  if [[ -n "${API_SECRET:-}" ]]; then
+    sed -i "s|\${METABOT_API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
+  fi
+  success "mb() shortcut installed"
+else
+  info "mb() shortcut already exists, skipping"
+fi
+
+# Ensure ~/.bashrc sources ~/.bash_aliases (Ubuntu default, but not universal)
+if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'bash_aliases' "$HOME/.bashrc"; then
+  echo -e '\n# Load bash aliases\nif [ -f ~/.bash_aliases ]; then\n    . ~/.bash_aliases\nfi' >> "$HOME/.bashrc"
+fi
+# Source it in the current shell so mm/mb work immediately after install
+source "$BASH_ALIASES" 2>/dev/null || true
 
 # ============================================================================
 # Phase 8: Build + Start MetaBot with PM2
