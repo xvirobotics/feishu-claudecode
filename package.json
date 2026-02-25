@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc && cp -r src/memory/static dist/memory/static",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts"
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.0",
@@ -22,6 +24,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.6.0"
+    "typescript": "^5.6.0",
+    "vitest": "^3.1.1"
   }
 }

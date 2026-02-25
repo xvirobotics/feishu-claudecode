@@ -9,6 +9,7 @@ export interface BotConfigBase {
   auth: {
     authorizedUserIds: string[];
     authorizedChatIds: string[];
+    allowAll: boolean;
   };
   claude: {
     defaultWorkingDirectory: string;
@@ -77,6 +78,7 @@ export interface FeishuBotJsonEntry {
   defaultWorkingDirectory: string;
   authorizedUserIds?: string[];
   authorizedChatIds?: string[];
+  allowAll?: boolean;
   allowedTools?: string[];
   maxTurns?: number;
   maxBudgetUsd?: number;
@@ -95,6 +97,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     auth: {
       authorizedUserIds: entry.authorizedUserIds || [],
       authorizedChatIds: entry.authorizedChatIds || [],
+      allowAll: entry.allowAll ?? false,
     },
     claude: buildClaudeConfig(entry),
   };
@@ -108,6 +111,7 @@ export interface TelegramBotJsonEntry {
   defaultWorkingDirectory: string;
   authorizedUserIds?: string[];
   authorizedChatIds?: string[];
+  allowAll?: boolean;
   allowedTools?: string[];
   maxTurns?: number;
   maxBudgetUsd?: number;
@@ -125,6 +129,7 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
     auth: {
       authorizedUserIds: entry.authorizedUserIds || [],
       authorizedChatIds: entry.authorizedChatIds || [],
+      allowAll: entry.allowAll ?? false,
     },
     claude: buildClaudeConfig(entry),
   };
@@ -156,6 +161,10 @@ function buildClaudeConfig(entry: {
 // --- Single-bot env var mode ---
 
 function feishuBotFromEnv(): BotConfig {
+  const userIds = commaSplit(process.env.AUTHORIZED_USER_IDS);
+  const chatIds = commaSplit(process.env.AUTHORIZED_CHAT_IDS);
+  // Default allowAll=true in single-bot env mode for backward compatibility
+  const allowAll = process.env.ALLOW_ALL_USERS === 'true' || (userIds.length === 0 && chatIds.length === 0);
   return {
     name: 'default',
     feishu: {
@@ -163,8 +172,9 @@ function feishuBotFromEnv(): BotConfig {
       appSecret: required('FEISHU_APP_SECRET'),
     },
     auth: {
-      authorizedUserIds: commaSplit(process.env.AUTHORIZED_USER_IDS),
-      authorizedChatIds: commaSplit(process.env.AUTHORIZED_CHAT_IDS),
+      authorizedUserIds: userIds,
+      authorizedChatIds: chatIds,
+      allowAll,
     },
     claude: {
       defaultWorkingDirectory: required('CLAUDE_DEFAULT_WORKING_DIRECTORY'),
@@ -181,14 +191,18 @@ function feishuBotFromEnv(): BotConfig {
 }
 
 function telegramBotFromEnv(): TelegramBotConfig {
+  const userIds = commaSplit(process.env.TELEGRAM_AUTHORIZED_USER_IDS);
+  const chatIds = commaSplit(process.env.TELEGRAM_AUTHORIZED_CHAT_IDS);
+  const allowAll = process.env.ALLOW_ALL_USERS === 'true' || (userIds.length === 0 && chatIds.length === 0);
   return {
     name: 'telegram-default',
     telegram: {
       botToken: required('TELEGRAM_BOT_TOKEN'),
     },
     auth: {
-      authorizedUserIds: commaSplit(process.env.TELEGRAM_AUTHORIZED_USER_IDS),
-      authorizedChatIds: commaSplit(process.env.TELEGRAM_AUTHORIZED_CHAT_IDS),
+      authorizedUserIds: userIds,
+      authorizedChatIds: chatIds,
+      allowAll,
     },
     claude: {
       defaultWorkingDirectory: required('CLAUDE_DEFAULT_WORKING_DIRECTORY'),

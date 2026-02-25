@@ -207,11 +207,16 @@ function extractTextFromPost(content: Record<string, unknown>): string {
 }
 
 function isAuthorized(config: BotConfig, userId: string, chatId: string): boolean {
-  const { authorizedUserIds, authorizedChatIds } = config.auth;
+  const { authorizedUserIds, authorizedChatIds, allowAll } = config.auth;
 
-  // If no restrictions configured, allow all
-  if (authorizedUserIds.length === 0 && authorizedChatIds.length === 0) {
+  // Explicit allowAll flag (or no restrictions in env mode for backward compat)
+  if (allowAll) {
     return true;
+  }
+
+  // In multi-bot (bots.json) mode, default is deny-all if no lists and no allowAll
+  if (authorizedUserIds.length === 0 && authorizedChatIds.length === 0) {
+    return false;
   }
 
   // Check user authorization
