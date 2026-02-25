@@ -253,9 +253,14 @@ info "Running npm install..."
 npm install --production=false
 success "npm dependencies installed"
 
+# Helper: npm install -g with sudo fallback
+npm_install_global() {
+  npm install -g "$@" 2>/dev/null || sudo -n npm install -g "$@" 2>/dev/null || sudo npm install -g "$@"
+}
+
 if ! command -v pm2 &>/dev/null; then
   info "Installing PM2 globally..."
-  npm install -g pm2
+  npm_install_global pm2
   success "PM2 installed"
 else
   success "PM2 already installed"
@@ -265,11 +270,11 @@ if command -v claude &>/dev/null; then
   success "Claude CLI found: $(command -v claude)"
 else
   info "Installing Claude CLI..."
-  npm install -g @anthropic-ai/claude-code
+  npm_install_global @anthropic-ai/claude-code
   if command -v claude &>/dev/null; then
     success "Claude CLI installed"
   else
-    warn "Claude CLI install failed. Install manually: npm install -g @anthropic-ai/claude-code"
+    warn "Claude CLI install failed. Install manually: sudo npm install -g @anthropic-ai/claude-code"
   fi
 fi
 
