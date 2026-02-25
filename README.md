@@ -235,16 +235,24 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 The installer places `mm` and `mb` executables in `~/.local/bin/` — available immediately, no `source` needed.
 
 ```bash
-# MetaMemory
-mm search "deployment guide"   # full-text search
-mm list                        # list documents
-mm health                      # status check
+# MetaMemory — read
+mm search "deployment guide"        # full-text search
+mm list                             # list documents
+mm folders                          # folder tree
+mm path /projects/my-doc            # get doc by path
+
+# MetaMemory — write
+echo '# Notes' | mm create "Title" --folder ID --tags "dev"
+echo '# Updated' | mm update DOC_ID
+mm mkdir "new-folder"               # create folder
+mm delete DOC_ID                    # delete document
 
 # Agent Bus
-mb bots                        # list all bots
-mb task <bot> <chatId> <prompt>  # delegate task
-mb schedule list               # list scheduled tasks
-mb health                      # status check
+mb bots                             # list all bots
+mb task <bot> <chatId> <prompt>     # delegate task
+mb schedule list                    # list scheduled tasks
+mb stats                            # cost & usage stats
+mb health                           # status check
 ```
 
 ## Development

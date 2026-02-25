@@ -39,9 +39,13 @@ case "$cmd" in
       echo "Usage: mb task <botName> <chatId> <prompt>"
       exit 1
     fi
+    python3 -c "
+import json, sys
+print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.argv[3], 'sendCards': False}))
+" "$bot" "$chat" "$prompt" | \
     curl -s -X POST "$METABOT_URL/api/tasks" \
       -H "$METABOT_AUTH" -H "Content-Type: application/json" \
-      -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"prompt\":\"$prompt\",\"sendCards\":false}"
+      -d @-
     ;;
   # --- Scheduling ---
   schedule|sched|sc)
@@ -57,9 +61,13 @@ case "$cmd" in
           echo "Usage: mb schedule add <botName> <chatId> <delaySeconds> <prompt>"
           exit 1
         fi
+        python3 -c "
+import json, sys
+print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'delaySeconds': int(sys.argv[3]), 'prompt': sys.argv[4]}))
+" "$bot" "$chat" "$delay" "$prompt" | \
         curl -s -X POST "$METABOT_URL/api/schedule" \
           -H "$METABOT_AUTH" -H "Content-Type: application/json" \
-          -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"delaySeconds\":$delay,\"prompt\":\"$prompt\"}"
+          -d @- | _json
         ;;
       cancel|rm)
         if [[ -z "${1:-}" ]]; then echo "Usage: mb schedule cancel <id>"; exit 1; fi
@@ -72,6 +80,13 @@ case "$cmd" in
         echo "  mb schedule cancel <id>                             - Cancel a task"
         ;;
     esac
+    ;;
+  # --- Stats & Metrics ---
+  stats|st)
+    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/stats" | _json
+    ;;
+  metrics|m)
+    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/metrics"
     ;;
   # --- Health ---
   health|h)
@@ -92,6 +107,10 @@ case "$cmd" in
     echo "    mb schedule list                 - List pending scheduled tasks"
     echo "    mb schedule add <bot> <chatId> <delaySec> <prompt>"
     echo "    mb schedule cancel <id>          - Cancel a scheduled task"
+    echo ""
+    echo "  Monitoring:"
+    echo "    mb stats                         - Cost & usage stats (per-bot, per-user)"
+    echo "    mb metrics                       - Prometheus metrics"
     echo ""
     echo "  System:"
     echo "    mb health                        - Health check"

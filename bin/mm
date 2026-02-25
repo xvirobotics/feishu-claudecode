@@ -6,7 +6,6 @@ set -euo pipefail
 
 # --- Config: env vars > .env file > defaults ---
 if [[ -z "${MEMORY_URL:-}" ]]; then
-  # Try to read from MetaBot .env
   METABOT_ENV="${METABOT_HOME:-$HOME/metabot}/.env"
   if [[ -f "$METABOT_ENV" ]]; then
     _secret=$(grep -oP '^API_SECRET=\K.*' "$METABOT_ENV" 2>/dev/null || true)
@@ -18,41 +17,186 @@ if [[ -z "${MEMORY_AUTH:-}" ]]; then
   MEMORY_AUTH="Authorization: Bearer $_secret"
 fi
 
+_json() { python3 -m json.tool 2>/dev/null || cat; }
+
+# Build JSON safely using python3 to handle escaping
+_jsonify() {
+  python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" 2>/dev/null
+}
+
 cmd="${1:-help}"
 shift 2>/dev/null || true
 
 case "$cmd" in
   search|s)
-    query=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$*'))" 2>/dev/null || echo "$*")
-    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/search?q=$query"
+    query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(' '.join(sys.argv[1:])))" "$@" 2>/dev/null || echo "$*")
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/search?q=$query" | _json
     ;;
   get|g)
-    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents/$1"
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents/$1" | _json
+    ;;
+  path|p)
+    # Get document by path, e.g.: mm path /metabot/weekly-updates
+    path=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(' '.join(sys.argv[1:])))" "$@" 2>/dev/null || echo "$*")
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents/by-path?path=$path" | _json
     ;;
   list|ls)
-    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents?folder_id=${1:-root}&limit=50"
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents?folder_id=${1:-root}&limit=50" | _json
     ;;
   folders|f)
-    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/folders"
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/folders" | _json
     ;;
+
+  # --- Create document ---
+  # Usage: mm create <title> [--folder <id>] [--tags tag1,tag2] [--by <name>]
+  #   Content is read from stdin or the last positional arg.
+  #   Examples:
+  #     echo "# My Doc" | mm create "Title" --folder abc123
+  #     mm create "Title" "# Content here"
+  #     mm create "Title" --folder abc123 --tags "dev,notes" --by "bot" "# Content"
   create|c)
-    title="$1"; shift
-    content="$*"
+    _title="" _folder="root" _tags="" _by="" _content=""
+    # First positional arg is the title
+    if [[ $# -gt 0 ]]; then _title="$1"; shift; fi
+    # Parse remaining args
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --folder|-f) _folder="$2"; shift 2 ;;
+        --tags|-t)   _tags="$2"; shift 2 ;;
+        --by|-b)     _by="$2"; shift 2 ;;
+        *)           _content="$*"; break ;;
+      esac
+    done
+    if [[ -z "$_title" ]]; then
+      echo "Usage: mm create <title> [--folder <id>] [--tags t1,t2] [--by name] [content]"
+      echo "       echo '# Markdown' | mm create <title> --folder <id>"
+      exit 1
+    fi
+    # Read content from stdin if not provided as arg
+    if [[ -z "$_content" ]] && [[ ! -t 0 ]]; then
+      _content=$(cat)
+    fi
+    if [[ -z "$_content" ]]; then
+      echo "Error: No content provided. Pass as argument or pipe via stdin."
+      exit 1
+    fi
+    # Build JSON payload safely with python3
+    python3 -c "
+import json, sys
+payload = {'title': sys.argv[1], 'folder_id': sys.argv[2], 'content': sys.argv[3]}
+tags = sys.argv[4]
+by = sys.argv[5]
+if tags:
+    payload['tags'] = [t.strip() for t in tags.split(',')]
+if by:
+    payload['created_by'] = by
+print(json.dumps(payload))
+" "$_title" "$_folder" "$_content" "$_tags" "$_by" | \
     curl -s -X POST "$MEMORY_URL/api/documents" \
       -H "$MEMORY_AUTH" -H "Content-Type: application/json" \
-      -d "{\"title\":\"$title\",\"folder_id\":\"root\",\"content\":\"$content\"}"
+      -d @- | _json
     ;;
+
+  # --- Update document ---
+  # Usage: mm update <doc_id> [--title <t>] [--tags tag1,tag2] [content]
+  #   Content from stdin or last positional arg.
+  update|u)
+    _doc_id="" _title="" _tags="" _content=""
+    if [[ $# -gt 0 ]]; then _doc_id="$1"; shift; fi
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --title|-T)  _title="$2"; shift 2 ;;
+        --tags|-t)   _tags="$2"; shift 2 ;;
+        *)           _content="$*"; break ;;
+      esac
+    done
+    if [[ -z "$_doc_id" ]]; then
+      echo "Usage: mm update <doc_id> [--title <t>] [--tags t1,t2] [content]"
+      echo "       echo '# Updated' | mm update <doc_id>"
+      exit 1
+    fi
+    if [[ -z "$_content" ]] && [[ ! -t 0 ]]; then
+      _content=$(cat)
+    fi
+    python3 -c "
+import json, sys
+payload = {}
+content = sys.argv[1]
+title = sys.argv[2]
+tags = sys.argv[3]
+if content:
+    payload['content'] = content
+if title:
+    payload['title'] = title
+if tags:
+    payload['tags'] = [t.strip() for t in tags.split(',')]
+if not payload:
+    print('Error: nothing to update', file=sys.stderr)
+    sys.exit(1)
+print(json.dumps(payload))
+" "$_content" "$_title" "$_tags" | \
+    curl -s -X PUT "$MEMORY_URL/api/documents/$_doc_id" \
+      -H "$MEMORY_AUTH" -H "Content-Type: application/json" \
+      -d @- | _json
+    ;;
+
+  # --- Create folder ---
+  mkdir|md)
+    _name="" _parent="root"
+    if [[ $# -gt 0 ]]; then _name="$1"; shift; fi
+    if [[ $# -gt 0 ]]; then _parent="$1"; fi
+    if [[ -z "$_name" ]]; then
+      echo "Usage: mm mkdir <folder-name> [parent_id]  (default parent: root)"
+      exit 1
+    fi
+    python3 -c "
+import json, sys
+print(json.dumps({'name': sys.argv[1], 'parent_id': sys.argv[2]}))
+" "$_name" "$_parent" | \
+    curl -s -X POST "$MEMORY_URL/api/folders" \
+      -H "$MEMORY_AUTH" -H "Content-Type: application/json" \
+      -d @- | _json
+    ;;
+
+  # --- Delete document ---
+  delete|rm)
+    if [[ -z "${1:-}" ]]; then
+      echo "Usage: mm delete <doc_id>"
+      exit 1
+    fi
+    curl -s -X DELETE "$MEMORY_URL/api/documents/$1" -H "$MEMORY_AUTH" | _json
+    ;;
+
   health|h)
-    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/health"
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/health" | _json
     ;;
+
   *)
     echo "mm - MetaMemory CLI"
     echo ""
-    echo "  mm search <query>       - Search documents"
-    echo "  mm get <doc_id>         - Get document by ID"
-    echo "  mm list [folder_id]     - List documents (default: root)"
-    echo "  mm folders              - List folder tree"
-    echo "  mm create <title> <md>  - Create a document"
-    echo "  mm health               - Health check"
+    echo "  Read:"
+    echo "    mm search <query>              - Search documents"
+    echo "    mm get <doc_id>                - Get document by ID"
+    echo "    mm path </folder/doc-slug>     - Get document by path"
+    echo "    mm list [folder_id]            - List documents (default: root)"
+    echo "    mm folders                     - List folder tree"
+    echo ""
+    echo "  Write:"
+    echo "    mm create <title> [opts] [content]  - Create document"
+    echo "        --folder <id>   Folder (default: root)"
+    echo "        --tags <a,b>    Comma-separated tags"
+    echo "        --by <name>     Creator name"
+    echo "        Content via arg or stdin: echo '# MD' | mm create 'Title' --folder ID"
+    echo ""
+    echo "    mm update <doc_id> [opts] [content] - Update document"
+    echo "        --title <t>     New title"
+    echo "        --tags <a,b>    New tags"
+    echo "        Content via arg or stdin: echo '# MD' | mm update DOC_ID"
+    echo ""
+    echo "    mm mkdir <name> [parent_id]    - Create folder (default parent: root)"
+    echo "    mm delete <doc_id>             - Delete document"
+    echo ""
+    echo "  System:"
+    echo "    mm health                      - Health check"
     ;;
 esac

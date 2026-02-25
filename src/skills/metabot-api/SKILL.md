@@ -26,6 +26,10 @@ mb schedule list                           # List pending scheduled tasks
 mb schedule add <bot> <chatId> <sec> <prompt>  # Schedule a future task
 mb schedule cancel <id>                    # Cancel a scheduled task
 
+# Monitoring
+mb stats                                   # Cost & usage stats (per-bot, per-user)
+mb metrics                                 # Prometheus metrics
+
 # System
 mb health                                  # Health check
 ```

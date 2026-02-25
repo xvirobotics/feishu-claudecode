@@ -16,55 +16,38 @@ Server URL: !`echo ${MEMORY_SERVER_URL:-http://localhost:8100}`
 
 ### Quick Commands (mm shortcut)
 
-The `mm` shell function is pre-installed and handles auth automatically. **Prefer `mm` over raw curl for read operations:**
+The `mm` CLI is pre-installed and handles auth automatically. **Always prefer `mm` over raw curl:**
 
 ```bash
-mm search <query>       # Search documents
-mm get <doc_id>         # Get document by ID
-mm list [folder_id]     # List documents (default: root)
-mm folders              # Browse folder tree
-mm create <title> <md>  # Create a document (simple)
-mm health               # Health check
+# Read
+mm search <query>              # Search documents
+mm get <doc_id>                # Get document by ID
+mm path </folder/doc-slug>     # Get document by path
+mm list [folder_id]            # List documents (default: root)
+mm folders                     # Browse folder tree
+
+# Write
+mm create <title> [opts] [content]   # Create document
+    --folder <id>   Target folder (default: root)
+    --tags <a,b>    Comma-separated tags
+    --by <name>     Creator name
+    # Content via stdin (recommended for multiline):
+    echo '# My Doc' | mm create "Title" --folder FOLDER_ID --tags "dev" --by "bot-name"
+
+mm update <doc_id> [opts] [content]  # Update document
+    --title <t>     New title
+    --tags <a,b>    New tags
+    echo '# Updated' | mm update DOC_ID
+
+mm mkdir <name> [parent_id]    # Create folder (default parent: root)
+mm delete <doc_id>             # Delete document
+
+# System
+mm health                      # Health check
 ```
 
-### API Reference (for complex operations)
-
-For create/update with full control (tags, folder, etc.), use the API directly.
-Auth header: `-H "Authorization: Bearer $MEMORY_SECRET"`
-
-**Create document:**
-```bash
-curl -s -X POST ${MEMORY_SERVER_URL:-http://localhost:8100}/api/documents \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $MEMORY_SECRET" \
-  -d '{"title":"Doc Title", "folder_id":"root", "content":"# Markdown content...", "tags":["tag1"], "created_by":"bot-name"}'
-```
-
-**Update document:**
-```bash
-curl -s -X PUT ${MEMORY_SERVER_URL:-http://localhost:8100}/api/documents/DOC_ID \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $MEMORY_SECRET" \
-  -d '{"content":"# Updated content..."}'
-```
-
-**Get document by path:**
-```bash
-curl -s -H "Authorization: Bearer $MEMORY_SECRET" "${MEMORY_SERVER_URL:-http://localhost:8100}/api/documents/by-path?path=/folder/doc-slug"
-```
-
-**Create folder:**
-```bash
-curl -s -X POST ${MEMORY_SERVER_URL:-http://localhost:8100}/api/folders \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $MEMORY_SECRET" \
-  -d '{"name":"folder-name", "parent_id":"root"}'
-```
-
-**Delete document:**
-```bash
-curl -s -H "Authorization: Bearer $MEMORY_SECRET" -X DELETE ${MEMORY_SERVER_URL:-http://localhost:8100}/api/documents/DOC_ID
-```
+All write commands handle JSON escaping safely (multiline content, special characters).
+For stdin content, pipe markdown: `cat notes.md | mm create "Notes" --folder ID`
 
 ### Guidelines
 - Write documents as structured Markdown with clear headings
