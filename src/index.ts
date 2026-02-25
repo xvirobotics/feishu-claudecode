@@ -140,6 +140,8 @@ async function main() {
       port: appConfig.memory.port,
       databaseDir: appConfig.memory.databaseDir,
       secret: appConfig.memory.secret || undefined,
+      adminToken: appConfig.memory.adminToken,
+      readerToken: appConfig.memory.readerToken,
       logger,
     });
   }

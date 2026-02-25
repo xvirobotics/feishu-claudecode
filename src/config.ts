@@ -53,6 +53,8 @@ export interface AppConfig {
     port: number;
     databaseDir: string;
     secret: string;
+    adminToken?: string;
+    readerToken?: string;
   };
 }
 
@@ -285,6 +287,8 @@ export function loadAppConfig(): AppConfig {
   const memoryPort = process.env.MEMORY_PORT ? parseInt(process.env.MEMORY_PORT, 10) : 8100;
   const memoryDatabaseDir = process.env.MEMORY_DATABASE_DIR || './data';
   const memorySecret = process.env.MEMORY_SECRET || process.env.API_SECRET || '';
+  const memoryAdminToken = process.env.MEMORY_ADMIN_TOKEN || undefined;
+  const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
 
   return {
     feishuBots,
@@ -302,6 +306,8 @@ export function loadAppConfig(): AppConfig {
       port: memoryPort,
       databaseDir: memoryDatabaseDir,
       secret: memorySecret,
+      adminToken: memoryAdminToken,
+      readerToken: memoryReaderToken,
     },
   };
 }

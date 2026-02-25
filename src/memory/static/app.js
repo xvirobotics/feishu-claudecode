@@ -83,6 +83,16 @@ function renderFolderTree(node, depth = 0) {
   name.className = 'folder-name';
   name.textContent = node.name;
 
+  // Private badge
+  const isPrivate = node.visibility === 'private';
+  if (isPrivate) {
+    const badge = document.createElement('span');
+    badge.className = 'visibility-badge';
+    badge.textContent = '🔒';
+    badge.title = 'Private folder';
+    name.appendChild(badge);
+  }
+
   // Document count
   const count = document.createElement('span');
   if (node.document_count > 0) {
@@ -561,6 +571,56 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('folderModal').classList.add('hidden');
     }
   };
+
+  // Auth settings
+  function updateAuthLabel() {
+    const token = localStorage.getItem('memory_token');
+    const label = document.getElementById('authStatusLabel');
+    label.textContent = token ? 'Token set' : 'No token';
+  }
+
+  document.getElementById('authSettingsBtn').onclick = () => {
+    const token = localStorage.getItem('memory_token') || '';
+    document.getElementById('authTokenInput').value = token;
+    document.getElementById('authModal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('authTokenInput').focus(), 100);
+  };
+
+  document.getElementById('saveAuthBtn').onclick = () => {
+    const token = document.getElementById('authTokenInput').value.trim();
+    if (token) {
+      localStorage.setItem('memory_token', token);
+    } else {
+      localStorage.removeItem('memory_token');
+    }
+    document.getElementById('authModal').classList.add('hidden');
+    updateAuthLabel();
+    handleRoute(); // refresh with new token
+  };
+
+  document.getElementById('clearAuthBtn').onclick = () => {
+    localStorage.removeItem('memory_token');
+    document.getElementById('authModal').classList.add('hidden');
+    updateAuthLabel();
+    handleRoute();
+  };
+
+  document.getElementById('cancelAuthBtn').onclick = () => {
+    document.getElementById('authModal').classList.add('hidden');
+  };
+
+  document.getElementById('authModal').onclick = (e) => {
+    if (e.target === e.currentTarget) {
+      document.getElementById('authModal').classList.add('hidden');
+    }
+  };
+
+  document.getElementById('authTokenInput').onkeydown = (e) => {
+    if (e.key === 'Enter') document.getElementById('saveAuthBtn').click();
+    if (e.key === 'Escape') document.getElementById('cancelAuthBtn').click();
+  };
+
+  updateAuthLabel();
 
   // Router
   window.addEventListener('hashchange', handleRoute);

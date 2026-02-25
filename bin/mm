@@ -5,26 +5,38 @@
 set -euo pipefail
 
 # --- Config: env vars > .env file > defaults ---
-if [[ -z "${MEMORY_URL:-}" ]]; then
-  METABOT_ENV="${METABOT_HOME:-$HOME/metabot}/.env"
-  if [[ -f "$METABOT_ENV" ]]; then
-    _secret=$(grep -oP '^API_SECRET=\K.*' "$METABOT_ENV" 2>/dev/null || true)
-  fi
-  MEMORY_URL="http://localhost:8100"
+# Locate .env: METABOT_HOME > ~/feishu-claudecode > ~/metabot > script dir
+_find_env() {
+  for d in "${METABOT_HOME:-}" "$HOME/feishu-claudecode" "$HOME/metabot"; do
+    [[ -n "$d" && -f "$d/.env" ]] && echo "$d/.env" && return
+  done
+  # Fallback: relative to this script's install location
+  local sd; sd="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+  [[ -f "$sd/.env" ]] && echo "$sd/.env" && return
+  echo ""
+}
+METABOT_ENV="$(_find_env)"
+if [[ -n "$METABOT_ENV" && -f "$METABOT_ENV" ]]; then
+  _admin_token=$(grep -oP '^MEMORY_ADMIN_TOKEN=\K.*' "$METABOT_ENV" 2>/dev/null || true)
+  _reader_token=$(grep -oP '^MEMORY_TOKEN=\K.*' "$METABOT_ENV" 2>/dev/null || true)
+  _secret=$(grep -oP '^API_SECRET=\K.*' "$METABOT_ENV" 2>/dev/null || true)
 fi
-# Token priority: MEMORY_ADMIN_TOKEN > MEMORY_TOKEN > API_SECRET > .env fallback
+MEMORY_URL="${MEMORY_URL:-http://localhost:8100}"
+
+# Token priority: MEMORY_ADMIN_TOKEN > MEMORY_TOKEN > API_SECRET
+# Each level checks env var first, then .env fallback
 if [[ -z "${MEMORY_AUTH:-}" ]]; then
-  if [[ -n "${MEMORY_ADMIN_TOKEN:-}" ]]; then
-    MEMORY_AUTH="Authorization: Bearer $MEMORY_ADMIN_TOKEN"
-  elif [[ -n "${MEMORY_TOKEN:-}" ]]; then
-    MEMORY_AUTH="Authorization: Bearer $MEMORY_TOKEN"
+  _token="${MEMORY_ADMIN_TOKEN:-${_admin_token:-}}"
+  if [[ -z "$_token" ]]; then
+    _token="${MEMORY_TOKEN:-${_reader_token:-}}"
+  fi
+  if [[ -z "$_token" ]]; then
+    _token="${API_SECRET:-${_secret:-}}"
+  fi
+  if [[ -n "$_token" ]]; then
+    MEMORY_AUTH="Authorization: Bearer $_token"
   else
-    _secret="${_secret:-${API_SECRET:-}}"
-    if [[ -n "$_secret" ]]; then
-      MEMORY_AUTH="Authorization: Bearer $_secret"
-    else
-      MEMORY_AUTH=""
-    fi
+    MEMORY_AUTH=""
   fi
 fi
 

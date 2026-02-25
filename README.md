@@ -169,7 +169,9 @@ curl -X POST localhost:9100/api/bots \
 | `API_SECRET` | — | Bearer token auth |
 | `MEMORY_ENABLED` | true | Enable MetaMemory |
 | `MEMORY_PORT` | 8100 | MetaMemory port |
-| `MEMORY_SECRET` | `API_SECRET` | MetaMemory auth |
+| `MEMORY_SECRET` | `API_SECRET` | MetaMemory auth (legacy) |
+| `MEMORY_ADMIN_TOKEN` | — | Admin token (full access, sees all folders) |
+| `MEMORY_TOKEN` | — | Reader token (shared folders only) |
 | `WEBHOOK_URLS` | — | Comma-separated webhook URLs for task completion notifications |
 | `LOG_LEVEL` | info | Log level |
 
@@ -198,6 +200,7 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 - Use `allowedTools` to restrict capabilities (remove `Bash` for read-only)
 - Use `maxBudgetUsd` to cap cost per request
 - `API_SECRET` enables Bearer auth on both the API server and MetaMemory
+- MetaMemory supports **folder-level ACL**: set `MEMORY_ADMIN_TOKEN` and `MEMORY_TOKEN` for dual-role access. Admin sees all folders; reader only sees folders with `visibility: shared`. Use `PUT /api/folders/:id` with `{"visibility":"private"}` to lock a folder
 
 ## Chat Commands
 
