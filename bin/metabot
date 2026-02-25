@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# metabot - MetaBot management CLI
+# Usage: metabot update | start | stop | restart | logs | status
+
+set -euo pipefail
+
+METABOT_HOME="${METABOT_HOME:-$HOME/metabot}"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
+success() { echo -e "${GREEN}[OK]${NC} $*"; }
+error()   { echo -e "${RED}[ERROR]${NC} $*"; }
+
+cmd_update() {
+  if [[ ! -d "$METABOT_HOME/.git" ]]; then
+    error "MetaBot not found at $METABOT_HOME"
+    echo "  Run the installer first: curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash"
+    exit 1
+  fi
+
+  info "Pulling latest code..."
+  cd "$METABOT_HOME"
+  git pull --ff-only || { error "git pull failed"; exit 1; }
+
+  info "Installing dependencies..."
+  npm install --production=false
+
+  info "Building..."
+  npm run build
+
+  info "Restarting MetaBot..."
+  pm2 restart metabot 2>/dev/null || pm2 start ecosystem.config.cjs
+  pm2 save --force 2>/dev/null || true
+
+  success "MetaBot updated and restarted!"
+}
+
+cmd_start()   { pm2 start "$METABOT_HOME/ecosystem.config.cjs"; pm2 save --force 2>/dev/null || true; }
+cmd_stop()    { pm2 stop metabot; }
+cmd_restart() { pm2 restart metabot; }
+cmd_logs()    { pm2 logs metabot "${@}"; }
+cmd_status()  { pm2 describe metabot; }
+
+case "${1:-help}" in
+  update|up)    cmd_update ;;
+  start)        cmd_start ;;
+  stop)         cmd_stop ;;
+  restart|rs)   cmd_restart ;;
+  logs|log)     shift; cmd_logs "$@" ;;
+  status|st)    cmd_status ;;
+  *)
+    echo -e "${BOLD}metabot${NC} - MetaBot management CLI"
+    echo ""
+    echo "  metabot update     Pull latest, rebuild, and restart"
+    echo "  metabot start      Start MetaBot with PM2"
+    echo "  metabot stop       Stop MetaBot"
+    echo "  metabot restart    Restart MetaBot"
+    echo "  metabot logs       View live logs (pass -n 100 etc.)"
+    echo "  metabot status     Show PM2 process status"
+    ;;
+esac
