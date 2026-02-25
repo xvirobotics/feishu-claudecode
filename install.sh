@@ -143,19 +143,73 @@ check_command() {
 MISSING=0
 check_command git "Git" "https://git-scm.com/downloads" || MISSING=1
 
+install_node() {
+  info "Installing Node.js 22.x via NodeSource..."
+  if [[ "$OS" == "Linux" ]]; then
+    if command -v apt-get &>/dev/null; then
+      # Debian/Ubuntu
+      curl -fsSL https://deb.nodesource.com/setup_22.x -o /tmp/nodesource_setup.sh
+      sudo -n bash /tmp/nodesource_setup.sh 2>/dev/null || sudo bash /tmp/nodesource_setup.sh
+      sudo -n apt-get install -y nodejs 2>/dev/null || sudo apt-get install -y nodejs
+      rm -f /tmp/nodesource_setup.sh
+    elif command -v dnf &>/dev/null; then
+      # Fedora/RHEL
+      curl -fsSL https://rpm.nodesource.com/setup_22.x -o /tmp/nodesource_setup.sh
+      sudo -n bash /tmp/nodesource_setup.sh 2>/dev/null || sudo bash /tmp/nodesource_setup.sh
+      sudo -n dnf install -y nodejs 2>/dev/null || sudo dnf install -y nodejs
+      rm -f /tmp/nodesource_setup.sh
+    elif command -v yum &>/dev/null; then
+      # CentOS/older RHEL
+      curl -fsSL https://rpm.nodesource.com/setup_22.x -o /tmp/nodesource_setup.sh
+      sudo -n bash /tmp/nodesource_setup.sh 2>/dev/null || sudo bash /tmp/nodesource_setup.sh
+      sudo -n yum install -y nodejs 2>/dev/null || sudo yum install -y nodejs
+      rm -f /tmp/nodesource_setup.sh
+    else
+      return 1
+    fi
+  elif [[ "$OS" == "Darwin" ]]; then
+    if command -v brew &>/dev/null; then
+      brew install node@22
+    else
+      return 1
+    fi
+  fi
+  # Verify
+  if command -v node &>/dev/null; then
+    success "Node.js installed: $(node --version)"
+    return 0
+  fi
+  return 1
+}
+
+NEED_NODE=false
 if command -v node &>/dev/null; then
   NODE_VER="$(node --version | sed 's/v//')"
   NODE_MAJOR="$(echo "$NODE_VER" | cut -d. -f1)"
-  if [[ "$NODE_MAJOR" -ge 18 ]]; then
+  if [[ "$NODE_MAJOR" -ge 20 ]]; then
     success "Node.js found: v${NODE_VER}"
   else
-    error "Node.js v${NODE_VER} found, but v18+ is required."
-    MISSING=1
+    warn "Node.js v${NODE_VER} found, but v20+ is required."
+    NEED_NODE=true
   fi
 else
-  error "Node.js not found."
-  echo "  Install: https://nodejs.org/ or use nvm/fnm"
-  MISSING=1
+  warn "Node.js not found."
+  NEED_NODE=true
+fi
+
+if [[ "$NEED_NODE" == "true" ]]; then
+  if prompt_yn "Install Node.js 22.x automatically?"; then
+    if install_node; then
+      success "Node.js ready"
+    else
+      error "Automatic install failed. Please install Node.js 20+ manually:"
+      echo "  https://nodejs.org/ or use nvm/fnm"
+      MISSING=1
+    fi
+  else
+    error "Node.js 20+ is required. Install manually and re-run."
+    exit 1
+  fi
 fi
 
 check_command npm "npm" "Comes with Node.js" || MISSING=1
