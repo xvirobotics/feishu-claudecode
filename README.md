@@ -151,7 +151,8 @@ curl -X POST localhost:9100/api/bots \
 | `defaultWorkingDirectory` | Yes | — | Working directory for Claude |
 | `feishuAppId` / `feishuAppSecret` | Feishu | — | Feishu app credentials |
 | `telegramBotToken` | Telegram | — | Telegram bot token |
-| `authorizedUserIds` | No | allow all | Access control |
+| `allowAll` | No | `false` | Allow all users (skip auth check) |
+| `authorizedUserIds` | No | — | User ID allowlist |
 | `allowedTools` | No | Read,Edit,Write,Glob,Grep,Bash | Claude tools whitelist |
 | `maxTurns` / `maxBudgetUsd` | No | unlimited | Execution limits |
 | `model` | No | SDK default | Claude model |
@@ -169,6 +170,7 @@ curl -X POST localhost:9100/api/bots \
 | `MEMORY_ENABLED` | true | Enable MetaMemory |
 | `MEMORY_PORT` | 8100 | MetaMemory port |
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory auth |
+| `WEBHOOK_URLS` | — | Comma-separated webhook URLs for task completion notifications |
 | `LOG_LEVEL` | info | Log level |
 
 </details>
@@ -218,11 +220,15 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `GET` | `/api/health` | Health check |
 | `GET` | `/api/bots` | List bots |
 | `POST` | `/api/bots` | Create bot at runtime |
+| `GET` | `/api/bots/:name` | Get bot details |
 | `DELETE` | `/api/bots/:name` | Remove bot |
 | `POST` | `/api/tasks` | Delegate task to a bot |
 | `POST` | `/api/schedule` | Schedule future task |
 | `GET` | `/api/schedule` | List scheduled tasks |
+| `PATCH` | `/api/schedule/:id` | Update a scheduled task |
 | `DELETE` | `/api/schedule/:id` | Cancel scheduled task |
+| `GET` | `/api/stats` | Cost & usage stats (per-bot, per-user) |
+| `GET` | `/api/metrics` | Prometheus metrics endpoint |
 
 ## CLI Tools
 
@@ -239,6 +245,16 @@ mb bots                        # list all bots
 mb task <bot> <chatId> <prompt>  # delegate task
 mb schedule list               # list scheduled tasks
 mb health                      # status check
+```
+
+## Development
+
+```bash
+npm run dev          # Hot-reload dev server (tsx)
+npm test             # Run tests (vitest, 71 tests)
+npm run lint         # ESLint check
+npm run format       # Prettier format
+npm run build        # TypeScript compile to dist/
 ```
 
 ## Production

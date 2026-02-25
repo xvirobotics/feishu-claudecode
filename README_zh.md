@@ -151,7 +151,8 @@ curl -X POST localhost:9100/api/bots \
 | `defaultWorkingDirectory` | 是 | — | Claude 的工作目录 |
 | `feishuAppId` / `feishuAppSecret` | 飞书 | — | 飞书应用凭证 |
 | `telegramBotToken` | Telegram | — | Telegram Bot Token |
-| `authorizedUserIds` | 否 | 不限 | 访问控制 |
+| `allowAll` | 否 | `false` | 允许所有用户（跳过鉴权） |
+| `authorizedUserIds` | 否 | — | 用户 ID 白名单 |
 | `allowedTools` | 否 | Read,Edit,Write,Glob,Grep,Bash | Claude 可用工具 |
 | `maxTurns` / `maxBudgetUsd` | 否 | 不限 | 执行限制 |
 | `model` | 否 | SDK 默认 | Claude 模型 |
@@ -169,6 +170,7 @@ curl -X POST localhost:9100/api/bots \
 | `MEMORY_ENABLED` | true | 启用 MetaMemory |
 | `MEMORY_PORT` | 8100 | MetaMemory 端口 |
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory 认证 |
+| `WEBHOOK_URLS` | — | 逗号分隔的 Webhook URL，任务完成后发通知 |
 | `LOG_LEVEL` | info | 日志级别 |
 
 </details>
@@ -218,11 +220,15 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `GET` | `/api/health` | 健康检查 |
 | `GET` | `/api/bots` | 列出 Bot |
 | `POST` | `/api/bots` | 运行时创建 Bot |
+| `GET` | `/api/bots/:name` | 获取 Bot 详情 |
 | `DELETE` | `/api/bots/:name` | 删除 Bot |
 | `POST` | `/api/tasks` | 委派任务给 Bot |
 | `POST` | `/api/schedule` | 创建定时任务 |
 | `GET` | `/api/schedule` | 列出定时任务 |
+| `PATCH` | `/api/schedule/:id` | 更新定时任务 |
 | `DELETE` | `/api/schedule/:id` | 取消定时任务 |
+| `GET` | `/api/stats` | 费用与使用统计（按 Bot/用户） |
+| `GET` | `/api/metrics` | Prometheus 监控指标 |
 
 ## CLI 工具
 
@@ -239,6 +245,16 @@ mb bots                        # 列出所有 Bot
 mb task <bot> <chatId> <prompt>  # 委派任务
 mb schedule list               # 列出定时任务
 mb health                      # 状态检查
+```
+
+## 开发
+
+```bash
+npm run dev          # 热重载开发服务器（tsx）
+npm test             # 运行测试（vitest，71 个测试）
+npm run lint         # ESLint 检查
+npm run format       # Prettier 格式化
+npm run build        # TypeScript 编译到 dist/
 ```
 
 ## 生产部署
