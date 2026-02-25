@@ -12,7 +12,6 @@
       "feishuAppId": "cli_yyy",
       "feishuAppSecret": "secret2",
       "defaultWorkingDirectory": "/home/user/project-beta",
-      "allowAll": true,
       "allowedTools": ["Read", "Edit", "Write", "Glob", "Grep", "Bash"],
       "maxTurns": 30,
       "maxBudgetUsd": 0.5

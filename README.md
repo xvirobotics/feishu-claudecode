@@ -151,7 +151,7 @@ curl -X POST localhost:9100/api/bots \
 | `defaultWorkingDirectory` | Yes | — | Working directory for Claude |
 | `feishuAppId` / `feishuAppSecret` | Feishu | — | Feishu app credentials |
 | `telegramBotToken` | Telegram | — | Telegram bot token |
-| `allowAll` | No | `false` | Allow all users (skip auth check) |
+| `allowAll` | No | `true` | Allow all users (skip auth check) |
 | `authorizedUserIds` | No | — | User ID allowlist |
 | `allowedTools` | No | Read,Edit,Write,Glob,Grep,Bash | Claude tools whitelist |
 | `maxTurns` / `maxBudgetUsd` | No | unlimited | Execution limits |
