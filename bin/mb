@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# mb - MetaBot API CLI (installed by MetaBot)
+# Standalone executable — works without sourcing any file.
+
+set -euo pipefail
+
+# --- Config: env vars > .env file > defaults ---
+if [[ -z "${METABOT_URL:-}" ]]; then
+  METABOT_ENV="${METABOT_HOME:-$HOME/metabot}/.env"
+  if [[ -f "$METABOT_ENV" ]]; then
+    _port=$(grep -oP '^API_PORT=\K.*' "$METABOT_ENV" 2>/dev/null || true)
+    _secret=$(grep -oP '^API_SECRET=\K.*' "$METABOT_ENV" 2>/dev/null || true)
+  fi
+  METABOT_URL="http://localhost:${_port:-9100}"
+fi
+if [[ -z "${METABOT_AUTH:-}" ]]; then
+  _secret="${_secret:-${API_SECRET:-changeme}}"
+  METABOT_AUTH="Authorization: Bearer $_secret"
+fi
+
+_json() { python3 -m json.tool 2>/dev/null || cat; }
+
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+  # --- Bot management ---
+  bots|b)
+    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots" | _json
+    ;;
+  bot)
+    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots/$1" | _json
+    ;;
+  # --- Task delegation ---
+  task|t)
+    bot="$1" chat="$2"; shift 2 2>/dev/null || true
+    prompt="$*"
+    if [[ -z "${bot:-}" || -z "${chat:-}" || -z "${prompt:-}" ]]; then
+      echo "Usage: mb task <botName> <chatId> <prompt>"
+      exit 1
+    fi
+    curl -s -X POST "$METABOT_URL/api/tasks" \
+      -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+      -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"prompt\":\"$prompt\",\"sendCards\":false}"
+    ;;
+  # --- Scheduling ---
+  schedule|sched|sc)
+    subcmd="${1:-list}"; shift 2>/dev/null || true
+    case "$subcmd" in
+      list|ls)
+        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/schedule" | _json
+        ;;
+      add|a)
+        bot="$1" chat="$2" delay="$3"; shift 3 2>/dev/null || true
+        prompt="$*"
+        if [[ -z "${bot:-}" || -z "${chat:-}" || -z "${delay:-}" || -z "${prompt:-}" ]]; then
+          echo "Usage: mb schedule add <botName> <chatId> <delaySeconds> <prompt>"
+          exit 1
+        fi
+        curl -s -X POST "$METABOT_URL/api/schedule" \
+          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+          -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"delaySeconds\":$delay,\"prompt\":\"$prompt\"}"
+        ;;
+      cancel|rm)
+        if [[ -z "${1:-}" ]]; then echo "Usage: mb schedule cancel <id>"; exit 1; fi
+        curl -s -X DELETE "$METABOT_URL/api/schedule/$1" -H "$METABOT_AUTH"
+        ;;
+      *)
+        echo "mb schedule - Task scheduling"
+        echo "  mb schedule list                                    - List pending tasks"
+        echo "  mb schedule add <bot> <chatId> <delaySec> <prompt>  - Schedule a task"
+        echo "  mb schedule cancel <id>                             - Cancel a task"
+        ;;
+    esac
+    ;;
+  # --- Health ---
+  health|h)
+    curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health" | _json
+    ;;
+  # --- Help ---
+  *)
+    echo "mb - MetaBot API CLI"
+    echo ""
+    echo "  Bots:"
+    echo "    mb bots                          - List all bots"
+    echo "    mb bot <name>                    - Get bot details"
+    echo ""
+    echo "  Tasks:"
+    echo "    mb task <bot> <chatId> <prompt>  - Delegate task to a bot"
+    echo ""
+    echo "  Scheduling:"
+    echo "    mb schedule list                 - List pending scheduled tasks"
+    echo "    mb schedule add <bot> <chatId> <delaySec> <prompt>"
+    echo "    mb schedule cancel <id>          - Cancel a scheduled task"
+    echo ""
+    echo "  System:"
+    echo "    mb health                        - Health check"
+    ;;
+esac

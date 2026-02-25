@@ -719,6 +719,29 @@ fi
 # Source it in the current shell so mm/mb work immediately after install
 source "$BASH_ALIASES" 2>/dev/null || true
 
+# Install mm/mb as standalone executables in ~/.local/bin (no source needed)
+LOCAL_BIN="$HOME/.local/bin"
+mkdir -p "$LOCAL_BIN"
+for cli in mm mb; do
+  if [[ -f "$METABOT_HOME/bin/$cli" ]]; then
+    cp "$METABOT_HOME/bin/$cli" "$LOCAL_BIN/$cli"
+    chmod +x "$LOCAL_BIN/$cli"
+    # Patch secrets into the standalone script
+    if [[ -n "${API_SECRET:-}" ]]; then
+      sed -i "s|changeme|${API_SECRET}|g" "$LOCAL_BIN/$cli"
+    fi
+    if [[ -n "${API_PORT:-}" && "$cli" == "mb" ]]; then
+      sed -i "s|9100|${API_PORT}|g" "$LOCAL_BIN/$cli"
+    fi
+  fi
+done
+# Ensure ~/.local/bin is in PATH (most distros include it, but not all)
+if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
+  echo "export PATH=\"$LOCAL_BIN:\$PATH\"" >> "$HOME/.bashrc"
+  info "Added ~/.local/bin to PATH in ~/.bashrc"
+fi
+success "mm/mb CLI tools installed to $LOCAL_BIN (available without sourcing)"
+
 # ============================================================================
 # Phase 8: Build + Start MetaBot with PM2
 # ============================================================================

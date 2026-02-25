@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# mm - MetaMemory CLI (installed by MetaBot)
+# Standalone executable — works without sourcing any file.
+
+set -euo pipefail
+
+# --- Config: env vars > .env file > defaults ---
+if [[ -z "${MEMORY_URL:-}" ]]; then
+  # Try to read from MetaBot .env
+  METABOT_ENV="${METABOT_HOME:-$HOME/metabot}/.env"
+  if [[ -f "$METABOT_ENV" ]]; then
+    _secret=$(grep -oP '^API_SECRET=\K.*' "$METABOT_ENV" 2>/dev/null || true)
+  fi
+  MEMORY_URL="http://localhost:8100"
+fi
+if [[ -z "${MEMORY_AUTH:-}" ]]; then
+  _secret="${_secret:-${API_SECRET:-changeme}}"
+  MEMORY_AUTH="Authorization: Bearer $_secret"
+fi
+
+cmd="${1:-help}"
+shift 2>/dev/null || true
+
+case "$cmd" in
+  search|s)
+    query=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$*'))" 2>/dev/null || echo "$*")
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/search?q=$query"
+    ;;
+  get|g)
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents/$1"
+    ;;
+  list|ls)
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents?folder_id=${1:-root}&limit=50"
+    ;;
+  folders|f)
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/folders"
+    ;;
+  create|c)
+    title="$1"; shift
+    content="$*"
+    curl -s -X POST "$MEMORY_URL/api/documents" \
+      -H "$MEMORY_AUTH" -H "Content-Type: application/json" \
+      -d "{\"title\":\"$title\",\"folder_id\":\"root\",\"content\":\"$content\"}"
+    ;;
+  health|h)
+    curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/health"
+    ;;
+  *)
+    echo "mm - MetaMemory CLI"
+    echo ""
+    echo "  mm search <query>       - Search documents"
+    echo "  mm get <doc_id>         - Get document by ID"
+    echo "  mm list [folder_id]     - List documents (default: root)"
+    echo "  mm folders              - List folder tree"
+    echo "  mm create <title> <md>  - Create a document"
+    echo "  mm health               - Health check"
+    ;;
+esac

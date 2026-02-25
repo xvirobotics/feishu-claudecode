@@ -59,6 +59,7 @@ MetaBot 解放了它。给每个 Agent 一个 Claude Code 大脑、持久化的�
 | **IM Bridge** | 飞书或 Telegram（含手机端）与任意 Agent 对话。带颜色状态的流式卡片 + 工具调用追踪。 |
 | **Agent 总线** | 9100 端口 REST API。Agent 通过 `curl` 互相委派任务。运行时创建/删除 Bot。以 `/metabot-api` skill 形式按需加载，不注入每次对话。 |
 | **定时任务调度器** | Agent 安排未来的工作 —— "2小时后检查一下"。跨重启持久化，忙时自动重试。 |
+| **CLI 工具** | `mm` 和 `mb` 命令安装到 `~/.local/bin/`。在任意终端管理 MetaMemory 和 Agent 总线 —— 无需 source。 |
 
 ## 安装
 
@@ -222,6 +223,23 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `POST` | `/api/schedule` | 创建定时任务 |
 | `GET` | `/api/schedule` | 列出定时任务 |
 | `DELETE` | `/api/schedule/:id` | 取消定时任务 |
+
+## CLI 工具
+
+安装器将 `mm` 和 `mb` 可执行文件放到 `~/.local/bin/`，安装后立即可用，无需 `source`。
+
+```bash
+# MetaMemory
+mm search "部署指南"            # 全文搜索
+mm list                        # 列出文档
+mm health                      # 状态检查
+
+# Agent 总线
+mb bots                        # 列出所有 Bot
+mb task <bot> <chatId> <prompt>  # 委派任务
+mb schedule list               # 列出定时任务
+mb health                      # 状态检查
+```
 
 ## 生产部署
 

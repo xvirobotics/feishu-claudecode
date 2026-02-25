@@ -59,6 +59,7 @@ We built MetaBot to run [XVI Robotics](https://github.com/xvirobotics) as an **a
 | **IM Bridge** | Chat with any agent from Feishu/Lark or Telegram (including mobile). Streaming cards with color-coded status and tool call tracking. |
 | **Agent Bus** | REST API on port 9100. Agents delegate tasks to each other via `curl`. Create/remove bots at runtime. Exposed as the `/metabot-api` skill — loaded on demand, not injected into every prompt. |
 | **Task Scheduler** | Agents schedule future work — "check back in 2 hours". Persists across restarts, auto-retries when busy. |
+| **CLI Tools** | `mm` and `mb` commands installed to `~/.local/bin/`. Manage MetaMemory and Agent Bus from any terminal — no shell sourcing required. |
 
 ## Install
 
@@ -222,6 +223,23 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `POST` | `/api/schedule` | Schedule future task |
 | `GET` | `/api/schedule` | List scheduled tasks |
 | `DELETE` | `/api/schedule/:id` | Cancel scheduled task |
+
+## CLI Tools
+
+The installer places `mm` and `mb` executables in `~/.local/bin/` — available immediately, no `source` needed.
+
+```bash
+# MetaMemory
+mm search "deployment guide"   # full-text search
+mm list                        # list documents
+mm health                      # status check
+
+# Agent Bus
+mb bots                        # list all bots
+mb task <bot> <chatId> <prompt>  # delegate task
+mb schedule list               # list scheduled tasks
+mb health                      # status check
+```
 
 ## Production
 
