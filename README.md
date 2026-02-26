@@ -174,6 +174,8 @@ curl -X POST localhost:9100/api/bots \
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory auth (legacy) |
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access, sees all folders) |
 | `MEMORY_TOKEN` | — | Reader token (shared folders only) |
+| `WIKI_SYNC_ENABLED` | true | Enable MetaMemory→Wiki sync (requires Feishu bot) |
+| `WIKI_SPACE_NAME` | MetaMemory | Feishu Wiki space name |
 | `WEBHOOK_URLS` | — | Comma-separated webhook URLs for task completion notifications |
 | `LOG_LEVEL` | info | Log level |
 
@@ -213,6 +215,8 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `/status` | Session info |
 | `/memory list` | Browse knowledge tree |
 | `/memory search <query>` | Search knowledge base |
+| `/sync` | Sync MetaMemory to Feishu Wiki |
+| `/sync status` | Show wiki sync status |
 | `/help` | Show help |
 | `/metaskill ...` | Generate agent teams, agents, or skills |
 | `/metabot` | Agent bus, scheduling, and bot management API docs (loaded on demand) |
@@ -234,6 +238,9 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `DELETE` | `/api/schedule/:id` | Cancel scheduled task |
 | `POST` | `/api/schedule/:id/pause` | Pause a recurring task |
 | `POST` | `/api/schedule/:id/resume` | Resume a paused recurring task |
+| `POST` | `/api/sync` | Trigger MetaMemory → Wiki sync |
+| `GET` | `/api/sync` | Wiki sync status |
+| `POST` | `/api/sync/document` | Sync single document by ID |
 | `GET` | `/api/stats` | Cost & usage stats (per-bot, per-user) |
 | `GET` | `/api/metrics` | Prometheus metrics endpoint |
 
@@ -277,7 +284,7 @@ mb health                           # status check
 
 ```bash
 npm run dev          # Hot-reload dev server (tsx)
-npm test             # Run tests (vitest, 93 tests)
+npm test             # Run tests (vitest, 151 tests)
 npm run lint         # ESLint check
 npm run format       # Prettier format
 npm run build        # TypeScript compile to dist/

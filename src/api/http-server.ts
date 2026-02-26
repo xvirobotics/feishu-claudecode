@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import type { Logger } from '../utils/logger.js';
 import type { BotRegistry } from './bot-registry.js';
 import type { TaskScheduler } from '../scheduler/task-scheduler.js';
+import type { DocSync } from '../sync/doc-sync.js';
 import { addBot, removeBot, getBotEntry } from './bots-config-writer.js';
 import { installSkillsToWorkDir } from './skills-installer.js';
 import { metrics } from '../utils/metrics.js';
@@ -14,6 +15,7 @@ interface ApiServerOptions {
   scheduler: TaskScheduler;
   logger: Logger;
   botsConfigPath?: string;
+  docSync?: DocSync;
 }
 
 interface JsonBody {
@@ -63,7 +65,7 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   const server = http.createServer(async (req, res) => {
@@ -520,6 +522,60 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         const body = metrics.serialize();
         res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
         res.end(body);
+        return;
+      }
+
+      // Route: POST /api/sync — trigger wiki sync
+      if (method === 'POST' && url === '/api/sync') {
+        if (!docSync) {
+          jsonResponse(res, 400, { error: 'Wiki sync is not configured' });
+          return;
+        }
+        if (docSync.isSyncing()) {
+          jsonResponse(res, 409, { error: 'Sync already in progress' });
+          return;
+        }
+        // Run sync in background, return immediately
+        const syncPromise = docSync.syncAll();
+        syncPromise.then((result) => {
+          logger.info({ result }, 'API-triggered wiki sync complete');
+        }).catch((err) => {
+          logger.error({ err }, 'API-triggered wiki sync failed');
+        });
+        jsonResponse(res, 202, { status: 'sync_started' });
+        return;
+      }
+
+      // Route: GET /api/sync — get sync status
+      if (method === 'GET' && url === '/api/sync') {
+        if (!docSync) {
+          jsonResponse(res, 400, { error: 'Wiki sync is not configured' });
+          return;
+        }
+        const stats = docSync.getStats();
+        jsonResponse(res, 200, {
+          syncing: docSync.isSyncing(),
+          wikiSpaceId: stats.wikiSpaceId,
+          documentCount: stats.documentCount,
+          folderCount: stats.folderCount,
+        });
+        return;
+      }
+
+      // Route: POST /api/sync/document — sync a single document by ID
+      if (method === 'POST' && url === '/api/sync/document') {
+        if (!docSync) {
+          jsonResponse(res, 400, { error: 'Wiki sync is not configured' });
+          return;
+        }
+        const body = await parseJsonBody(req);
+        const docId = body.docId as string;
+        if (!docId) {
+          jsonResponse(res, 400, { error: 'Missing required field: docId' });
+          return;
+        }
+        const result = await docSync.syncDocument(docId);
+        jsonResponse(res, result.success ? 200 : 500, result);
         return;
       }
 

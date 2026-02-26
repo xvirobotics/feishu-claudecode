@@ -210,6 +210,8 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `/status` | 查看会话状态 |
 | `/memory list` | 浏览知识库目录 |
 | `/memory search 关键词` | 搜索知识库 |
+| `/sync` | 同步 MetaMemory 到飞书知识库 |
+| `/sync status` | 查看同步状态 |
 | `/help` | 帮助 |
 | `/metaskill ...` | 生成 Agent 团队、Agent 或 Skill |
 | `/metabot` | Agent 总线、定时任务、Bot 管理 API 文档（按需加载） |
@@ -231,6 +233,9 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `DELETE` | `/api/schedule/:id` | 取消定时任务 |
 | `POST` | `/api/schedule/:id/pause` | 暂停周期性任务 |
 | `POST` | `/api/schedule/:id/resume` | 恢复已暂停的周期性任务 |
+| `POST` | `/api/sync` | 触发 MetaMemory → Wiki 同步 |
+| `GET` | `/api/sync` | 查看同步状态 |
+| `POST` | `/api/sync/document` | 按 ID 同步单个文档 |
 | `GET` | `/api/stats` | 费用与使用统计（按 Bot/用户） |
 | `GET` | `/api/metrics` | Prometheus 监控指标 |
 

@@ -4,6 +4,7 @@ import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
+import type { DocSync } from '../sync/doc-sync.js';
 import { ClaudeExecutor, type ExecutionHandle } from '../claude/executor.js';
 import { StreamProcessor } from '../claude/stream-processor.js';
 import { SessionManager } from '../claude/session-manager.js';
@@ -84,6 +85,11 @@ export class MessageBridge {
     );
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
+  }
+
+  /** Inject the doc sync service for /sync commands. */
+  setDocSync(docSync: DocSync): void {
+    this.commandHandler.setDocSync(docSync);
   }
 
   isBusy(chatId: string): boolean {

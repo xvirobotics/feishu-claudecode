@@ -26,6 +26,18 @@ export interface SearchResult {
   updated_at: string;
 }
 
+export interface FullDocument {
+  id: string;
+  title: string;
+  folder_id: string;
+  path: string;
+  content: string;
+  tags: string[];
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface HealthStatus {
   status: string;
   document_count: number;
@@ -80,6 +92,29 @@ export class MemoryClient {
     params.set('limit', String(limit));
     const raw = await this.request<unknown>(`/api/documents?${params}`);
     return this.unwrapArray<DocumentSummary>(raw, 'documents');
+  }
+
+  async getDocument(docId: string): Promise<FullDocument | null> {
+    try {
+      const raw = await this.request<unknown>(`/api/documents/${docId}`);
+      if (raw && typeof raw === 'object') {
+        const doc = (raw as any).document || raw;
+        return {
+          id: doc.id,
+          title: doc.title,
+          folder_id: doc.folder_id,
+          path: doc.path,
+          content: doc.content || '',
+          tags: Array.isArray(doc.tags) ? doc.tags : [],
+          created_by: doc.created_by || '',
+          created_at: doc.created_at || '',
+          updated_at: doc.updated_at || '',
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   async search(query: string, limit = 20): Promise<SearchResult[]> {
