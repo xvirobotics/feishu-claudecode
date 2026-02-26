@@ -1,9 +1,11 @@
+const path = require('path');
+
 module.exports = {
   apps: [
     {
       name: 'metabot',
       script: 'src/index.ts',
-      interpreter: 'node_modules/.bin/tsx',
+      interpreter: path.join(__dirname, 'node_modules/.bin/tsx'),
       cwd: __dirname,
 
       // Watch for code changes and auto-restart
