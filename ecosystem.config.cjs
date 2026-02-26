@@ -1,15 +1,15 @@
+const path = require('path');
+
 module.exports = {
   apps: [
     {
       name: 'metabot',
       script: 'src/index.ts',
-      interpreter: 'node_modules/.bin/tsx',
+      interpreter: path.join(__dirname, 'node_modules/.bin/tsx'),
       cwd: __dirname,
 
-      // Watch for code changes and auto-restart
-      watch: ['src', 'bots.json'],
-      watch_delay: 1000,
-      ignore_watch: ['node_modules', 'dist', '*.log', 'nohup.out'],
+      // Watch disabled — use `metabot restart` to apply code changes manually
+      watch: false,
 
       // Auto-restart on crash
       autorestart: true,

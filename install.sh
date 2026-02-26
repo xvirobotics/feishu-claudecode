@@ -533,11 +533,11 @@ if [[ -d "$HOME/.claude/skills/memory" ]]; then
 fi
 success "metamemory skill installed → $SKILLS_DIR/metamemory"
 
-# Install metabot-api skill (bundled in src/skills/metabot-api/)
-info "Installing metabot-api skill..."
-mkdir -p "$SKILLS_DIR/metabot-api"
-cp "$METABOT_HOME/src/skills/metabot-api/SKILL.md" "$SKILLS_DIR/metabot-api/SKILL.md"
-success "metabot-api skill installed → $SKILLS_DIR/metabot-api"
+# Install metabot skill (bundled in src/skills/metabot/)
+info "Installing metabot skill..."
+mkdir -p "$SKILLS_DIR/metabot"
+cp "$METABOT_HOME/src/skills/metabot/SKILL.md" "$SKILLS_DIR/metabot/SKILL.md"
+success "metabot skill installed → $SKILLS_DIR/metabot"
 
 # Determine working directory
 if [[ "$SKIP_CONFIG" == "false" ]]; then
@@ -560,7 +560,7 @@ if [[ -n "${DEPLOY_WORK_DIR:-}" ]]; then
   SKILLS_DEST="$DEPLOY_WORK_DIR/.claude/skills"
 
   # Copy skills
-  for SKILL in metaskill metamemory metabot-api; do
+  for SKILL in metaskill metamemory metabot; do
     if [[ -d "$SKILLS_DIR/$SKILL" ]]; then
       mkdir -p "$SKILLS_DEST/$SKILL"
       cp -r "$SKILLS_DIR/$SKILL/." "$SKILLS_DEST/$SKILL/"
