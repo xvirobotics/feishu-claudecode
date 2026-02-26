@@ -4,6 +4,9 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Logger } from '../utils/logger.js';
 import type { BotRegistry } from '../api/bot-registry.js';
+import { isValidCron, nextCronOccurrence, getDefaultTimezone } from './cron-utils.js';
+
+// --- One-time task types (unchanged) ---
 
 export interface ScheduledTask {
   id: string;
@@ -16,6 +19,7 @@ export interface ScheduledTask {
   status: 'pending' | 'executing' | 'completed' | 'failed' | 'cancelled';
   createdAt: number;
   retryCount: number;
+  parentRecurringId?: string;  // set if spawned by a recurring task
 }
 
 export interface ScheduleInput {
@@ -34,19 +38,67 @@ export interface ScheduleUpdateInput {
   sendCards?: boolean;
 }
 
+// --- Recurring task types ---
+
+export interface RecurringTask {
+  id: string;
+  botName: string;
+  chatId: string;
+  prompt: string;
+  cronExpr: string;           // 5-field cron: "minute hour dom month dow"
+  timezone: string;           // IANA timezone, e.g. "Asia/Shanghai"
+  sendCards: boolean;
+  label?: string;
+  status: 'active' | 'paused' | 'cancelled';
+  createdAt: number;          // Unix ms
+  nextExecuteAt: number;      // Unix ms — precomputed next fire time
+  lastExecutedAt?: number;    // Unix ms
+  currentChildId?: string;    // ID of the currently pending/executing child task
+}
+
+export interface RecurringScheduleInput {
+  botName: string;
+  chatId: string;
+  prompt: string;
+  cronExpr: string;
+  timezone?: string;
+  sendCards?: boolean;
+  label?: string;
+}
+
+export interface RecurringUpdateInput {
+  prompt?: string;
+  cronExpr?: string;
+  timezone?: string;
+  label?: string;
+  sendCards?: boolean;
+}
+
+// --- Persistence format ---
+
+interface PersistedData {
+  tasks: ScheduledTask[];
+  recurringTasks: RecurringTask[];
+}
+
+// --- Constants ---
+
 const MAX_RETRIES = 5;
 const RETRY_DELAY_MS = 30_000; // 30 seconds
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+const MAX_SETTIMEOUT_MS = 2_147_483_647; // 2^31 - 1 (~24.8 days)
 const PERSIST_DIR = path.join(os.homedir(), '.metabot');
 const PERSIST_FILE = path.join(PERSIST_DIR, 'scheduled-tasks.json');
 
 /**
- * Manages scheduled tasks with persistence and timers.
+ * Manages scheduled tasks (one-time and recurring) with persistence and timers.
  * Tasks fire via setTimeout and call bridge.executeApiTask().
  */
 export class TaskScheduler {
   private tasks = new Map<string, ScheduledTask>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private recurringTasks = new Map<string, RecurringTask>();
+  private recurringTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private registry: BotRegistry,
@@ -54,6 +106,8 @@ export class TaskScheduler {
   ) {
     this.loadFromDisk();
   }
+
+  // ===== One-time task methods (unchanged) =====
 
   scheduleTask(input: ScheduleInput): ScheduledTask {
     const now = Date.now();
@@ -123,13 +177,153 @@ export class TaskScheduler {
     return this.listTasks().length;
   }
 
+  // ===== Recurring task methods =====
+
+  scheduleRecurring(input: RecurringScheduleInput): RecurringTask {
+    if (!isValidCron(input.cronExpr)) {
+      throw new Error(`Invalid cron expression: ${input.cronExpr}`);
+    }
+
+    const tz = input.timezone || getDefaultTimezone();
+    const now = Date.now();
+    const nextMs = nextCronOccurrence(input.cronExpr, tz);
+
+    const recurring: RecurringTask = {
+      id: crypto.randomUUID(),
+      botName: input.botName,
+      chatId: input.chatId,
+      prompt: input.prompt,
+      cronExpr: input.cronExpr,
+      timezone: tz,
+      sendCards: input.sendCards ?? true,
+      label: input.label,
+      status: 'active',
+      createdAt: now,
+      nextExecuteAt: nextMs,
+    };
+
+    this.recurringTasks.set(recurring.id, recurring);
+    this.setRecurringTimer(recurring);
+    this.saveToDisk();
+
+    this.logger.info(
+      { taskId: recurring.id, botName: recurring.botName, chatId: recurring.chatId, cronExpr: recurring.cronExpr, timezone: tz, nextExecuteAt: new Date(nextMs).toISOString(), label: recurring.label },
+      'Recurring task created',
+    );
+    return recurring;
+  }
+
+  updateRecurring(id: string, input: RecurringUpdateInput): RecurringTask | null {
+    const recurring = this.recurringTasks.get(id);
+    if (!recurring || recurring.status === 'cancelled') return null;
+
+    if (input.prompt !== undefined) recurring.prompt = input.prompt;
+    if (input.label !== undefined) recurring.label = input.label;
+    if (input.sendCards !== undefined) recurring.sendCards = input.sendCards;
+
+    let recomputeNext = false;
+    if (input.cronExpr !== undefined) {
+      if (!isValidCron(input.cronExpr)) {
+        throw new Error(`Invalid cron expression: ${input.cronExpr}`);
+      }
+      recurring.cronExpr = input.cronExpr;
+      recomputeNext = true;
+    }
+    if (input.timezone !== undefined) {
+      recurring.timezone = input.timezone;
+      recomputeNext = true;
+    }
+
+    if (recomputeNext && recurring.status === 'active') {
+      const timer = this.recurringTimers.get(id);
+      if (timer) clearTimeout(timer);
+      recurring.nextExecuteAt = nextCronOccurrence(recurring.cronExpr, recurring.timezone);
+      this.setRecurringTimer(recurring);
+    }
+
+    this.saveToDisk();
+    this.logger.info({ taskId: id, updates: input }, 'Recurring task updated');
+    return recurring;
+  }
+
+  pauseRecurring(id: string): boolean {
+    const recurring = this.recurringTasks.get(id);
+    if (!recurring || recurring.status !== 'active') return false;
+
+    recurring.status = 'paused';
+    const timer = this.recurringTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this.recurringTimers.delete(id);
+    }
+    this.saveToDisk();
+
+    this.logger.info({ taskId: id }, 'Recurring task paused');
+    return true;
+  }
+
+  resumeRecurring(id: string): boolean {
+    const recurring = this.recurringTasks.get(id);
+    if (!recurring || recurring.status !== 'paused') return false;
+
+    recurring.status = 'active';
+    recurring.nextExecuteAt = nextCronOccurrence(recurring.cronExpr, recurring.timezone);
+    this.setRecurringTimer(recurring);
+    this.saveToDisk();
+
+    this.logger.info({ taskId: id, nextExecuteAt: new Date(recurring.nextExecuteAt).toISOString() }, 'Recurring task resumed');
+    return true;
+  }
+
+  cancelRecurring(id: string): boolean {
+    const recurring = this.recurringTasks.get(id);
+    if (!recurring || recurring.status === 'cancelled') return false;
+
+    recurring.status = 'cancelled';
+    const timer = this.recurringTimers.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      this.recurringTimers.delete(id);
+    }
+
+    // Also cancel any pending child task
+    if (recurring.currentChildId) {
+      this.cancelTask(recurring.currentChildId);
+      recurring.currentChildId = undefined;
+    }
+
+    this.saveToDisk();
+    this.logger.info({ taskId: id }, 'Recurring task cancelled');
+    return true;
+  }
+
+  listRecurringTasks(): RecurringTask[] {
+    return Array.from(this.recurringTasks.values()).filter((t) => t.status !== 'cancelled');
+  }
+
+  getRecurringTask(id: string): RecurringTask | undefined {
+    return this.recurringTasks.get(id);
+  }
+
+  recurringTaskCount(): number {
+    return this.listRecurringTasks().length;
+  }
+
+  // ===== Lifecycle =====
+
   destroy(): void {
     for (const timer of this.timers.values()) {
       clearTimeout(timer);
     }
     this.timers.clear();
+    for (const timer of this.recurringTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.recurringTimers.clear();
     this.saveToDisk();
   }
+
+  // ===== One-time timer internals =====
 
   private setTimer(task: ScheduledTask): void {
     const delay = Math.max(0, task.executeAt - Date.now());
@@ -204,10 +398,93 @@ export class TaskScheduler {
     this.saveToDisk();
   }
 
+  // ===== Recurring timer internals =====
+
+  private setRecurringTimer(recurring: RecurringTask): void {
+    const delay = Math.max(0, recurring.nextExecuteAt - Date.now());
+
+    // setTimeout has a max delay of ~24.8 days (2^31 - 1 ms).
+    // For longer delays, set a re-check timer that recomputes when it fires.
+    if (delay > MAX_SETTIMEOUT_MS) {
+      const timer = setTimeout(() => {
+        this.recurringTimers.delete(recurring.id);
+        // Recompute — if still in the future, set another timer; if now, fire.
+        this.setRecurringTimer(recurring);
+      }, MAX_SETTIMEOUT_MS);
+      this.recurringTimers.set(recurring.id, timer);
+      return;
+    }
+
+    const timer = setTimeout(() => this.fireRecurringInstance(recurring.id), delay);
+    this.recurringTimers.set(recurring.id, timer);
+  }
+
+  private async fireRecurringInstance(recurringId: string): Promise<void> {
+    const recurring = this.recurringTasks.get(recurringId);
+    if (!recurring || recurring.status !== 'active') return;
+
+    this.recurringTimers.delete(recurringId);
+
+    // Create a one-time child task for this occurrence
+    const child: ScheduledTask = {
+      id: crypto.randomUUID(),
+      botName: recurring.botName,
+      chatId: recurring.chatId,
+      prompt: recurring.prompt,
+      executeAt: Date.now(),
+      sendCards: recurring.sendCards,
+      label: recurring.label ? `${recurring.label} (recurring)` : undefined,
+      status: 'pending',
+      createdAt: Date.now(),
+      retryCount: 0,
+      parentRecurringId: recurring.id,
+    };
+
+    this.tasks.set(child.id, child);
+    recurring.currentChildId = child.id;
+    this.saveToDisk();
+
+    this.logger.info(
+      { recurringId, childId: child.id, botName: recurring.botName, chatId: recurring.chatId },
+      'Firing recurring task instance',
+    );
+
+    // Execute via existing fireTask (handles retries, bot lookup, etc.)
+    await this.fireTask(child.id);
+
+    // After execution, schedule next occurrence (if still active)
+    recurring.lastExecutedAt = Date.now();
+    recurring.currentChildId = undefined;
+
+    if (recurring.status === 'active') {
+      recurring.nextExecuteAt = nextCronOccurrence(recurring.cronExpr, recurring.timezone);
+      this.setRecurringTimer(recurring);
+      this.logger.info(
+        { recurringId, nextExecuteAt: new Date(recurring.nextExecuteAt).toISOString() },
+        'Recurring task: next occurrence scheduled',
+      );
+    }
+
+    this.saveToDisk();
+  }
+
+  // ===== Persistence =====
+
   private saveToDisk(): void {
     try {
       fs.mkdirSync(PERSIST_DIR, { recursive: true });
-      const data = Array.from(this.tasks.values());
+      // Prune old completed/failed child tasks to prevent unbounded growth
+      const tasks = Array.from(this.tasks.values()).filter((t) => {
+        if (t.parentRecurringId && (t.status === 'completed' || t.status === 'failed')) {
+          const age = Date.now() - t.createdAt;
+          return age < 7 * 24 * 60 * 60 * 1000; // keep for 7 days
+        }
+        return true;
+      });
+      const data: PersistedData = {
+        tasks,
+        recurringTasks: Array.from(this.recurringTasks.values()),
+      };
       fs.writeFileSync(PERSIST_FILE, JSON.stringify(data, null, 2));
     } catch (err) {
       this.logger.error({ err }, 'Failed to save scheduled tasks to disk');
@@ -219,10 +496,22 @@ export class TaskScheduler {
       if (!fs.existsSync(PERSIST_FILE)) return;
 
       const raw = fs.readFileSync(PERSIST_FILE, 'utf-8');
-      const data = JSON.parse(raw) as ScheduledTask[];
+      const parsed = JSON.parse(raw);
       const now = Date.now();
 
-      for (const task of data) {
+      // Backward compatibility: old format is a plain array of ScheduledTask
+      let taskList: ScheduledTask[];
+      let recurringList: RecurringTask[];
+      if (Array.isArray(parsed)) {
+        taskList = parsed;
+        recurringList = [];
+      } else {
+        taskList = (parsed as PersistedData).tasks || [];
+        recurringList = (parsed as PersistedData).recurringTasks || [];
+      }
+
+      // Restore one-time tasks
+      for (const task of taskList) {
         // Skip completed/cancelled/failed tasks
         if (task.status !== 'pending') continue;
 
@@ -236,9 +525,35 @@ export class TaskScheduler {
         this.setTimer(task);
       }
 
-      const restored = this.listTasks().length;
-      if (restored > 0) {
-        this.logger.info({ count: restored }, 'Restored pending scheduled tasks from disk');
+      // Restore recurring tasks
+      for (const recurring of recurringList) {
+        if (recurring.status === 'cancelled') continue;
+
+        this.recurringTasks.set(recurring.id, recurring);
+
+        if (recurring.status === 'active') {
+          // If there was a child task executing when process died, mark it failed
+          if (recurring.currentChildId) {
+            const child = taskList.find((t) => t.id === recurring.currentChildId);
+            if (child && (child.status === 'pending' || child.status === 'executing')) {
+              child.status = 'failed';
+            }
+            recurring.currentChildId = undefined;
+          }
+
+          // Recompute next occurrence from now (no catch-up for missed occurrences)
+          recurring.nextExecuteAt = nextCronOccurrence(recurring.cronExpr, recurring.timezone);
+          this.setRecurringTimer(recurring);
+        }
+      }
+
+      const restoredTasks = this.listTasks().length;
+      const restoredRecurring = this.listRecurringTasks().length;
+      if (restoredTasks > 0 || restoredRecurring > 0) {
+        this.logger.info(
+          { tasks: restoredTasks, recurring: restoredRecurring },
+          'Restored scheduled tasks from disk',
+        );
       }
     } catch (err) {
       this.logger.error({ err }, 'Failed to load scheduled tasks from disk');

@@ -58,7 +58,7 @@ MetaBot 解放了它。给每个 Agent 一个 Claude Code 大脑、持久化的�
 | **MetaMemory** | 内嵌 SQLite 知识库，全文搜索，Web UI。Agent 跨会话读写 Markdown 文档。所有 Agent 共享。 |
 | **IM Bridge** | 飞书或 Telegram（含手机端）与任意 Agent 对话。带颜色状态的流式卡片 + 工具调用追踪。 |
 | **Agent 总线** | 9100 端口 REST API。Agent 通过 `curl` 互相委派任务。运行时创建/删除 Bot。以 `/metabot-api` skill 形式按需加载，不注入每次对话。 |
-| **定时任务调度器** | Agent 安排未来的工作 —— "2小时后检查一下"。跨重启持久化，忙时自动重试。 |
+| **定时任务调度器** | 一次性延迟和周期性 cron 任务。`0 8 * * 1-5` = 工作日早8点新闻简报。支持时区配置（默认 Asia/Shanghai）。跨重启持久化，忙时自动重试。 |
 | **CLI 工具** | `metabot`、`mm`、`mb` 命令安装到 `~/.local/bin/`。`metabot update` 一键更新重启。`mm` 管理 MetaMemory，`mb` 管理 Agent 总线。 |
 
 ## 安装
@@ -116,6 +116,10 @@ curl -X POST localhost:9100/api/tasks \
 # 安排 1 小时后的跟进
 curl -X POST localhost:9100/api/schedule \
   -d '{"botName":"backend-bot","chatId":"oc_xxx","prompt":"检查迁移结果","delaySeconds":3600}'
+
+# 创建周期性定时任务（工作日早8点）
+curl -X POST localhost:9100/api/schedule \
+  -d '{"botName":"news-bot","chatId":"oc_xxx","prompt":"阅读并总结科技新闻","cronExpr":"0 8 * * 1-5"}'
 
 # 运行时创建新 Bot
 curl -X POST localhost:9100/api/bots \
@@ -221,10 +225,12 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `GET` | `/api/bots/:name` | 获取 Bot 详情 |
 | `DELETE` | `/api/bots/:name` | 删除 Bot |
 | `POST` | `/api/tasks` | 委派任务给 Bot |
-| `POST` | `/api/schedule` | 创建定时任务 |
-| `GET` | `/api/schedule` | 列出定时任务 |
+| `POST` | `/api/schedule` | 创建一次性或周期性 (cron) 定时任务 |
+| `GET` | `/api/schedule` | 列出定时任务（一次性 + 周期性） |
 | `PATCH` | `/api/schedule/:id` | 更新定时任务 |
 | `DELETE` | `/api/schedule/:id` | 取消定时任务 |
+| `POST` | `/api/schedule/:id/pause` | 暂停周期性任务 |
+| `POST` | `/api/schedule/:id/resume` | 恢复已暂停的周期性任务 |
 | `GET` | `/api/stats` | 费用与使用统计（按 Bot/用户） |
 | `GET` | `/api/metrics` | Prometheus 监控指标 |
 
@@ -257,6 +263,9 @@ mm delete DOC_ID                    # 删除文档
 mb bots                             # 列出所有 Bot
 mb task <bot> <chatId> <prompt>     # 委派任务
 mb schedule list                    # 列出定时任务
+mb schedule cron <bot> <chatId> '<cron>' <prompt>  # 创建周期性任务
+mb schedule pause <id>              # 暂停周期性任务
+mb schedule resume <id>             # 恢复周期性任务
 mb stats                            # 费用和使用统计
 mb health                           # 状态检查
 ```
@@ -265,7 +274,7 @@ mb health                           # 状态检查
 
 ```bash
 npm run dev          # 热重载开发服务器（tsx）
-npm test             # 运行测试（vitest，71 个测试）
+npm test             # 运行测试（vitest，93 个测试）
 npm run lint         # ESLint 检查
 npm run format       # Prettier 格式化
 npm run build        # TypeScript 编译到 dist/

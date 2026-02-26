@@ -58,7 +58,7 @@ We built MetaBot to run [XVI Robotics](https://github.com/xvirobotics) as an **a
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. Shared by all agents. |
 | **IM Bridge** | Chat with any agent from Feishu/Lark or Telegram (including mobile). Streaming cards with color-coded status and tool call tracking. |
 | **Agent Bus** | REST API on port 9100. Agents delegate tasks to each other via `curl`. Create/remove bots at runtime. Exposed as the `/metabot-api` skill — loaded on demand, not injected into every prompt. |
-| **Task Scheduler** | Agents schedule future work — "check back in 2 hours". Persists across restarts, auto-retries when busy. |
+| **Task Scheduler** | One-time delays and recurring cron jobs. `0 8 * * 1-5` = weekday 8am news briefing. Timezone-aware (default: Asia/Shanghai). Persists across restarts, auto-retries when busy. |
 | **CLI Tools** | `metabot`, `mm`, and `mb` commands installed to `~/.local/bin/`. `metabot update` to pull/rebuild/restart. `mm` for MetaMemory, `mb` for Agent Bus. |
 
 ## Install
@@ -116,6 +116,10 @@ curl -X POST localhost:9100/api/tasks \
 # Schedule a follow-up in 1 hour
 curl -X POST localhost:9100/api/schedule \
   -d '{"botName":"backend-bot","chatId":"oc_xxx","prompt":"verify migration","delaySeconds":3600}'
+
+# Schedule a recurring daily task (weekdays 8am)
+curl -X POST localhost:9100/api/schedule \
+  -d '{"botName":"news-bot","chatId":"oc_xxx","prompt":"read and summarize tech news","cronExpr":"0 8 * * 1-5"}'
 
 # Create a new bot at runtime
 curl -X POST localhost:9100/api/bots \
@@ -224,10 +228,12 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `GET` | `/api/bots/:name` | Get bot details |
 | `DELETE` | `/api/bots/:name` | Remove bot |
 | `POST` | `/api/tasks` | Delegate task to a bot |
-| `POST` | `/api/schedule` | Schedule future task |
-| `GET` | `/api/schedule` | List scheduled tasks |
+| `POST` | `/api/schedule` | Schedule one-time or recurring (cron) task |
+| `GET` | `/api/schedule` | List scheduled tasks (one-time + recurring) |
 | `PATCH` | `/api/schedule/:id` | Update a scheduled task |
 | `DELETE` | `/api/schedule/:id` | Cancel scheduled task |
+| `POST` | `/api/schedule/:id/pause` | Pause a recurring task |
+| `POST` | `/api/schedule/:id/resume` | Resume a paused recurring task |
 | `GET` | `/api/stats` | Cost & usage stats (per-bot, per-user) |
 | `GET` | `/api/metrics` | Prometheus metrics endpoint |
 
@@ -260,6 +266,9 @@ mm delete DOC_ID                    # delete document
 mb bots                             # list all bots
 mb task <bot> <chatId> <prompt>     # delegate task
 mb schedule list                    # list scheduled tasks
+mb schedule cron <bot> <chatId> '<cron>' <prompt>  # recurring task
+mb schedule pause <id>              # pause recurring task
+mb schedule resume <id>             # resume recurring task
 mb stats                            # cost & usage stats
 mb health                           # status check
 ```
@@ -268,7 +277,7 @@ mb health                           # status check
 
 ```bash
 npm run dev          # Hot-reload dev server (tsx)
-npm test             # Run tests (vitest, 71 tests)
+npm test             # Run tests (vitest, 93 tests)
 npm run lint         # ESLint check
 npm run format       # Prettier format
 npm run build        # TypeScript compile to dist/

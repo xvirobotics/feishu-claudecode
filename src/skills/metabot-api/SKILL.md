@@ -21,10 +21,15 @@ mb bot <name>                              # Get bot details
 # Task delegation
 mb task <botName> <chatId> <prompt>        # Delegate task to another bot
 
-# Scheduling
-mb schedule list                           # List pending scheduled tasks
-mb schedule add <bot> <chatId> <sec> <prompt>  # Schedule a future task
+# Scheduling (one-time)
+mb schedule list                           # List all scheduled tasks
+mb schedule add <bot> <chatId> <sec> <prompt>  # Schedule a one-time future task
 mb schedule cancel <id>                    # Cancel a scheduled task
+
+# Scheduling (recurring / cron)
+mb schedule cron <bot> <chatId> '<cronExpr>' <prompt>  # Create recurring task
+mb schedule pause <id>                     # Pause a recurring task
+mb schedule resume <id>                    # Resume a paused recurring task
 
 # Monitoring
 mb stats                                   # Cost & usage stats (per-bot, per-user)
@@ -76,6 +81,31 @@ curl -s -X PATCH http://localhost:${METABOT_API_PORT:-9100}/api/schedule/<id> \
   -H "Authorization: Bearer $METABOT_API_SECRET" \
   -H "Content-Type: application/json" \
   -d '{"prompt":"updated prompt","delaySeconds":7200}'
+```
+
+**Create recurring scheduled task (cron):**
+```bash
+curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/schedule \
+  -H "Authorization: Bearer $METABOT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"botName":"<bot>","chatId":"<chatId>","prompt":"<task>","cronExpr":"0 8 * * 1-5","timezone":"Asia/Shanghai","label":"Daily report"}'
+```
+Cron format: `minute hour day month weekday` (5 fields). Examples: `0 8 * * *` = daily 8am, `0 8 * * 1-5` = weekdays 8am, `*/30 * * * *` = every 30 min. Default timezone: Asia/Shanghai.
+
+**Pause/resume recurring task:**
+```bash
+curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/schedule/<id>/pause \
+  -H "Authorization: Bearer $METABOT_API_SECRET"
+curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/schedule/<id>/resume \
+  -H "Authorization: Bearer $METABOT_API_SECRET"
+```
+
+**Update recurring task:**
+```bash
+curl -s -X PATCH http://localhost:${METABOT_API_PORT:-9100}/api/schedule/<id> \
+  -H "Authorization: Bearer $METABOT_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"cronExpr":"0 9 * * *","prompt":"Updated prompt","timezone":"Asia/Shanghai"}'
 ```
 
 When asked to create a bot:

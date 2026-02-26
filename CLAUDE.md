@@ -213,3 +213,14 @@ If the service starts but Feishu events don't arrive:
 
 The bot only responds when **@mentioned** in group chats. In DMs it replies to all messages. This is by design in `event-handler.ts`.
 
+## Feature Completion Workflow
+
+When implementing a feature or fixing a bug, follow this end-to-end workflow unless the user says otherwise:
+
+1. **Build & Test** — Run `npm run build`, `npm test`, `npm run lint` and fix any failures before proceeding.
+2. **Update docs** — Update README.md, README_zh.md, and CLAUDE.md if the change affects user-facing behavior, API surface, CLI commands, or architecture.
+3. **Commit** — Create a descriptive commit on the current branch.
+4. **Push & PR** — Push the branch and create a PR to `main` via `gh pr create`.
+5. **CI** — Wait for CI checks to pass (check with `gh pr checks`). Fix any failures.
+6. **Merge** — Once CI is green, merge via `gh pr merge --squash --delete-branch`.
+

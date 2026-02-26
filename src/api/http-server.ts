@@ -87,6 +87,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           uptime: Math.floor((Date.now() - startTime) / 1000),
           bots: registry.list().length,
           scheduledTasks: scheduler.taskCount(),
+          recurringTasks: scheduler.recurringTaskCount(),
         });
         return;
       }
@@ -135,12 +136,14 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         const botName = body.botName as string;
         const chatId = body.chatId as string;
         const prompt = body.prompt as string;
-        const delaySeconds = body.delaySeconds as number;
+        const cronExpr = body.cronExpr as string | undefined;
+        const delaySeconds = body.delaySeconds as number | undefined;
         const sendCards = body.sendCards as boolean | undefined;
         const label = body.label as string | undefined;
+        const timezone = body.timezone as string | undefined;
 
-        if (!botName || !chatId || !prompt || typeof delaySeconds !== 'number' || delaySeconds <= 0) {
-          jsonResponse(res, 400, { error: 'Missing or invalid fields: botName, chatId, prompt, delaySeconds (positive number)' });
+        if (!botName || !chatId || !prompt) {
+          jsonResponse(res, 400, { error: 'Missing required fields: botName, chatId, prompt' });
           return;
         }
 
@@ -150,25 +153,43 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           return;
         }
 
-        const task = scheduler.scheduleTask({
-          botName,
-          chatId,
-          prompt,
-          delaySeconds,
-          sendCards,
-          label,
-        });
-
-        jsonResponse(res, 201, {
-          id: task.id,
-          botName: task.botName,
-          chatId: task.chatId,
-          prompt: task.prompt,
-          executeAt: new Date(task.executeAt).toISOString(),
-          sendCards: task.sendCards,
-          label: task.label,
-          status: task.status,
-        });
+        if (cronExpr) {
+          // Recurring task
+          const recurring = scheduler.scheduleRecurring({
+            botName, chatId, prompt, cronExpr, timezone, sendCards, label,
+          });
+          jsonResponse(res, 201, {
+            id: recurring.id,
+            type: 'recurring',
+            botName: recurring.botName,
+            chatId: recurring.chatId,
+            prompt: recurring.prompt,
+            cronExpr: recurring.cronExpr,
+            timezone: recurring.timezone,
+            nextExecuteAt: new Date(recurring.nextExecuteAt).toISOString(),
+            sendCards: recurring.sendCards,
+            label: recurring.label,
+            status: recurring.status,
+          });
+        } else if (typeof delaySeconds === 'number' && delaySeconds > 0) {
+          // One-time task (existing behavior)
+          const task = scheduler.scheduleTask({
+            botName, chatId, prompt, delaySeconds, sendCards, label,
+          });
+          jsonResponse(res, 201, {
+            id: task.id,
+            type: 'one-time',
+            botName: task.botName,
+            chatId: task.chatId,
+            prompt: task.prompt,
+            executeAt: new Date(task.executeAt).toISOString(),
+            sendCards: task.sendCards,
+            label: task.label,
+            status: task.status,
+          });
+        } else {
+          jsonResponse(res, 400, { error: 'Provide either cronExpr (recurring) or delaySeconds (one-time, positive number)' });
+        }
         return;
       }
 
@@ -176,6 +197,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
       if (method === 'GET' && url === '/api/schedule') {
         const tasks = scheduler.listTasks().map((t) => ({
           id: t.id,
+          type: 'one-time',
           botName: t.botName,
           chatId: t.chatId,
           prompt: t.prompt,
@@ -185,7 +207,51 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           status: t.status,
           createdAt: new Date(t.createdAt).toISOString(),
         }));
-        jsonResponse(res, 200, { tasks });
+        const recurringTasks = scheduler.listRecurringTasks().map((r) => ({
+          id: r.id,
+          type: 'recurring',
+          botName: r.botName,
+          chatId: r.chatId,
+          prompt: r.prompt,
+          cronExpr: r.cronExpr,
+          timezone: r.timezone,
+          nextExecuteAt: new Date(r.nextExecuteAt).toISOString(),
+          lastExecutedAt: r.lastExecutedAt ? new Date(r.lastExecutedAt).toISOString() : null,
+          sendCards: r.sendCards,
+          label: r.label,
+          status: r.status,
+          createdAt: new Date(r.createdAt).toISOString(),
+        }));
+        jsonResponse(res, 200, { tasks, recurringTasks });
+        return;
+      }
+
+      // Route: POST /api/schedule/:id/pause
+      if (method === 'POST' && /^\/api\/schedule\/[^/]+\/pause$/.test(url)) {
+        const id = url.split('/')[3];
+        const paused = scheduler.pauseRecurring(id);
+        if (paused) {
+          jsonResponse(res, 200, { id, status: 'paused' });
+        } else {
+          jsonResponse(res, 404, { error: `Recurring task not found or not pausable: ${id}` });
+        }
+        return;
+      }
+
+      // Route: POST /api/schedule/:id/resume
+      if (method === 'POST' && /^\/api\/schedule\/[^/]+\/resume$/.test(url)) {
+        const id = url.split('/')[3];
+        const resumed = scheduler.resumeRecurring(id);
+        if (resumed) {
+          const recurring = scheduler.getRecurringTask(id);
+          jsonResponse(res, 200, {
+            id,
+            status: 'active',
+            nextExecuteAt: recurring ? new Date(recurring.nextExecuteAt).toISOString() : null,
+          });
+        } else {
+          jsonResponse(res, 404, { error: `Recurring task not found or not resumable: ${id}` });
+        }
         return;
       }
 
@@ -198,6 +264,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         }
 
         const body = await parseJsonBody(req);
+
+        // Try one-time task first
         const updated = scheduler.updateTask(id, {
           prompt: body.prompt as string | undefined,
           delaySeconds: body.delaySeconds as number | undefined,
@@ -208,6 +276,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         if (updated) {
           jsonResponse(res, 200, {
             id: updated.id,
+            type: 'one-time',
             botName: updated.botName,
             chatId: updated.chatId,
             prompt: updated.prompt,
@@ -216,9 +285,36 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             label: updated.label,
             status: updated.status,
           });
-        } else {
-          jsonResponse(res, 404, { error: `Task not found or not updatable: ${id}` });
+          return;
         }
+
+        // Try recurring task
+        const updatedRecurring = scheduler.updateRecurring(id, {
+          prompt: body.prompt as string | undefined,
+          cronExpr: body.cronExpr as string | undefined,
+          timezone: body.timezone as string | undefined,
+          label: body.label as string | undefined,
+          sendCards: body.sendCards as boolean | undefined,
+        });
+
+        if (updatedRecurring) {
+          jsonResponse(res, 200, {
+            id: updatedRecurring.id,
+            type: 'recurring',
+            botName: updatedRecurring.botName,
+            chatId: updatedRecurring.chatId,
+            prompt: updatedRecurring.prompt,
+            cronExpr: updatedRecurring.cronExpr,
+            timezone: updatedRecurring.timezone,
+            nextExecuteAt: new Date(updatedRecurring.nextExecuteAt).toISOString(),
+            sendCards: updatedRecurring.sendCards,
+            label: updatedRecurring.label,
+            status: updatedRecurring.status,
+          });
+          return;
+        }
+
+        jsonResponse(res, 404, { error: `Task not found or not updatable: ${id}` });
         return;
       }
 
@@ -230,12 +326,21 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           return;
         }
 
+        // Try one-time task first
         const cancelled = scheduler.cancelTask(id);
         if (cancelled) {
-          jsonResponse(res, 200, { id, status: 'cancelled' });
-        } else {
-          jsonResponse(res, 404, { error: `Task not found or not cancellable: ${id}` });
+          jsonResponse(res, 200, { id, type: 'one-time', status: 'cancelled' });
+          return;
         }
+
+        // Try recurring task
+        const cancelledRecurring = scheduler.cancelRecurring(id);
+        if (cancelledRecurring) {
+          jsonResponse(res, 200, { id, type: 'recurring', status: 'cancelled' });
+          return;
+        }
+
+        jsonResponse(res, 404, { error: `Task not found or not cancellable: ${id}` });
         return;
       }
 

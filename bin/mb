@@ -69,14 +69,41 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'delaySeconds':
           -H "$METABOT_AUTH" -H "Content-Type: application/json" \
           -d @- | _json
         ;;
+      cron|c)
+        bot="$1" chat="$2" cron_expr="$3"; shift 3 2>/dev/null || true
+        prompt="$*"
+        if [[ -z "${bot:-}" || -z "${chat:-}" || -z "${cron_expr:-}" || -z "${prompt:-}" ]]; then
+          echo "Usage: mb schedule cron <botName> <chatId> '<cronExpr>' <prompt>"
+          echo "  Example: mb schedule cron mybot oc_xxx '0 8 * * 1-5' Generate daily report"
+          exit 1
+        fi
+        python3 -c "
+import json, sys
+print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys.argv[3], 'prompt': sys.argv[4]}))
+" "$bot" "$chat" "$cron_expr" "$prompt" | \
+        curl -s -X POST "$METABOT_URL/api/schedule" \
+          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+          -d @- | _json
+        ;;
+      pause|p)
+        if [[ -z "${1:-}" ]]; then echo "Usage: mb schedule pause <id>"; exit 1; fi
+        curl -s -X POST "$METABOT_URL/api/schedule/$1/pause" -H "$METABOT_AUTH" | _json
+        ;;
+      resume|r)
+        if [[ -z "${1:-}" ]]; then echo "Usage: mb schedule resume <id>"; exit 1; fi
+        curl -s -X POST "$METABOT_URL/api/schedule/$1/resume" -H "$METABOT_AUTH" | _json
+        ;;
       cancel|rm)
         if [[ -z "${1:-}" ]]; then echo "Usage: mb schedule cancel <id>"; exit 1; fi
-        curl -s -X DELETE "$METABOT_URL/api/schedule/$1" -H "$METABOT_AUTH"
+        curl -s -X DELETE "$METABOT_URL/api/schedule/$1" -H "$METABOT_AUTH" | _json
         ;;
       *)
         echo "mb schedule - Task scheduling"
-        echo "  mb schedule list                                    - List pending tasks"
-        echo "  mb schedule add <bot> <chatId> <delaySec> <prompt>  - Schedule a task"
+        echo "  mb schedule list                                    - List all scheduled tasks"
+        echo "  mb schedule add <bot> <chatId> <delaySec> <prompt>  - Schedule a one-time task"
+        echo "  mb schedule cron <bot> <chatId> '<cron>' <prompt>   - Schedule a recurring task"
+        echo "  mb schedule pause <id>                              - Pause a recurring task"
+        echo "  mb schedule resume <id>                             - Resume a paused task"
         echo "  mb schedule cancel <id>                             - Cancel a task"
         ;;
     esac
@@ -104,8 +131,11 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'delaySeconds':
     echo "    mb task <bot> <chatId> <prompt>  - Delegate task to a bot"
     echo ""
     echo "  Scheduling:"
-    echo "    mb schedule list                 - List pending scheduled tasks"
+    echo "    mb schedule list                 - List all scheduled tasks"
     echo "    mb schedule add <bot> <chatId> <delaySec> <prompt>"
+    echo "    mb schedule cron <bot> <chatId> '<cron>' <prompt>"
+    echo "    mb schedule pause <id>           - Pause a recurring task"
+    echo "    mb schedule resume <id>          - Resume a paused task"
     echo "    mb schedule cancel <id>          - Cancel a scheduled task"
     echo ""
     echo "  Monitoring:"
