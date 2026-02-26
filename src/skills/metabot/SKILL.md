@@ -1,5 +1,5 @@
 ---
-name: metabot-api
+name: metabot
 description: "MetaBot HTTP API for agent collaboration: delegate tasks to other bots, schedule future tasks, manage bots. Use when the user wants to schedule tasks, delegate work to another bot, create/remove bots, or check scheduled tasks."
 ---
 
