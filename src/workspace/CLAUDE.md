@@ -25,7 +25,7 @@ mm folders              # Browse folder tree
 
 For full API (create with tags, update, delete), use the `/metamemory` skill.
 
-### /metabot-api — Agent Bus, Scheduling & Bot Management
+### /metabot — Agent Bus, Scheduling & Bot Management
 Use the `mb` shell shortcut for quick operations:
 
 ```bash
@@ -36,7 +36,7 @@ mb schedule add <bot> <chatId> <sec> <prompt>  # Schedule a task
 mb health                                  # Health check
 ```
 
-For full API (create bots, update tasks, sendCards), use the `/metabot-api` skill.
+For full API (create bots, update tasks, sendCards), use the `/metabot` skill.
 
 ## Guidelines
 

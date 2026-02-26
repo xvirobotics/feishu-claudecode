@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as url from 'node:url';
 import type { Logger } from '../utils/logger.js';
 
-const SKILL_NAMES = ['metaskill', 'metamemory', 'metabot-api'];
+const SKILL_NAMES = ['metaskill', 'metamemory', 'metabot'];
 
 export function installSkillsToWorkDir(workDir: string, logger: Logger): void {
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
