@@ -185,7 +185,7 @@ export function markdownToBlocks(markdown: string): FeishuBlock[] {
       continue;
     }
 
-    // --- Table ---
+    // --- Table (render as code block since Feishu API doesn't support inline table cell creation) ---
     if (line.includes('|') && line.trim().startsWith('|')) {
       const tableLines: string[] = [line];
       i++;
@@ -193,10 +193,14 @@ export function markdownToBlocks(markdown: string): FeishuBlock[] {
         tableLines.push(lines[i]);
         i++;
       }
-      const tableBlock = parseTable(tableLines);
-      if (tableBlock) {
-        blocks.push(tableBlock);
-      }
+      const content = tableLines.join('\n');
+      blocks.push({
+        block_type: BLOCK_TYPE.CODE,
+        code: {
+          elements: [{ text_run: { content } }],
+          language: 1, // plaintext
+        },
+      });
       continue;
     }
 

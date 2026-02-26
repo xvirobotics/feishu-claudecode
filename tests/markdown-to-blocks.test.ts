@@ -136,14 +136,12 @@ describe('markdownToBlocks', () => {
     expect(blocks[1].todo.style.done).toBe(true);
   });
 
-  it('converts tables', () => {
+  it('converts tables as code blocks', () => {
     const md = '| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |';
     const blocks = markdownToBlocks(md);
     expect(blocks).toHaveLength(1);
-    expect(blocks[0].block_type).toBe(31); // TABLE
-    expect(blocks[0].table.property.row_size).toBe(3); // header + 2 rows
-    expect(blocks[0].table.property.column_size).toBe(2);
-    expect(blocks[0].table.cells).toHaveLength(6); // 3 rows * 2 cols
+    expect(blocks[0].block_type).toBe(14); // CODE (rendered as plaintext code block)
+    expect(blocks[0].code.elements[0].text_run.content).toContain('| A | B |');
   });
 
   it('skips empty lines', () => {

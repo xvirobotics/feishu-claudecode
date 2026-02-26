@@ -39,8 +39,10 @@ export interface DocSyncConfig {
   feishuAppSecret: string;
   /** Directory for sync-mapping.db. */
   databaseDir: string;
-  /** Optional: wiki space name to create if none exists. */
+  /** Optional: wiki space name to find by name. */
   wikiSpaceName?: string;
+  /** Optional: pre-existing wiki space ID (skips create/search). */
+  wikiSpaceId?: string;
   /** Throttle delay between API calls (ms). Default 300. */
   throttleMs?: number;
 }
@@ -169,12 +171,25 @@ export class DocSync {
         await this.client.wiki.v2.space.get({ path: { space_id: spaceId } });
         return spaceId;
       } catch {
-        this.logger.warn({ spaceId }, 'Stored wiki space not found, will create new one');
+        this.logger.warn({ spaceId }, 'Stored wiki space not found, will search for one');
         this.store.setConfig('wiki_space_id', '');
       }
     }
 
-    // Try to find existing space by name
+    // Use pre-configured space ID from config/env
+    if (this.config.wikiSpaceId) {
+      spaceId = this.config.wikiSpaceId;
+      try {
+        await this.client.wiki.v2.space.get({ path: { space_id: spaceId } });
+        this.store.setWikiSpaceId(spaceId);
+        this.logger.info({ spaceId }, 'Using configured wiki space');
+        return spaceId;
+      } catch (err: any) {
+        this.logger.error({ spaceId, err: err.msg || err.message }, 'Configured WIKI_SPACE_ID is invalid or bot is not a member');
+      }
+    }
+
+    // Try to find existing space by name (bot must be a member)
     try {
       const resp = await this.client.wiki.v2.space.list({ params: { page_size: 50 } });
       const spaces = (resp.data as any)?.items || [];
@@ -185,11 +200,18 @@ export class DocSync {
         this.logger.info({ spaceId }, 'Found existing wiki space');
         return spaceId;
       }
+      // If spaces exist but none match, use the first one
+      if (spaces.length > 0) {
+        spaceId = spaces[0].space_id;
+        this.store.setWikiSpaceId(spaceId!);
+        this.logger.info({ spaceId, name: spaces[0].name }, 'Using first available wiki space');
+        return spaceId;
+      }
     } catch (err: any) {
       this.logger.warn({ err: err.msg || err.message }, 'Failed to list wiki spaces');
     }
 
-    // Create new space
+    // Try to create new space (requires user_access_token; may fail for bot apps)
     try {
       const resp = await this.client.wiki.v2.space.create({
         data: {
@@ -204,7 +226,10 @@ export class DocSync {
         return spaceId;
       }
     } catch (err: any) {
-      this.logger.error({ err: err.msg || err.message, code: err.code }, 'Failed to create wiki space');
+      this.logger.error(
+        { err: err.msg || err.message, code: err.code },
+        'Failed to create wiki space. Create a wiki space manually in Feishu, add the bot app as a member, and set WIKI_SPACE_ID env var.',
+      );
     }
 
     return undefined;
