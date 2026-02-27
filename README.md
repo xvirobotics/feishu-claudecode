@@ -175,6 +175,7 @@ curl -X POST localhost:9100/api/bots \
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access, sees all folders) |
 | `MEMORY_TOKEN` | — | Reader token (shared folders only) |
 | `WIKI_SYNC_ENABLED` | true | Enable MetaMemory→Wiki sync (requires Feishu bot) |
+| `WIKI_SPACE_ID` | — | Feishu Wiki space ID |
 | `WIKI_SPACE_NAME` | MetaMemory | Feishu Wiki space name |
 | `WEBHOOK_URLS` | — | Comma-separated webhook URLs for task completion notifications |
 | `LOG_LEVEL` | info | Log level |
@@ -284,7 +285,7 @@ mb health                           # status check
 
 ```bash
 npm run dev          # Hot-reload dev server (tsx)
-npm test             # Run tests (vitest, 151 tests)
+npm test             # Run tests (vitest, 155 tests)
 npm run lint         # ESLint check
 npm run format       # Prettier format
 npm run build        # TypeScript compile to dist/
