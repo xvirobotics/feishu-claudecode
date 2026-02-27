@@ -152,6 +152,45 @@ describe('StreamProcessor', () => {
     expect(p.getImagePaths()).toEqual([]);
   });
 
+  it('detects ExitPlanMode for auto-response', () => {
+    const p = new StreamProcessor('hi');
+    p.processMessage(msg({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: {
+        content: [{
+          type: 'tool_use',
+          id: 'tool-plan1',
+          name: 'ExitPlanMode',
+          input: {},
+        }],
+      },
+    }));
+    const tools = p.drainAutoRespondTools();
+    expect(tools).toHaveLength(1);
+    expect(tools[0].toolUseId).toBe('tool-plan1');
+    expect(tools[0].name).toBe('ExitPlanMode');
+    // Second drain should be empty
+    expect(p.drainAutoRespondTools()).toHaveLength(0);
+  });
+
+  it('does not detect ExitPlanMode from subagent', () => {
+    const p = new StreamProcessor('hi');
+    p.processMessage(msg({
+      type: 'assistant',
+      parent_tool_use_id: 'parent-123',
+      message: {
+        content: [{
+          type: 'tool_use',
+          id: 'tool-plan2',
+          name: 'ExitPlanMode',
+          input: {},
+        }],
+      },
+    }));
+    expect(p.drainAutoRespondTools()).toHaveLength(0);
+  });
+
   it('marks all tools as done on result', () => {
     const p = new StreamProcessor('hi');
     p.processMessage(msg({

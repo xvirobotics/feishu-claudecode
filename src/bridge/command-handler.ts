@@ -5,8 +5,11 @@ import type { IMessageSender } from './message-sender.interface.js';
 import { SessionManager } from '../claude/session-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
+import type { DocSync } from '../sync/doc-sync.js';
 
 export class CommandHandler {
+  private docSync: DocSync | null = null;
+
   constructor(
     private config: BotConfigBase,
     private logger: Logger,
@@ -17,6 +20,11 @@ export class CommandHandler {
     private getRunningTask: (chatId: string) => { startTime: number } | undefined,
     private stopTask: (chatId: string) => void,
   ) {}
+
+  /** Set the doc sync service (optional, only available for Feishu bots). */
+  setDocSync(docSync: DocSync): void {
+    this.docSync = docSync;
+  }
 
   /** Returns true if the message was handled as a command, false otherwise. */
   async handle(msg: IncomingMessage): Promise<boolean> {
@@ -46,6 +54,10 @@ export class CommandHandler {
           '`/memory list` - Show folder tree',
           '`/memory search <query>` - Search documents',
           '`/memory status` - Server health check',
+          '',
+          '**Sync Commands:**',
+          '`/sync` - Sync MetaMemory to Feishu Wiki',
+          '`/sync status` - Show sync status',
         ].join('\n'));
         return true;
 
@@ -81,6 +93,12 @@ export class CommandHandler {
       case '/memory': {
         const args = text.slice('/memory'.length).trim();
         await this.handleMemoryCommand(chatId, args);
+        return true;
+      }
+
+      case '/sync': {
+        const args = text.slice('/sync'.length).trim();
+        await this.handleSyncCommand(chatId, args);
         return true;
       }
 
@@ -137,6 +155,67 @@ export class CommandHandler {
     } catch (err: any) {
       this.logger.error({ err, chatId }, 'Memory command error');
       await this.sender.sendTextNotice(chatId, '❌ Memory Error', `Failed to connect to memory server: ${err.message}`, 'red');
+    }
+  }
+
+  private async handleSyncCommand(chatId: string, args: string): Promise<void> {
+    if (!this.docSync) {
+      await this.sender.sendTextNotice(chatId, '❌ Sync Unavailable', 'Wiki sync is not configured for this bot.', 'red');
+      return;
+    }
+
+    const [subCmd] = args.split(/\s+/);
+
+    if (!subCmd) {
+      // Default: trigger full sync
+      if (this.docSync.isSyncing()) {
+        await this.sender.sendTextNotice(chatId, '⏳ Sync In Progress', 'A sync is already running. Please wait.', 'orange');
+        return;
+      }
+
+      await this.sender.sendTextNotice(chatId, '🔄 Sync Started', 'Syncing MetaMemory documents to Feishu Wiki...', 'blue');
+
+      try {
+        const result = await this.docSync.syncAll();
+        const lines = [
+          `**Created:** ${result.created}`,
+          `**Updated:** ${result.updated}`,
+          `**Skipped:** ${result.skipped} (unchanged)`,
+          `**Deleted:** ${result.deleted}`,
+          `**Duration:** ${(result.durationMs / 1000).toFixed(1)}s`,
+        ];
+        if (result.errors.length > 0) {
+          lines.push('', `**Errors (${result.errors.length}):**`);
+          for (const err of result.errors.slice(0, 5)) {
+            lines.push(`- ${err}`);
+          }
+          if (result.errors.length > 5) {
+            lines.push(`- ... and ${result.errors.length - 5} more`);
+          }
+        }
+        const color = result.errors.length > 0 ? 'orange' : 'green';
+        await this.sender.sendTextNotice(chatId, '✅ Sync Complete', lines.join('\n'), color);
+      } catch (err: any) {
+        this.logger.error({ err, chatId }, 'Sync command error');
+        await this.sender.sendTextNotice(chatId, '❌ Sync Failed', err.message, 'red');
+      }
+      return;
+    }
+
+    switch (subCmd.toLowerCase()) {
+      case 'status': {
+        const stats = this.docSync.getStats();
+        const spaceId = stats.wikiSpaceId || 'Not configured';
+        await this.sender.sendTextNotice(chatId, '📊 Sync Status', [
+          `**Wiki Space:** \`${spaceId}\``,
+          `**Synced Documents:** ${stats.documentCount}`,
+          `**Synced Folders:** ${stats.folderCount}`,
+          `**Currently Syncing:** ${this.docSync.isSyncing() ? 'Yes' : 'No'}`,
+        ].join('\n'));
+        break;
+      }
+      default:
+        await this.sender.sendTextNotice(chatId, '📝 Sync', 'Usage:\n- `/sync` — Sync all documents to Feishu Wiki\n- `/sync status` — Show sync status', 'blue');
     }
   }
 }

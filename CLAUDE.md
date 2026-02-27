@@ -57,6 +57,26 @@ When Claude produces output files (images, PDFs, documents, etc.), they are auto
 
 Key module: **`src/bridge/outputs-manager.ts`** — Encapsulates the outputs dir lifecycle (prepare, scan, cleanup, file type mapping).
 
+### Wiki Sync (MetaMemory → Feishu Wiki)
+
+One-way sync from MetaMemory documents to a Feishu Wiki space. The folder tree in MetaMemory maps to wiki nodes; each document becomes a Feishu docx page. Content change detection uses hash comparison for incremental sync.
+
+**Key modules:**
+- **`src/sync/doc-sync.ts`** — Core sync service. `DocSync` class with `syncAll()` (full sync) and `syncDocument(docId)` (incremental). Manages wiki space creation, folder node hierarchy, document content writing via docx block API.
+- **`src/sync/sync-store.ts`** — SQLite persistence for sync mappings (MetaMemory path ↔ Feishu node token). Tables: `sync_config`, `document_mappings`, `folder_mappings`.
+- **`src/sync/markdown-to-blocks.ts`** — Converts Markdown to Feishu document block structures. Handles headings, code blocks, lists, tables, quotes, todos, inline formatting.
+
+**Feishu commands:** `/sync` (trigger full sync), `/sync status` (show stats).
+
+**API endpoints:** `POST /api/sync` (trigger), `GET /api/sync` (status), `POST /api/sync/document` (single doc sync).
+
+**Environment variables:**
+- `WIKI_SYNC_ENABLED` — Set to `false` to disable (default: enabled when Feishu bots exist)
+- `WIKI_SPACE_NAME` — Wiki space name (default: `MetaMemory`)
+- `WIKI_SYNC_THROTTLE_MS` — Delay between API calls (default: 300ms)
+
+**Required Feishu permissions:** `wiki:wiki`, `docx:document`, `drive:drive` — must be added in the Feishu Developer Console.
+
 ### Session Isolation
 
 Sessions are keyed by `chatId` (not `userId`), so each group chat and DM gets its own independent session, working directory, and conversation history.
@@ -213,6 +233,15 @@ If the service starts but Feishu events don't arrive:
 
 The bot only responds when **@mentioned** in group chats. In DMs it replies to all messages. This is by design in `event-handler.ts`.
 
+## Branching Strategy
+
+Always develop on the `dev` branch (or feature branches created from `dev`). Never work directly on `main`.
+
+- **`dev`** is the active development branch. All day-to-day work happens here.
+- **`main`** is the stable branch. Only receives merges from `dev` or PR merges.
+- When starting work, ensure you are on `dev` (`git checkout dev`).
+- After merging a PR to `main`, sync back: `git checkout dev && git merge main`.
+
 ## Feature Completion Workflow
 
 When implementing a feature or fixing a bug, follow this end-to-end workflow unless the user says otherwise:
@@ -223,4 +252,5 @@ When implementing a feature or fixing a bug, follow this end-to-end workflow unl
 4. **Push & PR** — Push the branch and create a PR to `main` via `gh pr create`.
 5. **CI** — Wait for CI checks to pass (check with `gh pr checks`). Fix any failures.
 6. **Merge** — Once CI is green, merge via `gh pr merge --squash --delete-branch`.
+7. **Sync dev** — After merge, sync dev: `git checkout dev && git merge main && git push`.
 

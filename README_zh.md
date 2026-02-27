@@ -171,7 +171,12 @@ curl -X POST localhost:9100/api/bots \
 | `API_SECRET` | — | Bearer 认证 |
 | `MEMORY_ENABLED` | true | 启用 MetaMemory |
 | `MEMORY_PORT` | 8100 | MetaMemory 端口 |
-| `MEMORY_SECRET` | `API_SECRET` | MetaMemory 认证 |
+| `MEMORY_SECRET` | `API_SECRET` | MetaMemory 认证（旧版） |
+| `MEMORY_ADMIN_TOKEN` | — | 管理员 Token（完整访问，可见所有文件夹） |
+| `MEMORY_TOKEN` | — | 读者 Token（仅可见 shared 文件夹） |
+| `WIKI_SYNC_ENABLED` | true | 启用 MetaMemory→飞书知识库同步（需配置飞书 Bot） |
+| `WIKI_SPACE_ID` | — | 飞书知识库空间 ID |
+| `WIKI_SPACE_NAME` | MetaMemory | 飞书知识库空间名称 |
 | `WEBHOOK_URLS` | — | 逗号分隔的 Webhook URL，任务完成后发通知 |
 | `LOG_LEVEL` | info | 日志级别 |
 
@@ -200,6 +205,7 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 - 用 `allowedTools` 限制工具（去掉 `Bash` = 只读模式）
 - 用 `maxBudgetUsd` 限制单次花费
 - `API_SECRET` 同时保护 API 服务器和 MetaMemory
+- MetaMemory 支持**文件夹级 ACL**：设置 `MEMORY_ADMIN_TOKEN` 和 `MEMORY_TOKEN` 实现双角色访问。Admin 可见所有文件夹；Reader 仅可见 `visibility: shared` 的文件夹
 
 ## 聊天命令
 
@@ -210,6 +216,8 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `/status` | 查看会话状态 |
 | `/memory list` | 浏览知识库目录 |
 | `/memory search 关键词` | 搜索知识库 |
+| `/sync` | 同步 MetaMemory 到飞书知识库 |
+| `/sync status` | 查看同步状态 |
 | `/help` | 帮助 |
 | `/metaskill ...` | 生成 Agent 团队、Agent 或 Skill |
 | `/metabot` | Agent 总线、定时任务、Bot 管理 API 文档（按需加载） |
@@ -231,6 +239,9 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `DELETE` | `/api/schedule/:id` | 取消定时任务 |
 | `POST` | `/api/schedule/:id/pause` | 暂停周期性任务 |
 | `POST` | `/api/schedule/:id/resume` | 恢复已暂停的周期性任务 |
+| `POST` | `/api/sync` | 触发 MetaMemory → Wiki 同步 |
+| `GET` | `/api/sync` | 查看同步状态 |
+| `POST` | `/api/sync/document` | 按 ID 同步单个文档 |
 | `GET` | `/api/stats` | 费用与使用统计（按 Bot/用户） |
 | `GET` | `/api/metrics` | Prometheus 监控指标 |
 
@@ -274,7 +285,7 @@ mb health                           # 状态检查
 
 ```bash
 npm run dev          # 热重载开发服务器（tsx）
-npm test             # 运行测试（vitest，93 个测试）
+npm test             # 运行测试（vitest，155 个测试）
 npm run lint         # ESLint 检查
 npm run format       # Prettier 格式化
 npm run build        # TypeScript 编译到 dist/

@@ -13,6 +13,8 @@ import { BotRegistry } from './api/bot-registry.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
+import { DocSync } from './sync/doc-sync.js';
+import { MemoryClient } from './memory/memory-client.js';
 
 interface FeishuBotHandle {
   name: string;
@@ -146,6 +148,30 @@ async function main() {
     });
   }
 
+  // Initialize wiki sync service (uses first Feishu bot's credentials)
+  let docSync: DocSync | undefined;
+  if (feishuHandles.length > 0 && process.env.WIKI_SYNC_ENABLED !== 'false') {
+    const firstBot = appConfig.feishuBots[0];
+    const syncMemoryClient = new MemoryClient(appConfig.memoryServerUrl, logger, appConfig.memory.secret || undefined);
+    docSync = new DocSync(
+      {
+        feishuAppId: firstBot.feishu.appId,
+        feishuAppSecret: firstBot.feishu.appSecret,
+        databaseDir: appConfig.memory.databaseDir,
+        wikiSpaceName: process.env.WIKI_SPACE_NAME || 'MetaMemory',
+        wikiSpaceId: process.env.WIKI_SPACE_ID || undefined,
+        throttleMs: process.env.WIKI_SYNC_THROTTLE_MS ? parseInt(process.env.WIKI_SYNC_THROTTLE_MS, 10) : undefined,
+      },
+      syncMemoryClient,
+      logger,
+    );
+    // Inject into all Feishu bot bridges
+    for (const handle of feishuHandles) {
+      handle.bridge.setDocSync(docSync);
+    }
+    logger.info('Wiki sync service initialized (use /sync to trigger)');
+  }
+
   // Resolve bots config path for API-driven bot CRUD
   const botsConfigPath = process.env.BOTS_CONFIG
     ? path.resolve(process.env.BOTS_CONFIG)
@@ -159,6 +185,7 @@ async function main() {
     scheduler,
     logger,
     botsConfigPath,
+    docSync,
   });
 
   // Graceful shutdown
@@ -166,6 +193,9 @@ async function main() {
     logger.info('Shutting down...');
     scheduler.destroy();
     apiServer.close();
+    if (docSync) {
+      docSync.destroy();
+    }
     if (memoryServer) {
       memoryServer.server.close();
       memoryServer.storage.close();
