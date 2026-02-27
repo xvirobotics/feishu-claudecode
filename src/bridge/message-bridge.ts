@@ -369,6 +369,15 @@ export class MessageBridge {
           continue;
         }
 
+        // Auto-respond to interactive tools that don't need user input (ExitPlanMode, etc.)
+        const autoTools = processor.drainAutoRespondTools();
+        for (const tool of autoTools) {
+          const sid = processor.getSessionId() || '';
+          const response = getAutoResponse(tool.name);
+          this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'Auto-responding to interactive tool');
+          executionHandle.sendAnswer(tool.toolUseId, sid, response);
+        }
+
         // If we just got a message after answering a question, clear timeout state
         if (runningTask.pendingQuestion === null && runningTask.questionTimeoutId) {
           clearTimeout(runningTask.questionTimeoutId);
@@ -573,6 +582,15 @@ export class MessageBridge {
           continue;
         }
 
+        // Auto-respond to interactive tools (ExitPlanMode, etc.)
+        const autoTools = processor.drainAutoRespondTools();
+        for (const tool of autoTools) {
+          const sid = processor.getSessionId() || '';
+          const response = getAutoResponse(tool.name);
+          this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'API task: auto-responding to interactive tool');
+          executionHandle.sendAnswer(tool.toolUseId, sid, response);
+        }
+
         if (state.status === 'complete' || state.status === 'error') {
           break;
         }
@@ -700,5 +718,20 @@ export class MessageBridge {
     }
     this.runningTasks.clear();
     this.sessionManager.destroy();
+  }
+}
+
+/**
+ * Generate auto-response content for interactive tools that the bridge
+ * handles without user input (plan mode, etc.).
+ */
+function getAutoResponse(toolName: string): string {
+  switch (toolName) {
+    case 'ExitPlanMode':
+      return 'User approved the plan. Proceed with implementation.';
+    case 'EnterPlanMode':
+      return 'Plan mode approved. Explore the codebase and design your approach.';
+    default:
+      return 'Approved. Please continue.';
   }
 }

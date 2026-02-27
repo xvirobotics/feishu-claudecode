@@ -3,6 +3,19 @@ import type { CardState, ToolCall, PendingQuestion } from '../feishu/card-builde
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.tiff']);
 
+/**
+ * Tools that require user interaction in the Agent SDK.
+ * These tools cause the SDK stream to pause waiting for a tool_result.
+ * The bridge must detect them and respond (either by asking the user
+ * or auto-responding) to prevent the stream from hanging.
+ */
+const AUTO_RESPOND_TOOLS = new Set(['ExitPlanMode', 'EnterPlanMode']);
+
+export interface AutoRespondTool {
+  toolUseId: string;
+  name: string;
+}
+
 export class StreamProcessor {
   private responseText = '';
   private toolCalls: ToolCall[] = [];
@@ -12,6 +25,7 @@ export class StreamProcessor {
   private durationMs: number | undefined;
   private _imagePaths: Set<string> = new Set();
   private _pendingQuestion: PendingQuestion | null = null;
+  private _autoRespondTools: AutoRespondTool[] = [];
 
   constructor(private userPrompt: string) {}
 
@@ -72,10 +86,13 @@ export class StreamProcessor {
         }
       } else if (block.type === 'tool_use' && block.name) {
         this.addToolCall(block.name, block.input);
-        // Detect AskUserQuestion tool use at top level
-        if (block.name === 'AskUserQuestion' && block.id && block.input &&
-            (message.parent_tool_use_id === null || message.parent_tool_use_id === undefined)) {
-          this.extractPendingQuestion(block.id, block.input);
+        // Detect interactive tools at top level
+        if (message.parent_tool_use_id === null || message.parent_tool_use_id === undefined) {
+          if (block.name === 'AskUserQuestion' && block.id && block.input) {
+            this.extractPendingQuestion(block.id, block.input);
+          } else if (AUTO_RESPOND_TOOLS.has(block.name) && block.id) {
+            this._autoRespondTools.push({ toolUseId: block.id, name: block.name });
+          }
         }
       } else if (block.type === 'tool_result') {
         this.completeCurrentTool();
@@ -191,6 +208,18 @@ export class StreamProcessor {
 
   getPendingQuestion(): PendingQuestion | null {
     return this._pendingQuestion;
+  }
+
+  /**
+   * Get and clear any tools that need auto-response (e.g. ExitPlanMode).
+   * These tools cause the SDK stream to pause; we must push a tool_result
+   * to unblock them.
+   */
+  drainAutoRespondTools(): AutoRespondTool[] {
+    if (this._autoRespondTools.length === 0) return [];
+    const tools = [...this._autoRespondTools];
+    this._autoRespondTools = [];
+    return tools;
   }
 
   getSessionId(): string | undefined {
