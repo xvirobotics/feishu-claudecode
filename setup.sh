@@ -13,6 +13,15 @@ ok()    { echo -e "${GREEN}[OK]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
 fail()  { echo -e "${RED}[FAIL]${NC} $1"; exit 1; }
 
+# Portable sed -i helper
+sed_i() {
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    sed -i "" "$@"
+  else
+    sed -i "$@"
+  fi
+}
+
 echo ""
 echo "========================================="
 echo "  MetaBot Setup"
@@ -87,7 +96,7 @@ BOTEOF
 
   # Set BOTS_CONFIG in .env
   if grep -q "^BOTS_CONFIG=" .env; then
-    sed -i "s|^BOTS_CONFIG=.*|BOTS_CONFIG=./bots.json|" .env
+    sed_i "s|^BOTS_CONFIG=.*|BOTS_CONFIG=./bots.json|" .env
   else
     echo "BOTS_CONFIG=./bots.json" >> .env
   fi

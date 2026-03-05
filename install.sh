@@ -119,6 +119,15 @@ if [[ "$OS" != "Linux" && "$OS" != "Darwin" ]]; then
   exit 1
 fi
 
+# Portable sed -i helper
+sed_i() {
+  if [[ "$OS" == "Darwin" ]]; then
+    sed -i "" "$@"
+  else
+    sed -i "$@"
+  fi
+}
+
 # ============================================================================
 # Phase 1: Check prerequisites
 # ============================================================================
@@ -683,7 +692,7 @@ mm() {
 MMEOF
   # Patch the actual API_SECRET into the file
   if [[ -n "${API_SECRET:-}" ]]; then
-    sed -i "s|\${API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
+    sed_i "s|\${API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
   fi
   success "mm() shortcut installed"
 else
@@ -780,10 +789,10 @@ mb() {
 MBEOF
   # Patch the actual secrets into the file
   if [[ -n "${API_PORT:-}" ]]; then
-    sed -i "s|\${METABOT_API_PORT:-9100}|${API_PORT}|g" "$BASH_ALIASES"
+    sed_i "s|\${METABOT_API_PORT:-9100}|${API_PORT}|g" "$BASH_ALIASES"
   fi
   if [[ -n "${API_SECRET:-}" ]]; then
-    sed -i "s|\${METABOT_API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
+    sed_i "s|\${METABOT_API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
   fi
   success "mb() shortcut installed"
 else
@@ -808,10 +817,10 @@ for cli in $CLI_TOOLS; do
     chmod +x "$LOCAL_BIN/$cli"
     # Patch secrets into the standalone script
     if [[ -n "${API_SECRET:-}" ]]; then
-      sed -i "s|changeme|${API_SECRET}|g" "$LOCAL_BIN/$cli"
+      sed_i "s|changeme|${API_SECRET}|g" "$LOCAL_BIN/$cli"
     fi
     if [[ -n "${API_PORT:-}" && "$cli" == "mb" ]]; then
-      sed -i "s|9100|${API_PORT}|g" "$LOCAL_BIN/$cli"
+      sed_i "s|9100|${API_PORT}|g" "$LOCAL_BIN/$cli"
     fi
   fi
 done
