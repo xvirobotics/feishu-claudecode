@@ -9,7 +9,6 @@ export interface BotConfigBase {
   description?: string;
   claude: {
     defaultWorkingDirectory: string;
-    allowedTools: string[];
     maxTurns: number | undefined;
     maxBudgetUsd: number | undefined;
     model: string | undefined;
@@ -67,11 +66,6 @@ function required(name: string): string {
   return value;
 }
 
-function commaSplit(value: string | undefined): string[] {
-  if (!value || value.trim() === '') return [];
-  return value.split(',').map((s) => s.trim()).filter(Boolean);
-}
-
 // --- Feishu JSON entry (used in bots.json) ---
 
 export interface FeishuBotJsonEntry {
@@ -80,7 +74,6 @@ export interface FeishuBotJsonEntry {
   feishuAppId: string;
   feishuAppSecret: string;
   defaultWorkingDirectory: string;
-  allowedTools?: string[];
   maxTurns?: number;
   maxBudgetUsd?: number;
   model?: string;
@@ -107,7 +100,6 @@ export interface TelegramBotJsonEntry {
   description?: string;
   telegramBotToken: string;
   defaultWorkingDirectory: string;
-  allowedTools?: string[];
   maxTurns?: number;
   maxBudgetUsd?: number;
   model?: string;
@@ -130,17 +122,14 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
 
 function buildClaudeConfig(entry: {
   defaultWorkingDirectory: string;
-  allowedTools?: string[];
   maxTurns?: number;
   maxBudgetUsd?: number;
   model?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
 }): BotConfigBase['claude'] {
-  const defaultTools = ['Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash'];
   return {
     defaultWorkingDirectory: entry.defaultWorkingDirectory,
-    allowedTools: entry.allowedTools || commaSplit(process.env.CLAUDE_ALLOWED_TOOLS) || defaultTools,
     maxTurns: entry.maxTurns ?? (process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined),
     maxBudgetUsd: entry.maxBudgetUsd ?? (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
     model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-4-6',
@@ -160,9 +149,6 @@ function feishuBotFromEnv(): BotConfig {
     },
     claude: {
       defaultWorkingDirectory: required('CLAUDE_DEFAULT_WORKING_DIRECTORY'),
-      allowedTools: commaSplit(process.env.CLAUDE_ALLOWED_TOOLS) || [
-        'Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash',
-      ],
       maxTurns: process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined,
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
@@ -180,9 +166,6 @@ function telegramBotFromEnv(): TelegramBotConfig {
     },
     claude: {
       defaultWorkingDirectory: required('CLAUDE_DEFAULT_WORKING_DIRECTORY'),
-      allowedTools: commaSplit(process.env.CLAUDE_ALLOWED_TOOLS) || [
-        'Read', 'Edit', 'Write', 'Glob', 'Grep', 'Bash',
-      ],
       maxTurns: process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined,
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',

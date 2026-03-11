@@ -383,7 +383,6 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             feishuAppId: appId,
             feishuAppSecret: appSecret,
             defaultWorkingDirectory: workDir,
-            ...(body.allowedTools ? { allowedTools: body.allowedTools } : {}),
             ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
             ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
             ...(body.model ? { model: body.model } : {}),
@@ -400,7 +399,6 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             ...(body.description ? { description: body.description } : {}),
             telegramBotToken: token,
             defaultWorkingDirectory: workDir,
-            ...(body.allowedTools ? { allowedTools: body.allowedTools } : {}),
             ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
             ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
             ...(body.model ? { model: body.model } : {}),
@@ -447,7 +445,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         // Check running registry first
         const running = registry.get(name);
         const runningInfo = running
-          ? { running: true, workingDirectory: running.config.claude.defaultWorkingDirectory, allowedTools: running.config.claude.allowedTools }
+          ? { running: true, workingDirectory: running.config.claude.defaultWorkingDirectory }
           : { running: false };
 
         // Check config file if available

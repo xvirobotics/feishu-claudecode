@@ -423,8 +423,7 @@ export class MessageBridge {
       }
 
       // Auto-clear stale session when Claude can't find the conversation
-      if (lastState.status === 'error' && lastState.errorMessage &&
-          (lastState.errorMessage.includes('No conversation found') || lastState.errorMessage.includes('session'))) {
+      if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage)) {
         this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
         this.sessionManager.resetSession(chatId);
       }
@@ -455,7 +454,7 @@ export class MessageBridge {
 
       // Auto-clear stale session when Claude can't find the conversation
       const errMsg: string = err.message || '';
-      if (errMsg.includes('No conversation found') || errMsg.includes('session')) {
+      if (isStaleSessionError(errMsg)) {
         this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
         this.sessionManager.resetSession(chatId);
       }
@@ -646,6 +645,11 @@ export class MessageBridge {
         }
       }
 
+      if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage)) {
+        this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
+        this.sessionManager.resetSession(chatId);
+      }
+
       if (sendCards && messageId) {
         await this.sendFinalCard(messageId, lastState, chatId);
       }
@@ -672,6 +676,12 @@ export class MessageBridge {
       };
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'API task execution error');
+
+      const errMsg: string = err.message || '';
+      if (isStaleSessionError(errMsg)) {
+        this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
+        this.sessionManager.resetSession(chatId);
+      }
 
       if (sendCards && messageId) {
         const errorState: CardState = {
@@ -763,6 +773,11 @@ export class MessageBridge {
     this.runningTasks.clear();
     this.sessionManager.destroy();
   }
+}
+
+export function isStaleSessionError(errorMessage?: string): boolean {
+  if (!errorMessage) return false;
+  return /no conversation found|conversation not found|session id|invalid session/i.test(errorMessage);
 }
 
 /**

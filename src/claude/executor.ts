@@ -121,7 +121,6 @@ export class ClaudeExecutor {
 
   private buildQueryOptions(cwd: string, sessionId: string | undefined, abortController: AbortController, outputsDir?: string, apiContext?: ApiContext): Record<string, unknown> {
     const queryOptions: Record<string, unknown> = {
-      allowedTools: this.config.claude.allowedTools,
       permissionMode: 'bypassPermissions' as const,
       allowDangerouslySkipPermissions: true,
       cwd,

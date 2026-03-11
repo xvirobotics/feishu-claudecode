@@ -143,7 +143,6 @@ Prerequisites: Node.js 20+, [Claude Code CLI](https://github.com/anthropics/clau
 | `defaultWorkingDirectory` | Yes | — | Working directory for Claude |
 | `feishuAppId` / `feishuAppSecret` | Feishu | — | Feishu app credentials |
 | `telegramBotToken` | Telegram | — | Telegram bot token |
-| `allowedTools` | No | Read,Edit,Write,Glob,Grep,Bash | Claude tools whitelist |
 | `maxTurns` / `maxBudgetUsd` | No | unlimited | Execution limits |
 | `model` | No | SDK default | Claude model |
 
@@ -172,7 +171,6 @@ Prerequisites: Node.js 20+, [Claude Code CLI](https://github.com/anthropics/clau
 | `CLAUDE_EXECUTABLE_PATH` | auto-detect | Path to `claude` binary (resolved via `which` if not set) |
 | `METABOT_URL` | `http://localhost:9100` | MetaBot API URL (for CLI remote access) |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory server URL (for CLI remote access) |
-| `WEBHOOK_URLS` | — | Comma-separated webhook URLs for task completion notifications |
 | `LOG_LEVEL` | info | Log level |
 
 </details>
@@ -197,7 +195,6 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 
 - Claude has full read/write/execute access to the working directory
 - Control access via Feishu/Telegram platform settings (app visibility, group membership)
-- Use `allowedTools` to restrict capabilities (remove `Bash` for read-only)
 - Use `maxBudgetUsd` to cap cost per request
 - `API_SECRET` enables Bearer auth on both the API server and MetaMemory
 - MetaMemory supports **folder-level ACL**: set `MEMORY_ADMIN_TOKEN` and `MEMORY_TOKEN` for dual-role access. Admin sees all folders; reader only sees folders with `visibility: shared`. Use `PUT /api/folders/:id` with `{"visibility":"private"}` to lock a folder

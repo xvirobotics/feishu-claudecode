@@ -19,7 +19,6 @@ export interface BotInfo {
   description?: string;
   platform: string;
   workingDirectory: string;
-  allowedTools: string[];
 }
 
 /**
@@ -75,7 +74,6 @@ export class BotRegistry {
       ...(b.config.description ? { description: b.config.description } : {}),
       platform: b.platform,
       workingDirectory: b.config.claude.defaultWorkingDirectory,
-      allowedTools: b.config.claude.allowedTools,
     }));
   }
 }

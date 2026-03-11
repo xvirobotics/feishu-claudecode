@@ -419,8 +419,9 @@ export class DocSync {
         }
         await this.throttle();
       } catch (err: any) {
-        this.logger.error({ err: err.msg || err.message, doc: doc.title }, 'Failed to create wiki document');
-        if (result) result.errors.push(`Create "${doc.title}": ${err.msg || err.message}`);
+        const detail = err.response?.data || err.data || err.msg || err.message;
+        this.logger.error({ err: detail, doc: doc.title, parentNodeToken }, 'Failed to create wiki document');
+        if (result) result.errors.push(`Create "${doc.title}": ${typeof detail === 'object' ? JSON.stringify(detail) : detail}`);
       }
     }
   }
@@ -446,7 +447,8 @@ export class DocSync {
         });
         await this.throttle();
       } catch (err: any) {
-        this.logger.error({ err: err.msg || err.message, docId: feishuDocId }, 'Failed to write blocks');
+        const detail = err.response?.data || err.data || err.msg || err.message;
+        this.logger.error({ err: detail, docId: feishuDocId }, 'Failed to write blocks');
         throw err;
       }
     }

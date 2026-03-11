@@ -38,9 +38,21 @@ export async function startTelegramBot(
   const sender = new TelegramSender(bot, botLogger);
   const bridge = new MessageBridge(config, botLogger, sender, memoryServerUrl, memorySecret);
 
-  // Get bot info for logging
-  const me = await bot.api.getMe();
-  botLogger.info({ botUsername: me.username, botId: me.id }, 'Telegram bot info fetched');
+  // Install grammY error handler before polling starts.
+  bot.catch((err) => {
+    botLogger.error({ err: err.error, ctx: err.ctx?.update?.update_id }, 'grammY error');
+  });
+
+  // getMe is useful for logging and @mention handling, but Telegram API
+  // timeouts during startup should not take down the whole service.
+  let botUsername: string | undefined;
+  try {
+    const me = await bot.api.getMe();
+    botUsername = me.username;
+    botLogger.info({ botUsername: me.username, botId: me.id }, 'Telegram bot info fetched');
+  } catch (err) {
+    botLogger.warn({ err }, 'Failed to fetch Telegram bot info during startup; continuing without username metadata');
+  }
 
   // Handle text messages
   bot.on('message:text', async (ctx) => {
@@ -52,9 +64,8 @@ export async function startTelegramBot(
 
     // In group chats, only respond when mentioned or when message starts with /
     if (chatType === 'group' || chatType === 'supergroup') {
-      const botUsername = me.username;
       const mentioned = ctx.message.entities?.some(
-        (e) => e.type === 'mention' && text.includes(`@${botUsername}`),
+        (e) => e.type === 'mention' && botUsername !== undefined && text.includes(`@${botUsername}`),
       );
       const isCommand = text.startsWith('/');
 
@@ -237,11 +248,6 @@ export async function startTelegramBot(
     });
   });
 
-  // Handle errors
-  bot.catch((err) => {
-    botLogger.error({ err: err.error, ctx: err.ctx?.update?.update_id }, 'grammY error');
-  });
-
   // Start long polling (non-blocking)
   bot.start({
     onStart: () => {
@@ -251,7 +257,6 @@ export async function startTelegramBot(
 
   botLogger.info({
     defaultWorkingDirectory: config.claude.defaultWorkingDirectory,
-    allowedTools: config.claude.allowedTools,
     maxTurns: config.claude.maxTurns ?? 'unlimited',
     maxBudgetUsd: config.claude.maxBudgetUsd ?? 'unlimited',
   }, 'Configuration');
