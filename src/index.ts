@@ -100,13 +100,24 @@ async function main() {
   // Create bot registry
   const registry = new BotRegistry();
 
-  // Start all bots in parallel
-  const feishuHandles: FeishuBotHandle[] = feishuCount > 0
-    ? await Promise.all(appConfig.feishuBots.map((bot) => startFeishuBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined)))
+  // Start bots independently so a single platform/API timeout does not
+  // take down the whole MetaBot process.
+  const feishuHandles = feishuCount > 0
+    ? await startBotsSafely(
+      appConfig.feishuBots,
+      (bot) => startFeishuBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
+      logger,
+      'feishu',
+    )
     : [];
 
-  const telegramHandles: TelegramBotHandle[] = telegramCount > 0
-    ? await Promise.all(appConfig.telegramBots.map((bot) => startTelegramBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined)))
+  const telegramHandles = telegramCount > 0
+    ? await startBotsSafely(
+      appConfig.telegramBots,
+      (bot) => startTelegramBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
+      logger,
+      'telegram',
+    )
     : [];
 
   // Register all bots in the registry
@@ -232,6 +243,34 @@ async function main() {
 
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+}
+
+async function startBotsSafely<TConfig extends BotConfigBase, THandle>(
+  bots: TConfig[],
+  starter: (bot: TConfig) => Promise<THandle>,
+  logger: Logger,
+  platform: 'feishu' | 'telegram',
+): Promise<THandle[]> {
+  const results = await Promise.allSettled(bots.map((bot) => starter(bot)));
+  const handles: THandle[] = [];
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    const bot = bots[i];
+    if (!result || !bot) continue;
+
+    if (result.status === 'fulfilled') {
+      handles.push(result.value);
+      continue;
+    }
+
+    logger.error(
+      { err: result.reason, botName: bot.name, platform },
+      'Failed to start bot; continuing with remaining bots',
+    );
+  }
+
+  return handles;
 }
 
 main().catch((err) => {
