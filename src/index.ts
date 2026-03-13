@@ -8,7 +8,7 @@ import { FeishuSenderAdapter } from './feishu/feishu-sender-adapter.js';
 import { MessageBridge } from './bridge/message-bridge.js';
 import type { IMessageSender } from './bridge/message-sender.interface.js';
 import type { BotConfigBase } from './config.js';
-import { startTelegramBot, type TelegramBotHandle } from './telegram/telegram-bot.js';
+import { startTelegramBot } from './telegram/telegram-bot.js';
 import { BotRegistry } from './api/bot-registry.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';

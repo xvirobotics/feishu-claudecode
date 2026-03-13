@@ -152,7 +152,7 @@ describe('StreamProcessor', () => {
     expect(p.getImagePaths()).toEqual([]);
   });
 
-  it('detects ExitPlanMode for auto-response', () => {
+  it('does not auto-respond to ExitPlanMode (SDK handles it in bypassPermissions mode)', () => {
     const p = new StreamProcessor('hi');
     p.processMessage(msg({
       type: 'assistant',
@@ -167,11 +167,7 @@ describe('StreamProcessor', () => {
       },
     }));
     const tools = p.drainAutoRespondTools();
-    expect(tools).toHaveLength(1);
-    expect(tools[0].toolUseId).toBe('tool-plan1');
-    expect(tools[0].name).toBe('ExitPlanMode');
-    // Second drain should be empty
-    expect(p.drainAutoRespondTools()).toHaveLength(0);
+    expect(tools).toHaveLength(0);
   });
 
   it('does not detect ExitPlanMode from subagent', () => {
