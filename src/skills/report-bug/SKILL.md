@@ -27,7 +27,9 @@ Present the user's initial description and the auto-detected environment info. A
 
 ### Step 2: Interview for Missing Details
 
-Ask the user for any information not already provided:
+Ask the user for any information not already provided. **Ask ONE question at a time** — wait for the user's answer before asking the next question. Do NOT batch multiple questions into a single `AskUserQuestion` call.
+
+Questions to gather (skip any already covered by `$ARGUMENTS`):
 
 1. **Steps to Reproduce** — What exact steps trigger the bug?
 2. **Expected Behavior** — What should have happened?
@@ -35,7 +37,7 @@ Ask the user for any information not already provided:
 4. **Logs** — Any relevant error output? (Remind them to redact sensitive info like tokens)
 5. **Screenshots** — Any visual evidence?
 
-Do NOT ask for information the user already provided in `$ARGUMENTS`. Be conversational, not robotic. If the initial description is thorough, skip to Step 3.
+Be conversational, not robotic. If the initial description is thorough, skip to Step 3.
 
 ### Step 3: Draft the Issue
 

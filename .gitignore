@@ -8,3 +8,4 @@ nohup.out
 .DS_Store
 data/
 src/skills/gpu-cluster/
+.claude/

@@ -178,17 +178,13 @@ export class DocSync {
       }
     }
 
-    // Use pre-configured space ID from config/env
+    // Use pre-configured space ID from config/env (trust it without verification,
+    // since space.get requires explicit space membership which bot apps may not have)
     if (this.config.wikiSpaceId) {
       spaceId = this.config.wikiSpaceId;
-      try {
-        await this.client.wiki.v2.space.get({ path: { space_id: spaceId } });
-        this.store.setWikiSpaceId(spaceId);
-        this.logger.info({ spaceId }, 'Using configured wiki space');
-        return spaceId;
-      } catch (err: any) {
-        this.logger.error({ spaceId, err: err.msg || err.message }, 'Configured WIKI_SPACE_ID is invalid or bot is not a member');
-      }
+      this.store.setWikiSpaceId(spaceId);
+      this.logger.info({ spaceId }, 'Using configured wiki space (WIKI_SPACE_ID)');
+      return spaceId;
     }
 
     // Try to find existing space by name (bot must be a member)

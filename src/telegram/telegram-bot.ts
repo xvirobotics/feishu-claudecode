@@ -43,6 +43,14 @@ export async function startTelegramBot(
     botLogger.error({ err: err.error, ctx: err.ctx?.update?.update_id }, 'grammY error');
   });
 
+  const isUnauthorized = (err: unknown): boolean => {
+    const e: any = err as any;
+    return e?.error_code === 401
+      || e?.error?.error_code === 401
+      || e?.response?.error_code === 401
+      || e?.response?.error?.error_code === 401;
+  };
+
   // getMe is useful for logging and @mention handling, but Telegram API
   // timeouts during startup should not take down the whole service.
   let botUsername: string | undefined;
@@ -51,6 +59,10 @@ export async function startTelegramBot(
     botUsername = me.username;
     botLogger.info({ botUsername: me.username, botId: me.id }, 'Telegram bot info fetched');
   } catch (err) {
+    if (isUnauthorized(err)) {
+      botLogger.error({ err }, 'Telegram bot token is unauthorized (401). Skipping this bot.');
+      throw err;
+    }
     botLogger.warn({ err }, 'Failed to fetch Telegram bot info during startup; continuing without username metadata');
   }
 
@@ -248,11 +260,14 @@ export async function startTelegramBot(
     });
   });
 
-  // Start long polling (non-blocking)
-  bot.start({
+  // Start long polling (non-blocking). Important: attach a catch handler
+  // so startup/auth/network errors don't crash the whole process.
+  void bot.start({
     onStart: () => {
       botLogger.info('Telegram bot is running (long polling)');
     },
+  }).catch((err) => {
+    botLogger.error({ err }, 'Telegram bot polling stopped with error');
   });
 
   botLogger.info({

@@ -48,7 +48,7 @@ npm run dev
 
 ```bash
 npm run build    # 无错误
-npm test         # 所有 14 个测试套件通过
+npm test         # 所有测试套件通过
 npm run lint     # 无 lint 错误
 ```
 
@@ -423,5 +423,4 @@ npm run build
 ## 有问题？
 
 - 在 [Issue](https://github.com/xvirobotics/metabot/issues/new) 中报告 bug 或提出功能请求
-- 在 [GitHub Discussions](https://github.com/xvirobotics/metabot/discussions) 中提问和讨论想法
 - 创建新 Issue 前，请先检查是否已有相关 Issue

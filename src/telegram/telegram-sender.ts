@@ -58,7 +58,9 @@ function renderCardHtml(state: CardState): string {
   if (state.pendingQuestion) {
     parts.push('');
     parts.push('---');
-    for (const q of state.pendingQuestion.questions) {
+    // Only display the first question — bridge collects one answer at a time
+    const q = state.pendingQuestion.questions[0];
+    if (q) {
       parts.push(`<b>[${escapeHtml(q.header)}] ${escapeHtml(q.question)}</b>`);
       parts.push('');
       q.options.forEach((opt, i) => {

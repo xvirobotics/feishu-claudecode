@@ -48,7 +48,7 @@ A successful setup looks like this:
 
 ```bash
 npm run build    # No errors
-npm test         # All 14 test suites pass
+npm test         # All test suites pass
 npm run lint     # No lint errors
 ```
 
@@ -423,5 +423,4 @@ If you're a human working with an AI agent on MetaBot:
 ## Questions?
 
 - Open an [issue](https://github.com/xvirobotics/metabot/issues/new) for bugs or feature requests
-- Use [GitHub Discussions](https://github.com/xvirobotics/metabot/discussions) for questions and ideas
 - Check existing issues before creating new ones

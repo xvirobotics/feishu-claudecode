@@ -53,6 +53,8 @@ Based on `$ARGUMENTS`:
 
 Show the issue details and ask the user to confirm they want to work on it.
 
+**Important:** When using `AskUserQuestion`, always ask ONE question at a time. Wait for the user's answer before asking the next question. Do NOT batch multiple questions into a single call.
+
 ### Step 3: Claim the Issue
 
 Comment on the issue to signal you're working on it:

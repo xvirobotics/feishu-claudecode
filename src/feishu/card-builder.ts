@@ -55,8 +55,12 @@ export function buildCard(state: CardState): string {
   // Pending question section
   if (state.pendingQuestion) {
     elements.push({ tag: 'hr' });
+    // Only display the first question — the bridge only collects one answer
+    // at a time. If Claude batches multiple questions, they will be asked
+    // sequentially as Claude re-asks unanswered ones.
     const questionLines: string[] = [];
-    for (const q of state.pendingQuestion.questions) {
+    const q = state.pendingQuestion.questions[0];
+    if (q) {
       questionLines.push(`**[${q.header}] ${q.question}**`);
       questionLines.push('');
       q.options.forEach((opt, i) => {

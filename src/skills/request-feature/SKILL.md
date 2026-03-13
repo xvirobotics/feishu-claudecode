@@ -24,7 +24,9 @@ Acknowledge the user's feature idea from `$ARGUMENTS`. If the idea is clear and 
 
 ### Step 2: Refine the Request
 
-Help the user think through their feature by asking about:
+Help the user think through their feature. **Ask ONE question at a time** — wait for the user's answer before asking the next question. Do NOT batch multiple questions into a single `AskUserQuestion` call.
+
+Questions to explore (skip any already clear from `$ARGUMENTS`):
 
 1. **Problem / Use Case** — What problem does this solve? What's the use case?
 2. **Proposed Solution** — How do they envision it working?
