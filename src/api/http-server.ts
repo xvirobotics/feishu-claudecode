@@ -9,6 +9,8 @@ import { addBot, removeBot, getBotEntry } from './bots-config-writer.js';
 import { installSkillsToWorkDir } from './skills-installer.js';
 import { metrics } from '../utils/metrics.js';
 import { FeishuDocReader } from '../feishu/doc-reader.js';
+import { FeishuDocWriter } from '../feishu/doc-writer.js';
+import type { OAuthHandler } from '../feishu/oauth-handler.js';
 import type { PeerManager } from './peer-manager.js';
 
 interface ApiServerOptions {
@@ -21,6 +23,7 @@ interface ApiServerOptions {
   docSync?: DocSync;
   feishuServiceClient?: lark.Client;
   peerManager?: PeerManager;
+  oauthHandler?: OAuthHandler;
 }
 
 interface JsonBody {
@@ -70,7 +73,7 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, oauthHandler } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   const server = http.createServer(async (req, res) => {
@@ -78,7 +81,10 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     const url = req.url || '/';
 
     // Auth check if secret is configured
-    if (secret) {
+    // OAuth callback and public routes skip auth
+    const urlPath = url.split('?')[0];
+    const isPublicRoute = urlPath === '/oauth/feishu/callback';
+    if (secret && !isPublicRoute) {
       const auth = req.headers.authorization;
       if (auth !== `Bearer ${secret}`) {
         jsonResponse(res, 401, { error: 'Unauthorized' });
@@ -87,6 +93,191 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     }
 
     try {
+      // Route: GET /oauth/feishu/callback — OAuth authorization callback (public, no auth)
+      if (method === 'GET' && urlPath === '/oauth/feishu/callback') {
+        if (!oauthHandler) {
+          jsonResponse(res, 400, { error: 'OAuth not configured' });
+          return;
+        }
+        const queryStr = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
+        const params = new URLSearchParams(queryStr);
+        const code = params.get('code');
+        const state = params.get('state');
+
+        if (!code || !state) {
+          res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<h2>Authorization failed: missing code or state</h2>');
+          return;
+        }
+
+        const pending = oauthHandler.consumeState(state);
+        if (!pending) {
+          res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end('<h2>Authorization failed: invalid or expired state</h2>');
+          return;
+        }
+
+        try {
+          const token = await oauthHandler.exchangeCode(code);
+          // Update userId from the token response (open_id)
+          if (token.userId && token.userId !== pending.userId) {
+            logger.info({ expectedUserId: pending.userId, actualUserId: token.userId }, 'OAuth userId mapped from open_id');
+          }
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`
+            <html><body style="font-family:sans-serif;text-align:center;padding:60px">
+              <h2>✅ 授权成功</h2>
+              <p>飞书用户授权已完成，可以关闭此窗口。</p>
+              <p style="color:#888">User: ${token.userId}</p>
+            </body></html>
+          `);
+        } catch (err: any) {
+          logger.error({ err: err.message }, 'OAuth code exchange failed');
+          res.writeHead(500, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(`<h2>Authorization failed</h2><p>${err.message}</p>`);
+        }
+        return;
+      }
+
+      // Route: GET /api/oauth/status — check user OAuth status
+      if (method === 'GET' && urlPath === '/api/oauth/status') {
+        if (!oauthHandler) {
+          jsonResponse(res, 400, { error: 'OAuth not configured' });
+          return;
+        }
+        const queryStr = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
+        const params = new URLSearchParams(queryStr);
+        const userId = params.get('userId');
+        if (!userId) {
+          jsonResponse(res, 400, { error: 'Missing userId parameter' });
+          return;
+        }
+        const info = oauthHandler.getTokenInfo(userId);
+        jsonResponse(res, 200, info || { authorized: false });
+        return;
+      }
+
+      // Route: POST /api/oauth/revoke — revoke user OAuth token
+      if (method === 'POST' && urlPath === '/api/oauth/revoke') {
+        if (!oauthHandler) {
+          jsonResponse(res, 400, { error: 'OAuth not configured' });
+          return;
+        }
+        const body = await parseJsonBody(req);
+        const userId = body.userId as string;
+        if (!userId) {
+          jsonResponse(res, 400, { error: 'Missing userId' });
+          return;
+        }
+        const revoked = oauthHandler.revoke(userId);
+        jsonResponse(res, 200, { userId, revoked });
+        return;
+      }
+
+      // Route: POST /api/feishu/document/create — create document with user token
+      if (method === 'POST' && urlPath === '/api/feishu/document/create') {
+        if (!oauthHandler) {
+          jsonResponse(res, 400, { error: 'OAuth not configured' });
+          return;
+        }
+        const body = await parseJsonBody(req);
+        const userId = body.userId as string;
+        const title = body.title as string;
+        const content = body.content as string;
+        const folderToken = body.folderToken as string | undefined;
+
+        if (!userId || !title) {
+          jsonResponse(res, 400, { error: 'Missing required fields: userId, title' });
+          return;
+        }
+
+        const userToken = await oauthHandler.getValidToken(userId);
+        if (!userToken) {
+          jsonResponse(res, 401, { error: 'User not authorized. Use /auth to authorize first.' });
+          return;
+        }
+
+        const client = feishuServiceClient || registry.listByPlatform('feishu')[0]?.feishuClient;
+        if (!client) {
+          jsonResponse(res, 400, { error: 'No Feishu client available' });
+          return;
+        }
+
+        const writer = new FeishuDocWriter(client, logger);
+        const result = await writer.createDocument(userToken, title, content || '', folderToken);
+        jsonResponse(res, result.success ? 201 : 500, result);
+        return;
+      }
+
+      // Route: PUT /api/feishu/document/:docId — update document with user token
+      if (method === 'PUT' && /^\/api\/feishu\/document\/[^/]+$/.test(urlPath)) {
+        if (!oauthHandler) {
+          jsonResponse(res, 400, { error: 'OAuth not configured' });
+          return;
+        }
+        const docId = urlPath.slice('/api/feishu/document/'.length);
+        const body = await parseJsonBody(req);
+        const userId = body.userId as string;
+        const content = body.content as string;
+
+        if (!userId || content === undefined) {
+          jsonResponse(res, 400, { error: 'Missing required fields: userId, content' });
+          return;
+        }
+
+        const userToken = await oauthHandler.getValidToken(userId);
+        if (!userToken) {
+          jsonResponse(res, 401, { error: 'User not authorized. Use /auth to authorize first.' });
+          return;
+        }
+
+        const client = feishuServiceClient || registry.listByPlatform('feishu')[0]?.feishuClient;
+        if (!client) {
+          jsonResponse(res, 400, { error: 'No Feishu client available' });
+          return;
+        }
+
+        const writer = new FeishuDocWriter(client, logger);
+        const result = await writer.updateDocument(userToken, docId, content);
+        jsonResponse(res, result.success ? 200 : 500, result);
+        return;
+      }
+
+      // Route: POST /api/feishu/document/:docId/append — append to document
+      if (method === 'POST' && /^\/api\/feishu\/document\/[^/]+\/append$/.test(urlPath)) {
+        if (!oauthHandler) {
+          jsonResponse(res, 400, { error: 'OAuth not configured' });
+          return;
+        }
+        const parts = urlPath.split('/');
+        const docId = parts[4]; // /api/feishu/document/{docId}/append
+        const body = await parseJsonBody(req);
+        const userId = body.userId as string;
+        const content = body.content as string;
+
+        if (!userId || !content) {
+          jsonResponse(res, 400, { error: 'Missing required fields: userId, content' });
+          return;
+        }
+
+        const userToken = await oauthHandler.getValidToken(userId);
+        if (!userToken) {
+          jsonResponse(res, 401, { error: 'User not authorized. Use /auth to authorize first.' });
+          return;
+        }
+
+        const client = feishuServiceClient || registry.listByPlatform('feishu')[0]?.feishuClient;
+        if (!client) {
+          jsonResponse(res, 400, { error: 'No Feishu client available' });
+          return;
+        }
+
+        const writer = new FeishuDocWriter(client, logger);
+        const result = await writer.appendToDocument(userToken, docId, content);
+        jsonResponse(res, result.success ? 200 : 500, result);
+        return;
+      }
+
       // Route: GET /api/health
       if (method === 'GET' && url === '/api/health') {
         const peerStatuses = peerManager?.getPeerStatuses() ?? [];
