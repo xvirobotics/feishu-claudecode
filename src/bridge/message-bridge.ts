@@ -424,10 +424,31 @@ export class MessageBridge {
         }
       }
 
-      // Auto-clear stale session when Claude can't find the conversation
-      if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage)) {
-        this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
+      // Auto-retry with fresh session when Claude can't find the conversation
+      if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage) && session.sessionId) {
+        this.logger.info({ chatId }, 'Stale session detected, retrying with fresh session');
         this.sessionManager.resetSession(chatId);
+        lastState = { ...lastState, status: 'running', errorMessage: undefined };
+        await this.sender.updateCard(messageId, { ...lastState, responseText: '_Session expired, retrying..._' });
+
+        // Retry execution without sessionId
+        const retryHandle = this.executor.startExecution({
+          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+        });
+        executionHandle.finish();
+        runningTask.executionHandle = retryHandle;
+
+        for await (const message of retryHandle.stream) {
+          if (abortController.signal.aborted) break;
+          resetIdleTimer();
+          const state = processor.processMessage(message);
+          lastState = state;
+          const newSid = processor.getSessionId();
+          if (newSid) this.sessionManager.setSessionId(chatId, newSid);
+          if (state.status === 'complete' || state.status === 'error') break;
+          rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
+        }
+        await rateLimiter.cancelAndWait();
       }
 
       await this.sendFinalCard(messageId, lastState, chatId);
@@ -454,11 +475,49 @@ export class MessageBridge {
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'Claude execution error');
 
-      // Auto-clear stale session when Claude can't find the conversation
+      // Auto-retry with fresh session when Claude can't find the conversation
       const errMsg: string = err.message || '';
-      if (isStaleSessionError(errMsg)) {
-        this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
+      if (isStaleSessionError(errMsg) && session.sessionId) {
+        this.logger.info({ chatId }, 'Stale session detected in catch, retrying with fresh session');
         this.sessionManager.resetSession(chatId);
+        await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: '_Session expired, retrying..._' });
+
+        try {
+          const retryHandle = this.executor.startExecution({
+            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+          });
+          executionHandle.finish();
+          runningTask.executionHandle = retryHandle;
+
+          for await (const message of retryHandle.stream) {
+            if (abortController.signal.aborted) break;
+            resetIdleTimer();
+            const state = processor.processMessage(message);
+            lastState = state;
+            const newSid = processor.getSessionId();
+            if (newSid) this.sessionManager.setSessionId(chatId, newSid);
+            if (state.status === 'complete' || state.status === 'error') break;
+            rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
+          }
+          await rateLimiter.cancelAndWait();
+          await this.sendFinalCard(messageId, lastState, chatId);
+
+          const durationMs = Date.now() - startTime;
+          this.audit.log({
+            event: lastState.status === 'error' ? 'task_error' : 'task_complete',
+            botName: this.config.name, chatId, userId, prompt: text,
+            durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
+          });
+          this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
+          metrics.incCounter('metabot_tasks_total');
+          metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
+
+          await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+          return; // skip the normal error handling below
+        } catch (retryErr: any) {
+          this.logger.error({ err: retryErr, chatId }, 'Retry after stale session also failed');
+          lastState = { ...lastState, status: 'error', errorMessage: retryErr.message || 'Retry failed' };
+        }
       }
 
       const durationMs = Date.now() - startTime;
@@ -647,9 +706,33 @@ export class MessageBridge {
         }
       }
 
-      if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage)) {
-        this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
+      // Auto-retry with fresh session when Claude can't find the conversation
+      if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage) && session.sessionId) {
+        this.logger.info({ chatId }, 'API task: stale session detected, retrying with fresh session');
         this.sessionManager.resetSession(chatId);
+        if (sendCards && messageId) {
+          await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: '_Session expired, retrying..._' });
+        }
+
+        const retryHandle = this.executor.startExecution({
+          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+        });
+        executionHandle.finish();
+        runningTask.executionHandle = retryHandle;
+
+        for await (const message of retryHandle.stream) {
+          if (abortController.signal.aborted) break;
+          resetIdleTimer();
+          const state = processor.processMessage(message);
+          lastState = state;
+          const newSid = processor.getSessionId();
+          if (newSid) this.sessionManager.setSessionId(chatId, newSid);
+          if (state.status === 'complete' || state.status === 'error') break;
+          if (sendCards && messageId) {
+            rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
+          }
+        }
+        await rateLimiter.cancelAndWait();
       }
 
       if (sendCards && messageId) {
@@ -679,10 +762,54 @@ export class MessageBridge {
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'API task execution error');
 
+      // Auto-retry with fresh session when Claude can't find the conversation
       const errMsg: string = err.message || '';
-      if (isStaleSessionError(errMsg)) {
-        this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
+      if (isStaleSessionError(errMsg) && session.sessionId) {
+        this.logger.info({ chatId }, 'API task: stale session in catch, retrying with fresh session');
         this.sessionManager.resetSession(chatId);
+        if (sendCards && messageId) {
+          await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: '_Session expired, retrying..._' });
+        }
+
+        try {
+          const retryHandle = this.executor.startExecution({
+            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+          });
+          executionHandle.finish();
+          runningTask.executionHandle = retryHandle;
+
+          for await (const message of retryHandle.stream) {
+            if (abortController.signal.aborted) break;
+            resetIdleTimer();
+            const state = processor.processMessage(message);
+            lastState = state;
+            const newSid = processor.getSessionId();
+            if (newSid) this.sessionManager.setSessionId(chatId, newSid);
+            if (state.status === 'complete' || state.status === 'error') break;
+            if (sendCards && messageId) {
+              rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
+            }
+          }
+          await rateLimiter.cancelAndWait();
+
+          if (sendCards && messageId) {
+            await this.sendFinalCard(messageId, lastState, chatId);
+          }
+
+          await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+
+          return {
+            success: lastState.status === 'complete',
+            responseText: lastState.responseText,
+            sessionId: processor.getSessionId(),
+            costUsd: lastState.costUsd,
+            durationMs: lastState.durationMs,
+            error: lastState.errorMessage,
+          };
+        } catch (retryErr: any) {
+          this.logger.error({ err: retryErr, chatId }, 'API task retry after stale session also failed');
+          // Fall through to normal error handling
+        }
       }
 
       if (sendCards && messageId) {
