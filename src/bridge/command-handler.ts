@@ -6,9 +6,13 @@ import { SessionManager } from '../claude/session-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
+import type { OAuthHandler } from '../feishu/oauth-handler.js';
 
 export class CommandHandler {
   private docSync: DocSync | null = null;
+  private oauthHandler: OAuthHandler | null = null;
+  private oauthRedirectUri: string = '';
+  private oauthScopes: string = '';
 
   constructor(
     private config: BotConfigBase,
@@ -24,6 +28,13 @@ export class CommandHandler {
   /** Set the doc sync service (optional, only available for Feishu bots). */
   setDocSync(docSync: DocSync): void {
     this.docSync = docSync;
+  }
+
+  /** Set the OAuth handler for /auth commands. */
+  setOAuth(handler: OAuthHandler, redirectUri: string, scopes: string): void {
+    this.oauthHandler = handler;
+    this.oauthRedirectUri = redirectUri;
+    this.oauthScopes = scopes;
   }
 
   /** Returns true if the message was handled as a command, false otherwise. */
@@ -43,6 +54,7 @@ export class CommandHandler {
           '`/reset` - Clear session, start fresh',
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
+          '`/auth` - Authorize Feishu user access',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
           '',
@@ -99,6 +111,12 @@ export class CommandHandler {
       case '/sync': {
         const args = text.slice('/sync'.length).trim();
         await this.handleSyncCommand(chatId, args);
+        return true;
+      }
+
+      case '/auth': {
+        const args = text.slice('/auth'.length).trim();
+        await this.handleAuthCommand(chatId, userId, args);
         return true;
       }
 
@@ -216,6 +234,58 @@ export class CommandHandler {
       }
       default:
         await this.sender.sendTextNotice(chatId, '📝 Sync', 'Usage:\n- `/sync` — Sync all documents to Feishu Wiki\n- `/sync status` — Show sync status', 'blue');
+    }
+  }
+
+  private async handleAuthCommand(chatId: string, userId: string, args: string): Promise<void> {
+    if (!this.oauthHandler) {
+      await this.sender.sendTextNotice(chatId, '❌ OAuth Unavailable', 'OAuth is not configured for this bot.', 'red');
+      return;
+    }
+
+    const [subCmd] = args.split(/\s+/);
+
+    if (!subCmd) {
+      // Default: generate auth URL
+      const { url } = this.oauthHandler.buildAuthUrl(this.oauthRedirectUri, userId, chatId, this.oauthScopes);
+      await this.sender.sendTextNotice(chatId, '🔐 Feishu Authorization', [
+        'Click the link below to authorize MetaBot to access your Feishu account:',
+        '',
+        `[Authorize Now](${url})`,
+        '',
+        'After authorization, you can use document creation/editing features.',
+        'The authorization is valid for 30 days.',
+      ].join('\n'), 'blue');
+      return;
+    }
+
+    switch (subCmd.toLowerCase()) {
+      case 'status': {
+        const info = this.oauthHandler.getTokenInfo(userId);
+        if (!info) {
+          await this.sender.sendTextNotice(chatId, '🔐 Auth Status', 'Not authorized. Use `/auth` to authorize.', 'orange');
+        } else {
+          const expiresDate = new Date(info.expiresAt * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+          await this.sender.sendTextNotice(chatId, '🔐 Auth Status', [
+            '**Status:** Authorized ✅',
+            `**Scopes:** \`${info.scopes}\``,
+            `**Token Expires:** ${expiresDate}`,
+            `**Last Updated:** ${info.updatedAt}`,
+          ].join('\n'), 'green');
+        }
+        break;
+      }
+      case 'revoke': {
+        const revoked = this.oauthHandler.revoke(userId);
+        if (revoked) {
+          await this.sender.sendTextNotice(chatId, '🔐 Auth Revoked', 'Your Feishu authorization has been revoked.', 'green');
+        } else {
+          await this.sender.sendTextNotice(chatId, '🔐 Auth', 'No authorization found to revoke.', 'orange');
+        }
+        break;
+      }
+      default:
+        await this.sender.sendTextNotice(chatId, '🔐 Auth', 'Usage:\n- `/auth` — Authorize Feishu access\n- `/auth status` — Check authorization status\n- `/auth revoke` — Revoke authorization', 'blue');
     }
   }
 }
