@@ -175,13 +175,12 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
     echo "==> Updating skills..."
     SKILLS_DIR="$HOME/.claude/skills"
     if [[ -d "$SKILLS_DIR" ]]; then
-      for skill in metaskill metamemory metabot feishu-doc voice; do
+      for skill in metaskill metamemory metabot feishu-doc; do
         case "$skill" in
           metaskill)  src="$METABOT_SRC/src/skills/metaskill" ;;
           metamemory) src="$METABOT_SRC/src/memory/skill" ;;
           metabot)    src="$METABOT_SRC/src/skills/metabot" ;;
           feishu-doc) src="$METABOT_SRC/src/skills/feishu-doc" ;;
-          voice)      src="$METABOT_SRC/src/skills/voice" ;;
           *)          src="" ;;
         esac
         if [[ -n "$src" && -d "$src" && -d "$SKILLS_DIR/$skill" ]]; then
