@@ -8,7 +8,7 @@ MetaMemory 是基于 **SQLite 的文档存储**（使用 FTS5 全文搜索），
 
 - **文档** 是 Markdown 文件，按文件夹树组织
 - **全文搜索** 基于 SQLite FTS5
-- **Web UI** 在 `http://localhost:8100` 浏览和搜索
+- **Web UI** 在 `http://localhost:8100?token=YOUR_TOKEN` 浏览和搜索
 - **REST API** 程序化访问
 - **CLI**（`mm`）终端访问
 
@@ -49,6 +49,16 @@ echo '# 更新内容' | mm update DOC_ID
 mm mkdir "new-folder"               # 创建文件夹
 mm delete DOC_ID                    # 删除文档
 ```
+
+## Web UI 访问
+
+配置了认证（`API_SECRET`、`MEMORY_ADMIN_TOKEN` 或 `MEMORY_TOKEN`）后，Web UI 需要 Token。通过 URL 参数传递：
+
+```
+http://localhost:8100?token=YOUR_TOKEN
+```
+
+启动日志会打印带 Token 的完整 URL。Token 会保存到浏览器的 `localStorage`，只需传递一次。也可以在 Web UI 的设置图标中设置或清除 Token。
 
 ## 访问控制
 

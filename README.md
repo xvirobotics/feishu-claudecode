@@ -55,7 +55,7 @@ We built MetaBot to run [XVI Robotics](https://xvirobotics.com) as an **agent-na
 |-----------|-------------|
 | **Claude Code Kernel** | Every bot is a full Claude Code instance — Read, Write, Edit, Bash, Glob, Grep, WebSearch, MCP, and more. `bypassPermissions` mode for autonomous operation. |
 | **MetaSkill** | Agent factory. `/metaskill ios app` generates a complete `.claude/` agent team (orchestrator + specialists + code-reviewer) after researching best practices. Uses MetaMemory for shared knowledge across agents. |
-| **MetaMemory** | Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. Shared by all agents. Auto-syncs to Feishu Wiki when changes occur (debounced). |
+| **MetaMemory** | Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. Shared by all agents. Auto-syncs to Feishu Wiki when changes occur (debounced). Web UI: `http://localhost:8100?token=YOUR_TOKEN` (token shown in startup logs). |
 | **Feishu Doc Reader** | Read Feishu documents and wiki pages as Markdown. `fd read <url>` from CLI, or Claude auto-reads when users share Feishu URLs. Available as the `feishu-doc` skill. |
 | **IM Bridge** | Chat with any agent from Feishu/Lark or Telegram (including mobile). Streaming cards with color-coded status and tool call tracking. |
 | **Agent Bus** | REST API on port 9100. Agents talk to each other via `mb talk`. Create/remove bots at runtime. Exposed as the `/metabot` skill — loaded on demand, not injected into every prompt. |
@@ -287,6 +287,7 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 - Control access via Feishu/Telegram platform settings (app visibility, group membership)
 - Use `maxBudgetUsd` to cap cost per request
 - `API_SECRET` enables Bearer auth on both the API server and MetaMemory
+- MetaMemory Web UI requires a token: open `http://localhost:8100?token=YOUR_TOKEN` in browser. The full URL with token is printed to logs on startup. The token is saved to `localStorage` so you only need to pass it once
 - MetaMemory supports **folder-level ACL**: set `MEMORY_ADMIN_TOKEN` and `MEMORY_TOKEN` for dual-role access. Admin sees all folders; reader only sees folders with `visibility: shared`. Use `PUT /api/folders/:id` with `{"visibility":"private"}` to lock a folder
 
 ## Chat Commands
