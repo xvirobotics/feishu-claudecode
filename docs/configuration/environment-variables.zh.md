@@ -70,17 +70,6 @@
 | `METABOT_URL` | `http://localhost:9100` | MetaBot API 地址（CLI 用） |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory 地址（CLI 用） |
 
-## 语音
-
-| 变量 | 默认 | 说明 |
-|------|------|------|
-| `VOLCENGINE_TTS_APPID` | — | 豆包 STT + TTS（推荐） |
-| `VOLCENGINE_TTS_ACCESS_KEY` | — | 豆包 STT + TTS（推荐） |
-| `VOLCENGINE_TTS_RESOURCE_ID` | `volc.service_type.10029` | 豆包 TTS 资源 ID |
-| `OPENAI_API_KEY` | — | Whisper STT + OpenAI TTS 备选 |
-| `ELEVENLABS_API_KEY` | — | ElevenLabs TTS |
-| `VOICE_MODEL` | — | 语音模式使用的 Claude 模型（可选覆盖） |
-
 ## 第三方 AI 服务商
 
 支持任何 Anthropic 兼容 API：

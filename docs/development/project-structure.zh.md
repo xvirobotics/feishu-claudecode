@@ -24,11 +24,8 @@ metabot/
 │   │   └── doc-reader.ts           # 文档 → Markdown
 │   ├── telegram/
 │   │   └── ...                     # Telegram Bot 集成
-│   ├── web/
-│   │   └── ws-server.ts            # WebSocket 服务 + 静态文件
 │   ├── api/
 │   │   ├── http-server.ts          # REST API 服务
-│   │   ├── voice-handler.ts        # 语音 API（STT + Agent + TTS）
 │   │   ├── bot-registry.ts         # Bot 注册表
 │   │   └── peer-manager.ts         # 跨实例联邦
 │   ├── memory/
@@ -48,16 +45,9 @@ metabot/
 │   ├── mb                          # Agent 总线 CLI
 │   ├── mm                          # MetaMemory CLI
 │   └── fd                          # 飞书文档阅读 CLI
-├── web/                            # Web UI 源码（React + Vite）
-│   ├── src/
-│   │   ├── components/             # React 组件
-│   │   ├── hooks/                  # 自定义 Hook（WebSocket）
-│   │   ├── store.ts                # Zustand 状态管理
-│   │   └── theme.css               # 设计系统
-│   └── vite.config.ts
 ├── tests/                          # Vitest 测试文件
 ├── docs/                           # 文档（MkDocs）
-├── dist/                           # 编译输出（含 dist/web/）
+├── dist/                           # 编译输出
 ├── mkdocs.yml                      # MkDocs 配置
 ├── bots.example.json               # 多 Bot 配置示例
 ├── .env.example                    # 环境配置示例

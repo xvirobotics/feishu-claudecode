@@ -15,11 +15,3 @@
 ## 自主研究流水线
 
 Agent 搜索、分析、将发现存入 MetaMemory、安排下一步。自动构建不断增长的知识库。
-
-## 语音助手（Jarvis 模式）
-
-AirPods 说 "Hey Siri, Jarvis"，免手免屏语音控制任意 Agent。服务端豆包/Whisper STT 高质量语音识别。见[语音设置指南](../features/voice-jarvis.md)。
-
-## Web 电话语音模式
-
-打开 [Web UI](../features/web-ui.md)，点击电话图标即可在浏览器中免手语音对话。VAD 自动检测说完，自动循环 录音→回复→录音，像真正打电话一样。桌面端和移动端均可使用（移动端需 HTTPS 才能使用麦克风）。
