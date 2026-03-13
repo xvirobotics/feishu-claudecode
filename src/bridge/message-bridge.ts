@@ -372,19 +372,15 @@ export class MessageBridge {
           continue;
         }
 
-        // Auto-respond to interactive tools that don't need user input (ExitPlanMode, etc.)
-        const autoTools = processor.drainAutoRespondTools();
-        for (const tool of autoTools) {
-          const sid = processor.getSessionId() || '';
-          const response = getAutoResponse(tool.name);
-          this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'Auto-responding to interactive tool');
-
-          // ExitPlanMode: send plan content to user before auto-responding
+        // Detect SDK-handled tools for side effects (plan content display).
+        // Do NOT call sendAnswer — the SDK auto-responds in bypassPermissions mode.
+        // Sending a duplicate tool_result causes API 400 errors.
+        const sdkTools = processor.drainSdkHandledTools();
+        for (const tool of sdkTools) {
+          this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'Detected SDK-handled tool');
           if (tool.name === 'ExitPlanMode') {
             await this.sendPlanContent(chatId, processor, state);
           }
-
-          executionHandle.sendAnswer(tool.toolUseId, sid, response);
         }
 
         // If we just got a message after answering a question, clear timeout state
@@ -663,18 +659,13 @@ export class MessageBridge {
           continue;
         }
 
-        // Auto-respond to interactive tools (ExitPlanMode, etc.)
-        const autoTools = processor.drainAutoRespondTools();
-        for (const tool of autoTools) {
-          const sid = processor.getSessionId() || '';
-          const response = getAutoResponse(tool.name);
-          this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'API task: auto-responding to interactive tool');
-
+        // Detect SDK-handled tools for side effects only (no sendAnswer).
+        const sdkTools = processor.drainSdkHandledTools();
+        for (const tool of sdkTools) {
+          this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'API task: detected SDK-handled tool');
           if (tool.name === 'ExitPlanMode' && sendCards) {
             await this.sendPlanContent(chatId, processor, state);
           }
-
-          executionHandle.sendAnswer(tool.toolUseId, sid, response);
         }
 
         if (state.status === 'complete' || state.status === 'error') {
@@ -909,17 +900,3 @@ export function isStaleSessionError(errorMessage?: string): boolean {
   return /no conversation found|conversation not found|session id|invalid session|multiple.*tool_result.*blocks|each tool_use must have a single result/i.test(errorMessage);
 }
 
-/**
- * Generate auto-response content for interactive tools that the bridge
- * handles without user input (plan mode, etc.).
- */
-function getAutoResponse(toolName: string): string {
-  switch (toolName) {
-    case 'ExitPlanMode':
-      return 'User approved the plan. Proceed with implementation.';
-    case 'EnterPlanMode':
-      return 'Plan mode approved. Explore the codebase and design your approach.';
-    default:
-      return 'Approved. Please continue.';
-  }
-}
