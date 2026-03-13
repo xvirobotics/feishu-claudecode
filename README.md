@@ -78,6 +78,12 @@ irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
 
 The installer walks you through: working directory → Claude auth → IM credentials → auto-start with PM2.
 
+**Update anytime** — already installed? One command to pull, rebuild, and restart:
+
+```bash
+metabot update
+```
+
 > **Windows notes:** The PowerShell installer auto-detects `winget`/`choco`/`scoop` for Node.js installation. CLI tools (`mm`, `mb`, `metabot`, `fd`) are installed with `.cmd` wrappers and require [Git for Windows](https://git-scm.com) (provides Git Bash).
 
 <details>

@@ -78,6 +78,12 @@ irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
 
 安装器引导：工作目录 → Claude 认证 → IM 平台凭证 → PM2 自动启动。
 
+**随时更新** — 已安装？一条命令拉取、构建、重启：
+
+```bash
+metabot update
+```
+
 > **Windows 说明：** PowerShell 安装器自动检测 `winget`/`choco`/`scoop` 来安装 Node.js。CLI 工具（`mm`、`mb`、`metabot`、`fd`）通过 `.cmd` 包装器安装，需要 [Git for Windows](https://git-scm.com)（提供 Git Bash）。
 
 <details>
