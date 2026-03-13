@@ -25,7 +25,7 @@ cmd_update() {
 
   info "Pulling latest code..."
   cd "$METABOT_HOME"
-  git pull --ff-only || { error "git pull failed"; exit 1; }
+  git pull --ff-only origin main || { error "git pull failed"; exit 1; }
 
   info "Installing dependencies..."
   npm install --production=false

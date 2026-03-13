@@ -126,7 +126,7 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
     fi
 
     echo "==> Pulling latest from GitHub..."
-    git -C "$METABOT_SRC" pull --ff-only || { echo "Error: git pull failed (try resolving conflicts manually)"; exit 1; }
+    git -C "$METABOT_SRC" pull --ff-only origin main || { echo "Error: git pull failed (try resolving conflicts manually)"; exit 1; }
 
     echo "==> Installing dependencies..."
     (cd "$METABOT_SRC" && npm install --include=dev --no-audit --no-fund 2>&1 | tail -1)
