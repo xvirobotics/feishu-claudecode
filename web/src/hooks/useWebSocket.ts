@@ -122,20 +122,20 @@ export function useWebSocket() {
             break;
           }
 
-          case 'notice':
-            // Add as system message to active session
-            {
-              const store = useStore.getState();
-              if (store.activeSessionId) {
-                addMessage(store.activeSessionId, {
-                  id: `notice-${Date.now()}`,
-                  type: 'system',
-                  text: msg.text,
-                  timestamp: Date.now(),
-                });
-              }
+          case 'notice': {
+            const store = useStore.getState();
+            const targetSession = msg.chatId || store.activeSessionId;
+            const noticeText = msg.text || msg.content || msg.title || '';
+            if (targetSession && noticeText) {
+              addMessage(targetSession, {
+                id: `notice-${Date.now()}`,
+                type: 'system',
+                text: noticeText,
+                timestamp: Date.now(),
+              });
             }
             break;
+          }
 
           case 'pong':
             // heartbeat ack — nothing to do

@@ -98,7 +98,7 @@ export type WSIncomingMessage =
   | { type: 'state'; chatId: string; messageId: string; state: CardState }
   | { type: 'complete'; chatId: string; messageId: string; state: CardState }
   | { type: 'error'; chatId: string; messageId: string; error: string }
-  | { type: 'notice'; text: string }
+  | { type: 'notice'; text?: string; chatId?: string; title?: string; content?: string }
   | { type: 'file'; chatId: string; url: string; name: string; mimeType: string; size?: number }
   | { type: 'pong' };
 

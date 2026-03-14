@@ -258,7 +258,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
               '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
               '.zip': 'application/zip', '.txt': 'text/plain; charset=utf-8',
               '.json': 'application/json; charset=utf-8', '.csv': 'text/csv; charset=utf-8',
-              '.md': 'text/markdown; charset=utf-8',
+              '.md': 'text/markdown; charset=utf-8', '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8',
             };
             const contentType = mimeMap[ext] || 'application/octet-stream';
             const content = fs.readFileSync(fullPath);
