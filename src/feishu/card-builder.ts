@@ -88,6 +88,19 @@ export function buildCard(state: CardState): string {
       if (task.usage) {
         bodyParts.push(`Tokens: ${task.usage.total_tokens} · Tools: ${task.usage.tool_uses} · ${(task.usage.duration_ms / 1000).toFixed(1)}s`);
       }
+      // Subagent tool calls
+      if (task.toolCalls && task.toolCalls.length > 0) {
+        if (bodyParts.length > 0) bodyParts.push('');
+        for (const t of task.toolCalls) {
+          const tIcon = t.status === 'running' ? '⏳' : '✅';
+          bodyParts.push(`${tIcon} **${t.name}** ${t.detail}`);
+        }
+      }
+      // Subagent thinking
+      if (task.thinkingText?.trim()) {
+        if (bodyParts.length > 0) bodyParts.push('');
+        bodyParts.push(`💭 _${truncateContent(task.thinkingText.trim(), 500)}_`);
+      }
       elements.push({
         tag: 'collapsible_panel',
         expanded: false,

@@ -26,6 +26,8 @@ export interface SubagentTask {
   status: 'running' | 'completed' | 'failed' | 'stopped';
   summary?: string;
   usage?: { total_tokens: number; tool_uses: number; duration_ms: number };
+  thinkingText?: string;
+  toolCalls?: ToolCall[];
 }
 
 export interface CardState {
