@@ -19,6 +19,12 @@ export interface AutoRespondTool {
   name: string;
 }
 
+export interface StreamProcessorConfig {
+  model?: string;
+  thinking?: string;
+  effort?: string;
+}
+
 export class StreamProcessor {
   private responseText = '';
   private toolCalls: ToolCall[] = [];
@@ -30,8 +36,11 @@ export class StreamProcessor {
   private _pendingQuestion: PendingQuestion | null = null;
   private _autoRespondTools: AutoRespondTool[] = [];
   private _planFilePath: string | null = null;
+  private _config: StreamProcessorConfig;
 
-  constructor(private userPrompt: string) {}
+  constructor(private userPrompt: string, config?: StreamProcessorConfig) {
+    this._config = config || {};
+  }
 
   processMessage(message: SDKMessage): CardState {
     // Capture session_id from any message
@@ -75,6 +84,9 @@ export class StreamProcessor {
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestion || undefined,
+      model: this._config.model,
+      thinking: this._config.thinking,
+      effort: this._config.effort,
     };
   }
 
@@ -153,6 +165,9 @@ export class StreamProcessor {
       errorMessage: isError
         ? (message.errors?.join('; ') || `Ended with: ${message.subtype}`)
         : undefined,
+      model: this._config.model,
+      thinking: this._config.thinking,
+      effort: this._config.effort,
     };
   }
 

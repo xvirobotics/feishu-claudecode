@@ -87,8 +87,20 @@ export function buildCard(state: CardState): string {
   // Stats note
   if (state.status === 'complete' || state.status === 'error') {
     const parts: string[] = [];
+    if (state.model) {
+      parts.push(state.model);
+    }
+    if (state.thinking) {
+      parts.push(`thinking:${state.thinking}`);
+    }
+    if (state.effort) {
+      parts.push(`effort:${state.effort}`);
+    }
     if (state.durationMs !== undefined) {
-      parts.push(`Duration: ${(state.durationMs / 1000).toFixed(1)}s`);
+      parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+    }
+    if (state.costUsd !== undefined) {
+      parts.push(`$${state.costUsd.toFixed(4)}`);
     }
     if (parts.length > 0) {
       elements.push({
@@ -96,7 +108,7 @@ export function buildCard(state: CardState): string {
         elements: [
           {
             tag: 'plain_text',
-            content: parts.join(' | '),
+            content: parts.join(' · '),
           },
         ],
       });

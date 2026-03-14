@@ -81,12 +81,24 @@ function renderCardHtml(state: CardState): string {
   // Stats
   if (state.status === 'complete' || state.status === 'error') {
     const statParts: string[] = [];
+    if (state.model) {
+      statParts.push(state.model);
+    }
+    if (state.thinking) {
+      statParts.push(`thinking:${state.thinking}`);
+    }
+    if (state.effort) {
+      statParts.push(`effort:${state.effort}`);
+    }
     if (state.durationMs !== undefined) {
-      statParts.push(`Duration: ${(state.durationMs / 1000).toFixed(1)}s`);
+      statParts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+    }
+    if (state.costUsd !== undefined) {
+      statParts.push(`$${state.costUsd.toFixed(4)}`);
     }
     if (statParts.length > 0) {
       parts.push('');
-      parts.push(`<i>${escapeHtml(statParts.join(' | '))}</i>`);
+      parts.push(`<i>${escapeHtml(statParts.join(' · '))}</i>`);
     }
   }
 

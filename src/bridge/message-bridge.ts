@@ -7,7 +7,7 @@ import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import { ClaudeExecutor, type ExecutionHandle } from '../claude/executor.js';
-import { StreamProcessor } from '../claude/stream-processor.js';
+import { StreamProcessor, type StreamProcessorConfig } from '../claude/stream-processor.js';
 import { SessionManager } from '../claude/session-manager.js';
 import { RateLimiter } from './rate-limiter.js';
 import { OutputsManager } from './outputs-manager.js';
@@ -271,7 +271,12 @@ export class MessageBridge {
 
     // Send initial "thinking" card
     const displayPrompt = fileKey ? '📎 ' + text : imageKey ? '🖼️ ' + text : text;
-    const processor = new StreamProcessor(displayPrompt);
+    const processorConfig: StreamProcessorConfig = {
+      model: this.config.claude.model,
+      thinking: this.config.claude.thinking ? String((this.config.claude.thinking as Record<string, unknown>).type || '') : undefined,
+      effort: this.config.claude.effort,
+    };
+    const processor = new StreamProcessor(displayPrompt, processorConfig);
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
@@ -530,7 +535,12 @@ export class MessageBridge {
     const outputsDir = this.outputsManager.prepareDir(chatId);
 
     const displayPrompt = prompt;
-    const processor = new StreamProcessor(displayPrompt);
+    const processorConfig: StreamProcessorConfig = {
+      model: this.config.claude.model,
+      thinking: this.config.claude.thinking ? String((this.config.claude.thinking as Record<string, unknown>).type || '') : undefined,
+      effort: this.config.claude.effort,
+    };
+    const processor = new StreamProcessor(displayPrompt, processorConfig);
     const rateLimiter = new RateLimiter(1500);
 
     let messageId: string | undefined;

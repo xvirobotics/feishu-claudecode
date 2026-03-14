@@ -22,10 +22,10 @@ You are a contribution assistant for the MetaBot project. Your job is to help th
 ### Step 1: Detect Remotes
 
 Parse the auto-detected remotes to identify:
-- **Upstream**: The remote URL containing `xvirobotics/metabot` — this is where issues live and PRs target
+- **Upstream**: The remote URL containing `Shiien/metabot` — this is where issues live and PRs target
 - **Fork**: Any other remote pointing to `*/metabot` on github.com — this is where you push branches
 
-Extract the upstream `owner/repo` (e.g., `xvirobotics/metabot`) and the fork `owner/repo` (e.g., `Shiien/metabot`).
+Extract the upstream `owner/repo` (e.g., `Shiien/metabot`) and the fork `owner/repo` (e.g., `Liyunlun/metabot-codex`).
 
 If no fork remote is found, tell the user:
 1. Fork the repo at `https://github.com/<upstream>/fork`
