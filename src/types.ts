@@ -30,6 +30,9 @@ export interface CardState {
   model?: string;
   thinking?: string;
   effort?: string;
+  sessionId?: string;
+  workingDirectory?: string;
+  numTurns?: number;
 }
 
 export interface IncomingMessage {

@@ -48,6 +48,30 @@ describe('buildCard', () => {
     const note = json.elements.find((e: any) => e.tag === 'note');
     expect(note).toBeDefined();
     expect(note.elements[0].content).toContain('5.0s');
+    expect(note.elements[0].content).toContain('$0.0300');
+  });
+
+  it('renders session info in complete stats note', () => {
+    const state: CardState = {
+      status: 'complete',
+      userPrompt: 'task',
+      responseText: 'Done!',
+      toolCalls: [],
+      durationMs: 2000,
+      costUsd: 0.01,
+      numTurns: 5,
+      workingDirectory: '/home/user/project',
+      sessionId: 'abcdef123456',
+    };
+    const json = JSON.parse(buildCard(state));
+    const note = json.elements.find((e: any) => e.tag === 'note');
+    expect(note).toBeDefined();
+    const content = note.elements[0].content;
+    expect(content).toContain('2.0s');
+    expect(content).toContain('5 turns');
+    expect(content).toContain('$0.0100');
+    expect(content).toContain('/home/user/project');
+    expect(content).toContain('abcdef12');
   });
 
   it('builds error card with error message', () => {

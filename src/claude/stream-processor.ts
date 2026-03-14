@@ -32,13 +32,18 @@ export class StreamProcessor {
   private sessionId: string | undefined;
   private costUsd: number | undefined;
   private durationMs: number | undefined;
+  private numTurns: number | undefined;
   private _imagePaths: Set<string> = new Set();
   private _pendingQuestion: PendingQuestion | null = null;
   private _autoRespondTools: AutoRespondTool[] = [];
   private _planFilePath: string | null = null;
   private _config: StreamProcessorConfig;
 
-  constructor(private userPrompt: string, config?: StreamProcessorConfig) {
+  constructor(
+    private userPrompt: string,
+    config?: StreamProcessorConfig,
+    private workingDirectory?: string,
+  ) {
     this._config = config || {};
   }
 
@@ -87,6 +92,9 @@ export class StreamProcessor {
       model: this._config.model,
       thinking: this._config.thinking,
       effort: this._config.effort,
+      sessionId: this.sessionId,
+      workingDirectory: this.workingDirectory,
+      numTurns: this.numTurns,
     };
   }
 
@@ -147,6 +155,9 @@ export class StreamProcessor {
   private processResultMessage(message: SDKMessage): CardState {
     this.costUsd = message.total_cost_usd;
     this.durationMs = message.duration_ms;
+    if (message.num_turns !== undefined) {
+      this.numTurns = message.num_turns;
+    }
 
     // Mark all tools as done
     for (const tool of this.toolCalls) {
@@ -168,6 +179,9 @@ export class StreamProcessor {
       model: this._config.model,
       thinking: this._config.thinking,
       effort: this._config.effort,
+      sessionId: this.sessionId,
+      workingDirectory: this.workingDirectory,
+      numTurns: this.numTurns,
     };
   }
 

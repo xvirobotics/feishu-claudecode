@@ -276,7 +276,7 @@ export class MessageBridge {
       thinking: this.config.claude.thinking ? String((this.config.claude.thinking as Record<string, unknown>).type || '') : undefined,
       effort: this.config.claude.effort,
     };
-    const processor = new StreamProcessor(displayPrompt, processorConfig);
+    const processor = new StreamProcessor(displayPrompt, processorConfig, cwd);
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
@@ -540,7 +540,7 @@ export class MessageBridge {
       thinking: this.config.claude.thinking ? String((this.config.claude.thinking as Record<string, unknown>).type || '') : undefined,
       effort: this.config.claude.effort,
     };
-    const processor = new StreamProcessor(displayPrompt, processorConfig);
+    const processor = new StreamProcessor(displayPrompt, processorConfig, cwd);
     const rateLimiter = new RateLimiter(1500);
 
     let messageId: string | undefined;

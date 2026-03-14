@@ -76,6 +76,29 @@ describe('StreamProcessor', () => {
     expect(state.durationMs).toBe(1200);
   });
 
+  it('captures num_turns from result message', () => {
+    const p = new StreamProcessor('hi');
+    const state = p.processMessage(msg({
+      type: 'result',
+      subtype: 'success',
+      result: 'Done!',
+      num_turns: 7,
+    }));
+    expect(state.numTurns).toBe(7);
+  });
+
+  it('populates workingDirectory from constructor arg', () => {
+    const p = new StreamProcessor('hi', '/home/user/project');
+    const state = p.processMessage(msg({ type: 'system', session_id: 'sess-1' }));
+    expect(state.workingDirectory).toBe('/home/user/project');
+  });
+
+  it('includes sessionId in CardState after receiving it', () => {
+    const p = new StreamProcessor('hi');
+    const state = p.processMessage(msg({ type: 'system', session_id: 'abc-123' }));
+    expect(state.sessionId).toBe('abc-123');
+  });
+
   it('processes error result message', () => {
     const p = new StreamProcessor('hi');
     const state = p.processMessage(msg({
