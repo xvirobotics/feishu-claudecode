@@ -302,6 +302,9 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `/memory search <query>` | Search knowledge base |
 | `/sync` | Sync MetaMemory to Feishu Wiki |
 | `/sync status` | Show wiki sync status |
+| `/auth` | Authorize MetaBot to act as you (Feishu OAuth) |
+| `/auth status` | Check authorization status |
+| `/auth revoke` | Revoke authorization |
 | `/help` | Show help |
 | `/metaskill ...` | Generate agent teams, agents, or skills |
 | `/metabot` | Agent bus, scheduling, and bot management API docs (loaded on demand) |
@@ -327,6 +330,12 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `POST` | `/api/sync` | Trigger MetaMemory → Wiki sync |
 | `GET` | `/api/sync` | Wiki sync status |
 | `POST` | `/api/sync/document` | Sync single document by ID |
+| `GET` | `/oauth/feishu/callback` | OAuth callback (public, no auth) |
+| `GET` | `/api/oauth/status` | Check user OAuth authorization status |
+| `POST` | `/api/oauth/revoke` | Revoke user OAuth authorization |
+| `POST` | `/api/feishu/document/create` | Create Feishu document (user identity) |
+| `PUT` | `/api/feishu/document/:docId` | Update Feishu document content |
+| `POST` | `/api/feishu/document/:docId/append` | Append content to Feishu document |
 | `GET` | `/api/feishu/document` | Read a Feishu document as Markdown |
 | `GET` | `/api/stats` | Cost & usage stats (per-bot, per-user) |
 | `GET` | `/api/metrics` | Prometheus metrics endpoint |

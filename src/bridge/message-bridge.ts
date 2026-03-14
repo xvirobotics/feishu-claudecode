@@ -95,6 +95,11 @@ export class MessageBridge {
     this.commandHandler.setDocSync(docSync);
   }
 
+  /** Inject the OAuth handler for /auth commands. */
+  setOAuth(handler: any, redirectUri: string, scopes: string): void {
+    this.commandHandler.setOAuth(handler, redirectUri, scopes);
+  }
+
   isBusy(chatId: string): boolean {
     return this.runningTasks.has(chatId);
   }

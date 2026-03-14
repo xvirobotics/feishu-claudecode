@@ -16,6 +16,7 @@ import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
+import { OAuthHandler } from './feishu/oauth-handler.js';
 
 interface FeishuBotHandle {
   name: string;
@@ -212,6 +213,24 @@ async function main() {
     logger.info('Wiki sync service initialized (auto-sync enabled, /sync for manual trigger)');
   }
 
+  // Initialize OAuth handler for user-level Feishu API access
+  let oauthHandler: OAuthHandler | undefined;
+  const oauthRedirectUri = process.env.OAUTH_REDIRECT_URI || `http://127.0.0.1:${appConfig.api.port}/oauth/feishu/callback`;
+  const oauthScopes = process.env.OAUTH_SCOPES || 'docx:document drive:drive wiki:wiki';
+  if (appConfig.feishuService) {
+    oauthHandler = new OAuthHandler(
+      appConfig.feishuService.appId,
+      appConfig.feishuService.appSecret,
+      appConfig.memory.databaseDir,
+      logger,
+    );
+    // Inject into all Feishu bot bridges
+    for (const handle of feishuHandles) {
+      handle.bridge.setOAuth(oauthHandler, oauthRedirectUri, oauthScopes);
+    }
+    logger.info({ redirectUri: oauthRedirectUri }, 'OAuth handler initialized (/auth for user authorization)');
+  }
+
   // Resolve bots config path for API-driven bot CRUD
   const botsConfigPath = process.env.BOTS_CONFIG
     ? path.resolve(process.env.BOTS_CONFIG)
@@ -228,6 +247,7 @@ async function main() {
     docSync,
     feishuServiceClient,
     peerManager,
+    oauthHandler,
   });
 
   // Graceful shutdown

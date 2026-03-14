@@ -45,6 +45,9 @@ Feishu WSClient → EventHandler (parse, @mention filter) → MessageBridge → 
 - **`src/feishu/message-sender.ts`** — Feishu API wrapper for sending/updating cards, uploading/downloading images, sending text.
 - **`src/bridge/rate-limiter.ts`** — Throttles card updates to avoid Feishu API rate limits (default 1.5s interval). Keeps only the latest pending update.
 - **`src/api/peer-manager.ts`** — Manages cross-instance bot discovery and task forwarding. Polls peer MetaBot instances every 30s, caches their bot lists, supports qualified name routing (`peerName/botName`). Anti-loop via `X-MetaBot-Origin` header.
+- **`src/feishu/oauth-store.ts`** — SQLite persistence for Feishu user OAuth tokens. Stores access/refresh tokens per user with expiry tracking.
+- **`src/feishu/oauth-handler.ts`** — Feishu OAuth 2.0 authorization code flow. Handles auth URL generation, code exchange, token refresh, and state management.
+- **`src/feishu/doc-writer.ts`** — Creates/updates Feishu documents using user identity (`withUserAccessToken`). Reuses `markdownToBlocks()` from sync module.
 
 ### Outputs Directory Pattern
 
@@ -96,6 +99,33 @@ Read Feishu documents (standalone docx and wiki pages) and convert them to Markd
 **Skill:** `feishu-doc` — teaches Claude to use the `fd` CLI when users share Feishu document URLs.
 
 **Key module:** `src/feishu/doc-reader.ts` — `FeishuDocReader` class that fetches blocks via `docx.v1.documentBlock.list` and converts them to Markdown (reverse of `markdown-to-blocks.ts`).
+
+### Feishu OAuth User Authorization
+
+Allows users to authorize MetaBot to act on their behalf (create/edit documents, etc.) using `user_access_token` instead of `tenant_access_token`. Implements OAuth 2.0 authorization code flow with OIDC endpoints.
+
+**Flow:** User sends `/auth` in Feishu → clicks authorization link → Feishu redirects to callback → token stored in SQLite → Claude can create/edit docs as the user.
+
+**Feishu commands:** `/auth` (generate auth link), `/auth status` (check token), `/auth revoke` (revoke token).
+
+**API endpoints:**
+- `GET /oauth/feishu/callback?code=xxx&state=xxx` — OAuth callback (public, no Bearer auth)
+- `GET /api/oauth/status?userId=xxx` — Check authorization status
+- `POST /api/oauth/revoke?userId=xxx` — Revoke authorization
+- `POST /api/feishu/document/create` — Create document with user identity
+- `PUT /api/feishu/document/:docId` — Update document content
+- `POST /api/feishu/document/:docId/append` — Append content to document
+
+**Key modules:**
+- **`src/feishu/oauth-store.ts`** — SQLite persistence for user OAuth tokens (access_token, refresh_token, expiry).
+- **`src/feishu/oauth-handler.ts`** — OAuth 2.0 flow: auth URL generation, code exchange, token refresh (auto-refresh 5 min before expiry), state management with CSRF protection.
+- **`src/feishu/doc-writer.ts`** — Create/update/append Feishu documents using `lark.withUserAccessToken()`. Reuses `markdownToBlocks()` from sync module.
+
+**Environment variables:**
+- `OAUTH_REDIRECT_URI` — Callback URL (default: `http://127.0.0.1:9100/oauth/feishu/callback`)
+- `OAUTH_SCOPES` — Requested scopes (default: `docx:document drive:drive wiki:wiki`)
+
+**Feishu app setup:** Add the redirect URI in the Feishu Developer Console under "Security Settings > Redirect URLs".
 
 ### Plan Mode Display
 
