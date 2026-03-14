@@ -77,16 +77,18 @@ Search and add **Get Contents of URL**:
 - **Request Body**: `File`
   - Select the **Recorded Audio** variable from step 2
 
-### Step 4: Add "Get Dictionary Value"
+### Step 4: Add "Set Variable"
 
-Search and add **Get Dictionary Value**:
-- Get **Value** for key `responseText`
-- From: **Contents of URL** (previous step)
+Search and add **Set Variable**:
+- **Name**: `audio` (or any name you like)
+- **Value**: select **Contents of URL** (previous step)
 
-### Step 5: Add "Speak Text"
+### Step 5: Add "Play Sound"
 
-Search and add **Speak Text**:
-- Input: **Dictionary Value** (previous step)
+Search and add **Play Sound**:
+- Input: select the `audio` variable (previous step)
+
+> **Why not "Speak Text"?** — With TTS enabled (default when Volcengine keys are configured), the API returns audio bytes directly, not JSON text. "Play Sound" plays the audio response. If you disable TTS, the API returns JSON — in that case, use "Get Dictionary Value" (key `responseText`) + "Speak Text" instead.
 
 ### Step 6: Test
 
