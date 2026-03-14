@@ -1,7 +1,7 @@
 /**
- * Voice handler — Whisper STT + optional TTS (OpenAI / ElevenLabs).
+ * Voice handler — Whisper STT + optional TTS (OpenAI / ElevenLabs / Doubao).
  *
- * POST /api/voice?botName=xxx&chatId=xxx[&tts=openai|elevenlabs&ttsVoice=alloy&language=zh]
+ * POST /api/voice?botName=xxx&chatId=xxx[&tts=openai|elevenlabs|doubao&ttsVoice=alloy&language=zh]
  * Body: raw audio bytes (m4a, wav, webm, mp3, etc.)
  * Authorization: Bearer <secret>
  *
@@ -9,6 +9,7 @@
  * Response (tts):    audio/mpeg body, with X-Transcript and X-Response-Text headers (base64).
  */
 
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -135,6 +136,71 @@ async function elevenlabsTTS(text: string, voiceId: string): Promise<Buffer> {
 }
 
 // ---------------------------------------------------------------------------
+// Doubao (Volcengine) TTS — V3 HTTP Chunked API
+// ---------------------------------------------------------------------------
+
+async function doubaoTTS(text: string, speaker: string): Promise<Buffer> {
+  const appId = process.env.VOLCENGINE_TTS_APPID;
+  const accessKey = process.env.VOLCENGINE_TTS_ACCESS_KEY;
+  const resourceId = process.env.VOLCENGINE_TTS_RESOURCE_ID || 'volc.service_type.10029';
+  if (!appId || !accessKey) {
+    throw Object.assign(new Error('VOLCENGINE_TTS_APPID and VOLCENGINE_TTS_ACCESS_KEY not configured'), { statusCode: 500 });
+  }
+
+  const url = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-App-Id': appId,
+      'X-Api-Access-Key': accessKey,
+      'X-Api-Resource-Id': resourceId,
+      'X-Api-Request-Id': crypto.randomUUID(),
+    },
+    body: JSON.stringify({
+      req_params: {
+        text,
+        speaker,
+        audio_params: {
+          format: 'mp3',
+          sample_rate: 24000,
+        },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Doubao TTS failed: ${response.status} ${err}`);
+  }
+
+  // V3 HTTP Chunked returns multiple JSON chunks, each with base64 audio in "data" field
+  const body = await response.text();
+  const audioChunks: Buffer[] = [];
+  for (const line of body.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const chunk = JSON.parse(trimmed);
+      if (chunk.data) {
+        audioChunks.push(Buffer.from(chunk.data, 'base64'));
+      }
+      if (chunk.code && chunk.code !== 0 && chunk.code !== 20000000) {
+        throw new Error(`Doubao TTS error: code=${chunk.code} message=${chunk.message}`);
+      }
+    } catch (e: any) {
+      if (e.message?.startsWith('Doubao TTS error')) throw e;
+      // Skip non-JSON lines
+    }
+  }
+
+  if (audioChunks.length === 0) {
+    throw new Error('Doubao TTS returned no audio data');
+  }
+  return Buffer.concat(audioChunks);
+}
+
+// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
@@ -197,14 +263,18 @@ export async function handleVoiceRequest(
   // Step 3: Optional TTS
   if (ttsProvider && responseText) {
     try {
-      // Truncate very long responses for TTS (max ~4000 chars)
-      const ttsText = responseText.length > 4000
-        ? responseText.slice(0, 3900) + '... 内容过长，已截断。'
+      // Truncate very long responses for TTS
+      // Doubao V3 limit: 1024 bytes (~300 Chinese chars); OpenAI/ElevenLabs: ~4000 chars
+      const maxChars = ttsProvider === 'doubao' ? 300 : 4000;
+      const ttsText = responseText.length > maxChars
+        ? responseText.slice(0, maxChars - 10) + '... 内容过长，已截断。'
         : responseText;
 
       let audioOut: Buffer;
       if (ttsProvider === 'elevenlabs') {
         audioOut = await elevenlabsTTS(ttsText, ttsVoice);
+      } else if (ttsProvider === 'doubao') {
+        audioOut = await doubaoTTS(ttsText, ttsVoice);
       } else {
         audioOut = await openaiTTS(ttsText, ttsVoice);
       }

@@ -102,8 +102,8 @@ Search and add **Speak Text**:
 | `botName` | (required) | Bot to talk to |
 | `chatId` | `voice_default` | Session ID for multi-turn |
 | `language` | `zh` | STT language hint (`zh`, `en`, `auto`) |
-| `tts` | (none) | TTS provider: `openai` or `elevenlabs` |
-| `ttsVoice` | `alloy` | TTS voice (OpenAI: alloy/echo/fable/onyx/nova/shimmer; ElevenLabs: voice ID) |
+| `tts` | (none) | TTS provider: `openai`, `elevenlabs`, or `doubao` |
+| `ttsVoice` | `alloy` | TTS voice (OpenAI: alloy/echo/fable/onyx/nova/shimmer; ElevenLabs: voice ID; Doubao: speaker ID) |
 | `sendCards` | `false` | Also send response to Feishu |
 
 ---
@@ -220,6 +220,9 @@ Server-side Whisper STT + Agent execution + optional TTS.
 |----------|-------------|
 | `OPENAI_API_KEY` | Required for Whisper STT and OpenAI TTS |
 | `ELEVENLABS_API_KEY` | Required for ElevenLabs TTS |
+| `VOLCENGINE_TTS_APPID` | Required for Doubao TTS |
+| `VOLCENGINE_TTS_ACCESS_KEY` | Required for Doubao TTS |
+| `VOLCENGINE_TTS_RESOURCE_ID` | Doubao TTS resource ID (default: `volc.service_type.10029`) |
 
 ## Limitations
 

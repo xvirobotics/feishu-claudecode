@@ -99,11 +99,11 @@ Read Feishu documents (standalone docx and wiki pages) and convert them to Markd
 
 ### Voice API (Jarvis Mode)
 
-`POST /api/voice` — Server-side Whisper STT + Agent execution + optional TTS. Accepts raw audio body (m4a, wav, webm, mp3, ogg — max 25 MB). Config via query params: `botName`, `chatId`, `language`, `tts` (openai/elevenlabs), `ttsVoice`, `sendCards`.
+`POST /api/voice` — Server-side Whisper STT + Agent execution + optional TTS. Accepts raw audio body (m4a, wav, webm, mp3, ogg — max 25 MB). Config via query params: `botName`, `chatId`, `language`, `tts` (openai/elevenlabs/doubao), `ttsVoice`, `sendCards`.
 
-**Key module:** `src/api/voice-handler.ts` — Whisper transcription, agent execution via `bridge.executeApiTask()`, OpenAI/ElevenLabs TTS.
+**Key module:** `src/api/voice-handler.ts` — Whisper transcription, agent execution via `bridge.executeApiTask()`, OpenAI/ElevenLabs/Doubao TTS.
 
-**Environment:** `OPENAI_API_KEY` (required for Whisper STT + OpenAI TTS), `ELEVENLABS_API_KEY` (optional for ElevenLabs TTS).
+**Environment:** `OPENAI_API_KEY` (required for Whisper STT + OpenAI TTS), `ELEVENLABS_API_KEY` (optional for ElevenLabs TTS), `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY` (optional for Doubao TTS).
 
 ### Plan Mode Display
 

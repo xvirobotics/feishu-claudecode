@@ -104,8 +104,8 @@
 | `botName` | （必填） | 要对话的 Bot |
 | `chatId` | `voice_default` | 会话 ID，用于多轮对话 |
 | `language` | `zh` | STT 语言提示（`zh`、`en`、`auto`） |
-| `tts` | （无） | TTS 服务：`openai` 或 `elevenlabs` |
-| `ttsVoice` | `alloy` | TTS 声音（OpenAI: alloy/echo/fable/onyx/nova/shimmer；ElevenLabs: voice ID） |
+| `tts` | （无） | TTS 服务：`openai`、`elevenlabs` 或 `doubao` |
+| `ttsVoice` | `alloy` | TTS 声音（OpenAI: alloy/echo/fable/onyx/nova/shimmer；ElevenLabs: voice ID；Doubao: speaker ID） |
 | `sendCards` | `false` | 同时发送到飞书 |
 
 ---
@@ -224,6 +224,9 @@
 |------|------|
 | `OPENAI_API_KEY` | Whisper STT 和 OpenAI TTS 必需 |
 | `ELEVENLABS_API_KEY` | ElevenLabs TTS 必需 |
+| `VOLCENGINE_TTS_APPID` | 豆包 TTS 必需（火山引擎控制台获取） |
+| `VOLCENGINE_TTS_ACCESS_KEY` | 豆包 TTS 必需（火山引擎控制台获取） |
+| `VOLCENGINE_TTS_RESOURCE_ID` | 豆包 TTS 资源 ID（默认: `volc.service_type.10029`） |
 
 ## 限制
 
