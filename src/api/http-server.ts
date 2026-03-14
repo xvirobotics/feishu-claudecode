@@ -1,4 +1,6 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import * as http from 'node:http';
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
@@ -95,6 +97,45 @@ export function startApiServer(options: ApiServerOptions): http.Server {
       // Must be before other routes because it reads raw audio body, not JSON.
       if (method === 'POST' && (url === '/api/voice' || url.startsWith('/api/voice?'))) {
         await handleVoiceRequest(req, res, registry, logger);
+        return;
+      }
+
+      // Route: POST /api/upload — save uploaded files so Claude can access them
+      if (method === 'POST' && (url === '/api/upload' || url.startsWith('/api/upload?'))) {
+        const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50 MB
+        const chunks: Buffer[] = [];
+        let totalSize = 0;
+
+        await new Promise<void>((resolve, reject) => {
+          req.on('data', (chunk: Buffer) => {
+            totalSize += chunk.length;
+            if (totalSize > MAX_UPLOAD_SIZE) {
+              req.destroy();
+              reject(Object.assign(new Error('File too large (max 50 MB)'), { statusCode: 413 }));
+              return;
+            }
+            chunks.push(chunk);
+          });
+          req.on('end', () => resolve());
+          req.on('error', reject);
+        });
+
+        const buffer = Buffer.concat(chunks);
+        const urlObj = new URL(url, `http://${req.headers.host || 'localhost'}`);
+        const originalName = urlObj.searchParams.get('filename') || 'upload';
+        const chatId = urlObj.searchParams.get('chatId') || 'web';
+
+        // Save to /tmp/metabot-uploads/<chatId>/
+        const uploadDir = path.join(os.tmpdir(), 'metabot-uploads', chatId);
+        fs.mkdirSync(uploadDir, { recursive: true });
+
+        // Sanitize filename
+        const safeName = originalName.replace(/[^a-zA-Z0-9._\-\u4e00-\u9fff]/g, '_');
+        const filePath = path.join(uploadDir, safeName);
+        fs.writeFileSync(filePath, buffer);
+
+        logger.info({ chatId, filename: safeName, size: buffer.length }, 'File uploaded');
+        jsonResponse(res, 200, { path: filePath, filename: safeName, size: buffer.length });
         return;
       }
 

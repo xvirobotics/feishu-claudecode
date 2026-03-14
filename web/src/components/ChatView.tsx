@@ -61,23 +61,6 @@ function IconCopy() {
   );
 }
 
-function IconDollar() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="12" y1="1" x2="12" y2="23" />
-      <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-    </svg>
-  );
-}
-
-function IconClock() {
-  return (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <polyline points="12 6 12 12 16 14" />
-    </svg>
-  );
-}
 
 function IconTool() {
   return (
@@ -117,25 +100,40 @@ function IconMic() {
   );
 }
 
+function IconMicSmall() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+      <path d="M19 10v2a7 7 0 01-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+  );
+}
+
+function IconPaperclip() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
+function IconX() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+}
+
 /* ---- Helpers ---- */
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = ms / 1000;
-  if (s < 60) return `${s.toFixed(1)}s`;
-  const m = Math.floor(s / 60);
-  const remaining = Math.round(s % 60);
-  return `${m}m ${remaining}s`;
-}
-
-function formatCost(usd: number): string {
-  if (usd < 0.01) return `$${(usd * 100).toFixed(2)}c`;
-  return `$${usd.toFixed(3)}`;
-}
 
 function decodeBase64Utf8(base64: string): string {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -254,69 +252,32 @@ function ToolCallsSection({ toolCalls }: { toolCalls: ToolCall[] }) {
 function StatusIndicator({ status }: { status: CardState['status'] }) {
   switch (status) {
     case 'thinking':
+    case 'waiting_for_input':
       return (
-        <div className={styles.statusBar}>
-          <div className={styles.statusIcon}>
-            <div className={styles.statusDots}>
-              <div className={styles.statusDot} />
-              <div className={styles.statusDot} />
-              <div className={styles.statusDot} />
-            </div>
+        <div className={styles.statusAnim}>
+          <div className={styles.statusDots}>
+            <div className={styles.statusDot} />
+            <div className={styles.statusDot} />
+            <div className={styles.statusDot} />
           </div>
-          <span className={`${styles.statusLabel} ${styles.statusThinking}`}>
-            Thinking
-          </span>
         </div>
       );
 
     case 'running':
       return (
-        <div className={styles.statusBar}>
-          <div className={styles.statusIcon}>
-            <div className={styles.spinner} />
-          </div>
-          <span className={`${styles.statusLabel} ${styles.statusRunning}`}>
-            Running
-          </span>
-        </div>
-      );
-
-    case 'complete':
-      return (
-        <div className={styles.statusBar}>
-          <div className={styles.statusIcon} style={{ color: 'var(--success)' }}>
-            <IconCheck />
-          </div>
-          <span className={`${styles.statusLabel} ${styles.statusComplete}`}>
-            Complete
-          </span>
+        <div className={styles.statusAnim}>
+          <div className={styles.shimmerBar} />
         </div>
       );
 
     case 'error':
       return (
         <div className={styles.statusBar}>
-          <div className={styles.statusIcon} style={{ color: 'var(--error)' }}>
+          <div className={styles.statusIcon} style={{ color: 'var(--red)' }}>
             <IconXCircle />
           </div>
           <span className={`${styles.statusLabel} ${styles.statusError}`}>
             Error
-          </span>
-        </div>
-      );
-
-    case 'waiting_for_input':
-      return (
-        <div className={styles.statusBar}>
-          <div className={styles.statusIcon}>
-            <div className={styles.statusDots}>
-              <div className={styles.statusDot} />
-              <div className={styles.statusDot} />
-              <div className={styles.statusDot} />
-            </div>
-          </div>
-          <span className={`${styles.statusLabel} ${styles.statusThinking}`}>
-            Waiting for input
           </span>
         </div>
       );
@@ -413,25 +374,6 @@ function AssistantMessageView({
           }
         />
       )}
-
-      {state &&
-        state.status === 'complete' &&
-        (state.costUsd || state.durationMs) && (
-          <div className={styles.metaBadge}>
-            {state.costUsd != null && (
-              <span className={styles.metaBadgeItem}>
-                <IconDollar />
-                {formatCost(state.costUsd)}
-              </span>
-            )}
-            {state.durationMs != null && (
-              <span className={styles.metaBadgeItem}>
-                <IconClock />
-                {formatDuration(state.durationMs)}
-              </span>
-            )}
-          </div>
-        )}
     </div>
   );
 }
@@ -493,6 +435,15 @@ export function ChatView() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+
+  // ── Speech-to-text state ──
+  const [sttActive, setSttActive] = useState(false);
+  const sttRef = useRef<SpeechRecognition | null>(null);
+
+  // ── File upload state ──
+  interface PendingFile { file: File; previewUrl?: string; }
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Call mode state ──
   const [callActive, setCallActive] = useState(false);
@@ -856,10 +807,124 @@ export function ChatView() {
     }
   }, [callPhase, stopCallRecording, startCallRecording]);
 
+  // ── Speech-to-text (Web Speech API) ──
+  const startSTT = useCallback(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Speech recognition is not supported in this browser.');
+      return;
+    }
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    let finalTranscript = '';
+    const baseInput = input;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += t;
+        } else {
+          interim += t;
+        }
+      }
+      setInput(baseInput + finalTranscript + interim);
+    };
+
+    recognition.onerror = () => {
+      setSttActive(false);
+      sttRef.current = null;
+    };
+
+    recognition.onend = () => {
+      setSttActive(false);
+      sttRef.current = null;
+    };
+
+    sttRef.current = recognition;
+    recognition.start();
+    setSttActive(true);
+  }, [input]);
+
+  const stopSTT = useCallback(() => {
+    if (sttRef.current) {
+      sttRef.current.stop();
+      sttRef.current = null;
+    }
+    setSttActive(false);
+  }, []);
+
+  const toggleSTT = useCallback(() => {
+    if (sttActive) {
+      stopSTT();
+    } else {
+      startSTT();
+    }
+  }, [sttActive, startSTT, stopSTT]);
+
+  // ── File upload handlers ──
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    const newFiles: PendingFile[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
+      newFiles.push({ file, previewUrl });
+    }
+    setPendingFiles((prev) => [...prev, ...newFiles]);
+    // Reset input so same file can be selected again
+    e.target.value = '';
+  }, []);
+
+  const removeFile = useCallback((index: number) => {
+    setPendingFiles((prev) => {
+      const next = [...prev];
+      if (next[index].previewUrl) URL.revokeObjectURL(next[index].previewUrl!);
+      next.splice(index, 1);
+      return next;
+    });
+  }, []);
+
+  // Cleanup file preview URLs on unmount
+  useEffect(() => {
+    return () => {
+      pendingFiles.forEach((f) => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Upload files to server and return paths
+  const uploadFiles = useCallback(async (files: PendingFile[], sessionId: string): Promise<string[]> => {
+    const paths: string[] = [];
+    for (const f of files) {
+      const params = new URLSearchParams({ filename: f.file.name, chatId: sessionId });
+      const res = await fetch(`/api/upload?${params.toString()}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': f.file.type || 'application/octet-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: f.file,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        paths.push(data.path);
+      }
+    }
+    return paths;
+  }, [token]);
+
   // Send message
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const text = input.trim();
-    if (!text || !connected) return;
+    const hasFiles = pendingFiles.length > 0;
+    if ((!text && !hasFiles) || !connected) return;
+
+    // Stop STT if active
+    if (sttActive) stopSTT();
 
     let sessionId = activeSessionId;
     if (!sessionId) {
@@ -867,11 +932,29 @@ export function ChatView() {
     }
 
     // Check for /stop command
-    if (text === '/stop') {
+    if (text === '/stop' && !hasFiles) {
       send({ type: 'stop', chatId: sessionId });
       setInput('');
       return;
     }
+
+    // Upload files first if any
+    let fileInfo = '';
+    if (hasFiles) {
+      const filePaths = await uploadFiles(pendingFiles, sessionId);
+      if (filePaths.length > 0) {
+        const fileList = filePaths.map((p) => `- ${p}`).join('\n');
+        fileInfo = `\n\n[Uploaded files — please read and process them]\n${fileList}`;
+      }
+      // Clear pending files
+      pendingFiles.forEach((f) => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
+      setPendingFiles([]);
+    }
+
+    const fullText = (text + fileInfo).trim();
+    const displayText = hasFiles
+      ? text || `Uploaded ${pendingFiles.length} file(s)`
+      : text;
 
     const userMsgId = generateId();
     const assistantMsgId = generateId();
@@ -880,7 +963,7 @@ export function ChatView() {
     addMessage(sessionId, {
       id: userMsgId,
       type: 'user',
-      text,
+      text: displayText,
       timestamp: Date.now(),
     });
 
@@ -891,7 +974,7 @@ export function ChatView() {
       text: '',
       state: {
         status: 'thinking',
-        userPrompt: text,
+        userPrompt: fullText,
         responseText: '',
         toolCalls: [],
       },
@@ -903,13 +986,13 @@ export function ChatView() {
       type: 'chat',
       botName: activeBotName || 'default',
       chatId: sessionId,
-      text,
+      text: fullText,
       messageId: assistantMsgId,
     });
 
     setInput('');
     autoScrollRef.current = true;
-  }, [input, connected, activeSessionId, activeBotName, createSession, addMessage, send]);
+  }, [input, connected, activeSessionId, activeBotName, createSession, addMessage, send, pendingFiles, uploadFiles, sttActive, stopSTT]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1016,17 +1099,61 @@ export function ChatView() {
 
       {/* Input area */}
       <div className={styles.inputArea}>
+        {/* File preview bar */}
+        {pendingFiles.length > 0 && (
+          <div className={styles.filePreviews}>
+            {pendingFiles.map((f, i) => (
+              <div key={i} className={styles.filePreview}>
+                {f.previewUrl ? (
+                  <img src={f.previewUrl} alt={f.file.name} className={styles.filePreviewImg} />
+                ) : (
+                  <div className={styles.filePreviewIcon}>
+                    <IconPaperclip />
+                  </div>
+                )}
+                <span className={styles.filePreviewName}>{f.file.name}</span>
+                <button className={styles.filePreviewRemove} onClick={() => removeFile(i)}>
+                  <IconX />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className={styles.inputWrapper}>
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            style={{ display: 'none' }}
+            onChange={handleFileSelect}
+          />
+          <button
+            className={styles.attachBtn}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!connected}
+            title="Upload files"
+          >
+            <IconPaperclip />
+          </button>
           <textarea
             ref={textareaRef}
             className={styles.textarea}
-            placeholder={connected ? 'Ask anything...' : 'Connecting...'}
+            placeholder={connected ? (sttActive ? 'Listening...' : 'Ask anything...') : 'Connecting...'}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={1}
             disabled={!connected}
           />
+          <button
+            className={`${styles.sttBtn} ${sttActive ? styles.sttBtnActive : ''}`}
+            onClick={toggleSTT}
+            disabled={!connected}
+            title={sttActive ? 'Stop voice input' : 'Voice input'}
+          >
+            <IconMicSmall />
+          </button>
           <button
             className={styles.callBtn}
             onClick={startCall}
@@ -1038,7 +1165,7 @@ export function ChatView() {
           <button
             className={styles.sendBtn}
             onClick={handleSend}
-            disabled={!input.trim() || !connected}
+            disabled={(!input.trim() && pendingFiles.length === 0) || !connected}
             title="Send (Enter)"
           >
             <IconSend />

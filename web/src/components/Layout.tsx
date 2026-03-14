@@ -1,112 +1,293 @@
-import { type ReactNode, useState, useCallback } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
-import styles from './Layout.module.css';
+import type { BotInfo, ChatSession } from '../types';
+import s from './Layout.module.css';
 
-/* ---- SVG Icons (inline, no external deps) ---- */
+/* ═══════════════════════════════════════════════════════════════
+   V2 Icons — thin, elegant, 1.5px stroke
+   ═══════════════════════════════════════════════════════════════ */
 
+const I = ({ d, size = 18 }: { d: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d={d} />
+  </svg>
+);
+
+function IconPlus() {
+  return <I d="M12 5v14M5 12h14" />;
+}
+function IconX({ size = 12 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+      <path d="M18 6L6 18M6 6l12 12" />
+    </svg>
+  );
+}
+function IconMenu() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  );
+}
+function IconBack() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5M12 19l-7-7 7-7" />
+    </svg>
+  );
+}
 function IconChat() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
     </svg>
   );
 }
-
 function IconMemory() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
     </svg>
   );
 }
-
-function IconVoice() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-      <path d="M19 10v2a7 7 0 01-14 0v-2" />
-      <line x1="12" y1="19" x2="12" y2="23" />
-      <line x1="8" y1="23" x2="16" y2="23" />
-    </svg>
-  );
-}
-
 function IconSettings() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
     </svg>
   );
 }
-
-function IconPlus() {
+function IconPanelLeft() {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
+    <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M9 3v18" />
     </svg>
   );
 }
 
-function IconX() {
+/* ═══════════════════════════════════════════════════════════════
+   Gradient Ring Avatar — SVG with gradient stroke ring + initial
+   ═══════════════════════════════════════════════════════════════ */
+
+const GRADIENT_PAIRS = [
+  ['#10b981', '#34d399'],
+  ['#14b8a6', '#2dd4bf'],
+  ['#06b6d4', '#22d3ee'],
+  ['#0ea5e9', '#38bdf8'],
+  ['#84cc16', '#a3e635'],
+  ['#22c55e', '#4ade80'],
+  ['#f59e0b', '#fbbf24'],
+  ['#059669', '#10b981'],
+  ['#0d9488', '#14b8a6'],
+  ['#65a30d', '#84cc16'],
+];
+
+function hash(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function GradientAvatar({ name, size = 44 }: { name: string; size?: number }) {
+  const h = hash(name);
+  const pair = GRADIENT_PAIRS[h % GRADIENT_PAIRS.length];
+  const id = `ga-${name.replace(/\W/g, '')}`;
+  const initial = name.charAt(0).toUpperCase();
+  const r = size / 2;
+  const strokeW = size > 36 ? 2.5 : 2;
+
   return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-      <line x1="18" y1="6" x2="6" y2="18" />
-      <line x1="6" y1="6" x2="18" y2="18" />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      <defs>
+        <linearGradient id={id} x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor={pair[0]} />
+          <stop offset="100%" stopColor={pair[1]} />
+        </linearGradient>
+      </defs>
+      <circle cx={r} cy={r} r={r - strokeW} fill="none" stroke={`url(#${id})`} strokeWidth={strokeW} />
+      <text
+        x={r}
+        y={r}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill={pair[0]}
+        fontSize={size * 0.38}
+        fontWeight="600"
+        fontFamily="Inter, -apple-system, sans-serif"
+      >
+        {initial}
+      </text>
     </svg>
   );
 }
 
-function IconMenu() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-      <line x1="3" y1="6" x2="21" y2="6" />
-      <line x1="3" y1="12" x2="21" y2="12" />
-      <line x1="3" y1="18" x2="21" y2="18" />
-    </svg>
-  );
-}
+/* ═══════════════════════════════════════════════════════════════
+   Helpers
+   ═══════════════════════════════════════════════════════════════ */
 
-function IconSidebarLeft() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-      <line x1="9" y1="3" x2="9" y2="21" />
-    </svg>
-  );
-}
-
-function IconChevron() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
-
-/* ---- Time formatting ---- */
-
-function formatRelativeTime(ts: number): string {
-  const diff = Date.now() - ts;
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
+function relTime(ts: number): string {
+  const d = Date.now() - ts;
+  const m = Math.floor(d / 60_000);
+  if (m < 1) return 'now';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const days = Math.floor(h / 24);
+  if (days < 7) return `${days}d`;
   return new Date(ts).toLocaleDateString();
 }
 
-/* ---- Component ---- */
-
-interface LayoutProps {
-  children: ReactNode;
+function sessionPreview(session: ChatSession): { text: string; status?: string } {
+  if (session.messages.length === 0) return { text: 'Start a conversation' };
+  const last = session.messages[session.messages.length - 1];
+  if (last.type === 'user') return { text: last.text.slice(0, 60) };
+  if (last.state) {
+    if (last.state.status === 'thinking') return { text: '', status: 'thinking' };
+    if (last.state.status === 'running') return { text: '', status: 'running' };
+    if (last.state.status === 'error') return { text: last.state.errorMessage?.slice(0, 50) || 'Error', status: 'error' };
+    return { text: (last.text || 'Done').slice(0, 60) };
+  }
+  return { text: last.text.slice(0, 60) };
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   BotCard — each bot rendered as a card
+   ═══════════════════════════════════════════════════════════════ */
+
+function BotCard({
+  bot,
+  sessions: botSessions,
+  activeSessionId,
+  activeBotName,
+  activeView,
+  onSessionClick,
+  onNewSession,
+  onDeleteSession,
+}: {
+  bot: BotInfo;
+  sessions: ChatSession[];
+  activeSessionId: string | null;
+  activeBotName: string | null;
+  activeView: string;
+  onSessionClick: (id: string, botName: string) => void;
+  onNewSession: (botName: string) => void;
+  onDeleteSession: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isActive = activeBotName === bot.name && activeView === 'chat';
+  const sorted = [...botSessions].sort((a, b) => b.updatedAt - a.updatedAt);
+  const latest = sorted[0] || null;
+  const preview = latest ? sessionPreview(latest) : null;
+  const hasMultiple = sorted.length > 1;
+
+  return (
+    <div className={s.botCard} data-active={isActive || undefined}>
+      {/* Main row */}
+      <div
+        className={s.botRow}
+        onClick={() => {
+          if (latest) onSessionClick(latest.id, bot.name);
+          else onNewSession(bot.name);
+        }}
+      >
+        <div className={s.avatar}>
+          <GradientAvatar name={bot.name} size={44} />
+          <span className={`${s.statusDot} ${s.statusOnline}`} />
+        </div>
+
+        <div className={s.botInfo}>
+          <div className={s.botNameRow}>
+            <span className={s.botName}>{bot.name}</span>
+            {latest && <span className={s.botTime}>{relTime(latest.updatedAt)}</span>}
+          </div>
+          <div className={s.botPreview}>
+            {preview?.status === 'thinking' && (
+              <span className={s.previewThinking}>
+                <span className={s.dot} /><span className={s.dot} /><span className={s.dot} />
+                Thinking...
+              </span>
+            )}
+            {preview?.status === 'running' && (
+              <span className={s.previewRunning}>
+                <span className={s.miniSpinner} />
+                Running...
+              </span>
+            )}
+            {preview?.status === 'error' && (
+              <span className={s.previewError}>{preview.text}</span>
+            )}
+            {!preview?.status && (
+              <span>{preview?.text || bot.description || 'Ready'}</span>
+            )}
+          </div>
+        </div>
+
+        <button
+          className={s.addBtn}
+          onClick={(e) => { e.stopPropagation(); onNewSession(bot.name); }}
+          title="New chat"
+        >
+          <IconPlus />
+        </button>
+      </div>
+
+      {/* Expand toggle if multiple sessions */}
+      {hasMultiple && (
+        <button
+          className={s.expandToggle}
+          onClick={() => setExpanded(!expanded)}
+        >
+          <span className={s.expandLabel}>{sorted.length} chats</span>
+          <svg
+            width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" style={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }}
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </button>
+      )}
+
+      {/* Session sub-list */}
+      {expanded && hasMultiple && (
+        <div className={s.sessionList}>
+          {sorted.map((session) => (
+            <div
+              key={session.id}
+              className={s.sessionItem}
+              data-active={activeSessionId === session.id || undefined}
+              onClick={() => onSessionClick(session.id, bot.name)}
+            >
+              <span className={s.sessionDash} />
+              <span className={s.sessionTitle}>{session.title}</span>
+              <span className={s.sessionTime}>{relTime(session.updatedAt)}</span>
+              <button
+                className={s.sessionDel}
+                onClick={(e) => { e.stopPropagation(); onDeleteSession(session.id); }}
+                title="Close"
+              >
+                <IconX size={10} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Layout — the shell
+   Desktop: sidebar + main side-by-side
+   Mobile: native stack navigation (list ↔ chat) + bottom tabs
+   ═══════════════════════════════════════════════════════════════ */
+
+interface LayoutProps { children: ReactNode; }
 
 export function Layout({ children }: LayoutProps) {
   const navigate = useNavigate();
@@ -118,213 +299,231 @@ export function Layout({ children }: LayoutProps) {
   const connected = useStore((s) => s.connected);
   const bots = useStore((s) => s.bots);
   const activeBotName = useStore((s) => s.activeBotName);
-  const setBot = useStore((s) => s.setBot);
   const sessions = useStore((s) => s.sessions);
   const activeSessionId = useStore((s) => s.activeSessionId);
   const setActiveSession = useStore((s) => s.setActiveSession);
+  const setBot = useStore((s) => s.setBot);
   const createSession = useStore((s) => s.createSession);
   const deleteSession = useStore((s) => s.deleteSession);
 
-  const [botDropdownOpen, setBotDropdownOpen] = useState(false);
-
-  // Initialize WebSocket connection
   useWebSocket();
 
-  const navItems = [
-    { view: 'chat' as const, icon: <IconChat />, label: 'Chat', path: '/' },
-    { view: 'memory' as const, icon: <IconMemory />, label: 'Memory', path: '/memory' },
-    { view: 'voice' as const, icon: <IconVoice />, label: 'Voice', path: '/voice' },
-    { view: 'settings' as const, icon: <IconSettings />, label: 'Settings', path: '/settings' },
-  ];
+  /* ── Mobile detection ── */
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
-  const handleNav = useCallback(
-    (view: typeof activeView, path: string) => {
-      setView(view);
-      navigate(path);
-      // Close sidebar on mobile
-      if (window.innerWidth <= 768) {
-        setSidebarOpen(false);
-      }
-    },
-    [setView, navigate, setSidebarOpen],
-  );
+  /* ── Mobile: push/pop navigation state ── */
+  const [mobileShowChat, setMobileShowChat] = useState(false);
 
-  const handleNewChat = useCallback(() => {
-    createSession();
+  const sessionsByBot = useMemo(() => {
+    const map = new Map<string, ChatSession[]>();
+    for (const session of sessions.values()) {
+      const list = map.get(session.botName) || [];
+      list.push(session);
+      map.set(session.botName, list);
+    }
+    return map;
+  }, [sessions]);
+
+  const handleSessionClick = useCallback((id: string, botName: string) => {
+    setActiveSession(id);
+    setBot(botName);
     setView('chat');
     navigate('/');
+    setMobileShowChat(true);
+  }, [setActiveSession, setBot, setView, navigate]);
+
+  const handleNewSession = useCallback((botName: string) => {
+    createSession(botName);
+    setView('chat');
+    navigate('/');
+    setMobileShowChat(true);
   }, [createSession, setView, navigate]);
 
-  const handleSelectSession = useCallback(
-    (id: string) => {
-      setActiveSession(id);
-      setView('chat');
-      navigate('/');
-      if (window.innerWidth <= 768) {
-        setSidebarOpen(false);
-      }
-    },
-    [setActiveSession, setView, navigate, setSidebarOpen],
-  );
+  const handleDeleteSession = useCallback((id: string) => { deleteSession(id); }, [deleteSession]);
 
-  const sortedSessions = Array.from(sessions.values()).sort(
-    (a, b) => b.updatedAt - a.updatedAt,
-  );
+  const handleMobileBack = useCallback(() => { setMobileShowChat(false); }, []);
+
+  const handleNav = useCallback((view: 'chat' | 'memory' | 'settings', path: string) => {
+    setView(view);
+    navigate(path);
+    setMobileShowChat(false);
+  }, [setView, navigate]);
 
   const activeBot = bots.find((b) => b.name === activeBotName);
 
+  /* ── Shared bot list ── */
+  const botList = (
+    <>
+      {bots.length === 0 ? (
+        <div className={s.emptyAgents}>
+          {connected ? 'No agents configured' : 'Connecting...'}
+        </div>
+      ) : (
+        bots.map((bot) => (
+          <BotCard
+            key={bot.name}
+            bot={bot}
+            sessions={sessionsByBot.get(bot.name) || []}
+            activeSessionId={activeSessionId}
+            activeBotName={activeBotName}
+            activeView={activeView}
+            onSessionClick={handleSessionClick}
+            onNewSession={handleNewSession}
+            onDeleteSession={handleDeleteSession}
+          />
+        ))
+      )}
+    </>
+  );
+
+  /* ═══════════════════════════════════════════════════════════════
+     MOBILE LAYOUT — native stack navigation
+     ═══════════════════════════════════════════════════════════════ */
+
+  if (isMobile) {
+    const showingChat = activeView === 'chat' && mobileShowChat;
+
+    return (
+      <div className={s.mobileShell}>
+        {/* ── Chat header (back + avatar + name) ── */}
+        {showingChat && (
+          <div className={s.mobileHeader}>
+            <button className={s.mobileBackBtn} onClick={handleMobileBack}>
+              <IconBack />
+            </button>
+            {activeBot && (
+              <div className={s.mobileHeaderBot}>
+                <GradientAvatar name={activeBot.name} size={30} />
+                <span className={s.mobileHeaderName}>{activeBot.name}</span>
+              </div>
+            )}
+            <span className={`${s.mobileHeaderDot} ${connected ? s.connOn : s.connOff}`} />
+          </div>
+        )}
+
+        {/* ── List header (Chats / Memory / Settings) ── */}
+        {!showingChat && (
+          <div className={s.mobileListHeader}>
+            <div className={s.mobileListBrand}>
+              <div className={s.logoMark}>M</div>
+              <span className={s.mobileListTitle}>
+                {activeView === 'chat' ? 'Chats' : activeView === 'memory' ? 'Memory' : 'Settings'}
+              </span>
+            </div>
+            {activeView === 'chat' && (
+              <div className={s.connIndicator}>
+                <span className={`${s.connDot} ${connected ? s.connOn : s.connOff}`} />
+                <span className={s.connText}>{connected ? 'Live' : 'Offline'}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Content area ── */}
+        {activeView === 'chat' && !mobileShowChat ? (
+          <div className={s.mobileChatList}>{botList}</div>
+        ) : (
+          <main className={s.mobileMain}>{children}</main>
+        )}
+
+        {/* ── Bottom tab bar (hidden when in active chat) ── */}
+        {!showingChat && (
+          <nav className={s.mobileTabBar}>
+            <button
+              className={`${s.mobileTab} ${activeView === 'chat' ? s.mobileTabActive : ''}`}
+              onClick={() => handleNav('chat', '/')}
+            >
+              <IconChat />
+              <span>Chats</span>
+            </button>
+            <button
+              className={`${s.mobileTab} ${activeView === 'memory' ? s.mobileTabActive : ''}`}
+              onClick={() => handleNav('memory', '/memory')}
+            >
+              <IconMemory />
+              <span>Memory</span>
+            </button>
+            <button
+              className={`${s.mobileTab} ${activeView === 'settings' ? s.mobileTabActive : ''}`}
+              onClick={() => handleNav('settings', '/settings')}
+            >
+              <IconSettings />
+              <span>Settings</span>
+            </button>
+          </nav>
+        )}
+      </div>
+    );
+  }
+
+  /* ═══════════════════════════════════════════════════════════════
+     DESKTOP LAYOUT — sidebar + main
+     ═══════════════════════════════════════════════════════════════ */
+
   return (
-    <div className={styles.layout}>
-      {/* Mobile hamburger */}
+    <div className={s.shell}>
+      {/* Ambient orbs */}
+      <div className={s.orb1} />
+      <div className={s.orb2} />
+
+      {/* Hamburger for collapsed sidebar */}
       {!sidebarOpen && (
-        <button className={styles.hamburger} onClick={toggleSidebar}>
+        <button className={s.hamburger} onClick={toggleSidebar}>
           <IconMenu />
         </button>
       )}
 
-      {/* Mobile overlay */}
-      {sidebarOpen && window.innerWidth <= 768 && (
-        <div className={styles.overlay} onClick={() => setSidebarOpen(false)} />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={`${styles.sidebar} ${!sidebarOpen ? styles.sidebarCollapsed : ''}`}
-      >
-        {/* Header */}
-        <div className={styles.sidebarHeader}>
-          <div className={styles.brand}>
-            <div className={styles.brandIcon}>M</div>
-            <span className={styles.brandName}>MetaBot</span>
+      {/* ═══ Sidebar ═══ */}
+      <aside className={`${s.sidebar} ${!sidebarOpen ? s.sidebarHidden : ''}`}>
+        {/* Brand */}
+        <div className={s.brand}>
+          <div className={s.logo}>
+            <div className={s.logoMark}>M</div>
+            <span className={s.logoType}>MetaBot</span>
           </div>
-          <button className={styles.collapseBtn} onClick={toggleSidebar} title="Toggle sidebar">
-            <IconSidebarLeft />
+          <button className={s.panelBtn} onClick={toggleSidebar}>
+            <IconPanelLeft />
           </button>
         </div>
 
-        {/* Navigation */}
-        <nav className={styles.nav}>
-          {navItems.map((item) => (
-            <button
-              key={item.view}
-              className={`${styles.navItem} ${
-                activeView === item.view ? styles.navItemActive : ''
-              }`}
-              onClick={() => handleNav(item.view, item.path)}
-            >
-              <span className={styles.navIcon}>{item.icon}</span>
-              {item.label}
-            </button>
-          ))}
+        {/* Agents header */}
+        <div className={s.agentsHeader}>
+          <span className={s.agentsLabel}>Agents</span>
+          <div className={s.connIndicator}>
+            <span className={`${s.connDot} ${connected ? s.connOn : s.connOff}`} />
+            <span className={s.connText}>{connected ? 'Live' : 'Offline'}</span>
+          </div>
+        </div>
+
+        {/* Bot list */}
+        <div className={s.agentsList}>{botList}</div>
+
+        {/* Bottom nav */}
+        <nav className={s.bottomBar}>
+          <button
+            className={`${s.navBtn} ${activeView === 'memory' ? s.navActive : ''}`}
+            onClick={() => handleNav('memory', '/memory')}
+          >
+            <IconMemory />
+            <span>Memory</span>
+          </button>
+          <button
+            className={`${s.navBtn} ${activeView === 'settings' ? s.navActive : ''}`}
+            onClick={() => handleNav('settings', '/settings')}
+          >
+            <IconSettings />
+            <span>Settings</span>
+          </button>
         </nav>
-
-        <div className={styles.navDivider} />
-
-        {/* Session List (only when chat is active) */}
-        <div className={styles.sessionSection}>
-          <div className={styles.sessionHeader}>
-            <span className={styles.sessionTitle}>Conversations</span>
-            <button
-              className={styles.newChatBtn}
-              onClick={handleNewChat}
-              title="New Chat"
-            >
-              <IconPlus />
-            </button>
-          </div>
-
-          <div className={styles.sessionList}>
-            {sortedSessions.length === 0 ? (
-              <div className={styles.emptySession}>No conversations yet</div>
-            ) : (
-              sortedSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className={`${styles.sessionItem} ${
-                    activeSessionId === session.id ? styles.sessionItemActive : ''
-                  }`}
-                  onClick={() => handleSelectSession(session.id)}
-                >
-                  <div className={styles.sessionItemText}>
-                    <div className={styles.sessionItemTitle}>{session.title}</div>
-                    <div className={styles.sessionItemTime}>
-                      {formatRelativeTime(session.updatedAt)}
-                    </div>
-                  </div>
-                  <button
-                    className={styles.sessionDeleteBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteSession(session.id);
-                    }}
-                    title="Delete"
-                  >
-                    <IconX />
-                  </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Bot Selector */}
-        <div className={styles.sidebarFooter}>
-          <div className={styles.connStatus}>
-            <span
-              className={`${styles.connDot} ${
-                connected ? styles.connDotOn : styles.connDotOff
-              }`}
-            />
-            {connected ? 'Connected' : 'Disconnected'}
-          </div>
-
-          <div style={{ position: 'relative' }}>
-            {botDropdownOpen && bots.length > 1 && (
-              <div className={styles.botDropdown}>
-                {bots.map((bot) => (
-                  <button
-                    key={bot.name}
-                    className={`${styles.botOption} ${
-                      activeBotName === bot.name ? styles.botOptionActive : ''
-                    }`}
-                    onClick={() => {
-                      setBot(bot.name);
-                      setBotDropdownOpen(false);
-                    }}
-                  >
-                    <span
-                      className={`${styles.botDot} ${styles.botDotOnline}`}
-                    />
-                    {bot.name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div
-              className={styles.botSelector}
-              onClick={() => bots.length > 1 && setBotDropdownOpen(!botDropdownOpen)}
-            >
-              <span
-                className={`${styles.botDot} ${
-                  connected ? styles.botDotOnline : styles.botDotOffline
-                }`}
-              />
-              <span className={styles.botSelectorName}>
-                {activeBot?.name || 'No bot'}
-              </span>
-              {bots.length > 1 && (
-                <span className={styles.botSelectorPlatform}>
-                  <IconChevron />
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
       </aside>
 
-      {/* Main Content */}
-      <main className={styles.main}>{children}</main>
+      {/* ═══ Main content ═══ */}
+      <main className={s.main}>{children}</main>
     </div>
   );
 }

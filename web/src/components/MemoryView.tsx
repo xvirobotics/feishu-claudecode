@@ -270,6 +270,25 @@ export function MemoryView() {
 
       {/* Main area */}
       <div className={styles.mainArea}>
+        {/* Mobile folder pills (hidden on desktop) */}
+        <div className={styles.mobileFolderBar}>
+          <button
+            className={`${styles.folderPill} ${!selectedFolder ? styles.folderPillActive : ''}`}
+            onClick={handleShowAll}
+          >
+            All
+          </button>
+          {folders.map((folder) => (
+            <button
+              key={folder.id}
+              className={`${styles.folderPill} ${selectedFolder === folder.id ? styles.folderPillActive : ''}`}
+              onClick={() => handleFolderClick(folder.id)}
+            >
+              <IconFolder /> {folder.name}
+            </button>
+          ))}
+        </div>
+
         {/* Search */}
         <div className={styles.searchBar}>
           <input

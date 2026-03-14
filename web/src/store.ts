@@ -81,6 +81,7 @@ export interface AppStore {
     text: string,
   ) => void;
   clearSessions: () => void;
+  getOrCreateBotSession: (botName: string) => string;
 
   // Navigation
   activeView: ActiveView;
@@ -225,6 +226,32 @@ export const useStore = create<AppStore>((set, get) => ({
   clearSessions() {
     localStorage.removeItem('metabot:sessions');
     set({ sessions: new Map(), activeSessionId: null });
+  },
+
+  getOrCreateBotSession(botName: string) {
+    const state = get();
+    // Find existing session for this bot
+    for (const [id, session] of state.sessions) {
+      if (session.botName === botName) {
+        set({ activeSessionId: id, activeBotName: botName });
+        return id;
+      }
+    }
+    // Create new session for this bot
+    const id = generateId();
+    const session: ChatSession = {
+      id,
+      botName,
+      title: 'New Chat',
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    const sessions = new Map(state.sessions);
+    sessions.set(id, session);
+    persistSessions(sessions);
+    set({ sessions, activeSessionId: id, activeBotName: botName });
+    return id;
   },
 
   /* ---- Navigation ---- */

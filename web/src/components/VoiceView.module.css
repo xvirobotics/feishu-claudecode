@@ -1,5 +1,5 @@
 /* ============================================================
-   VoiceView — Jarvis Mode
+   VoiceView V2 — "Void"
    ============================================================ */
 
 .container {
@@ -11,234 +11,126 @@
   padding: 48px 24px;
   position: relative;
   overflow: hidden;
+  background: var(--void);
 }
 
-/* Background aura effect */
+/* Background aura */
 .aura {
   position: absolute;
-  width: 400px;
-  height: 400px;
+  width: 350px;
+  height: 350px;
   border-radius: 50%;
   filter: blur(120px);
   opacity: 0;
-  transition: opacity 600ms ease;
+  transition: opacity 500ms var(--ease-out);
   pointer-events: none;
 }
-
-.auraActive {
-  opacity: 0.3;
-  animation: breathe 3s ease-in-out infinite;
-}
-
-.auraRecording {
-  background: var(--error);
-}
-
-.auraProcessing {
-  background: var(--accent);
-}
-
-.auraPlaying {
-  background: var(--success);
-}
+.auraActive { opacity: 0.07; }
+.auraRecording { background: radial-gradient(circle, var(--red) 0%, transparent 70%); }
+.auraProcessing { background: radial-gradient(circle, var(--accent) 0%, transparent 70%); }
+.auraPlaying { background: radial-gradient(circle, var(--green) 0%, transparent 70%); }
 
 /* Status text */
 .statusText {
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 40px;
-  min-height: 20px;
-  transition: color var(--transition-base);
+  letter-spacing: 1.5px;
+  margin-bottom: 44px;
+  min-height: 18px;
+  transition: color var(--duration-base);
 }
-
-.statusRecording {
-  color: var(--error);
-}
-
-.statusProcessing {
-  color: var(--accent);
-}
-
-.statusPlaying {
-  color: var(--success);
-}
+.statusRecording { color: var(--red); }
+.statusProcessing { color: var(--accent-text); }
+.statusPlaying { color: var(--green); }
 
 /* Mic button */
-.micContainer {
-  position: relative;
-  margin-bottom: 48px;
-}
+.micContainer { position: relative; margin-bottom: 48px; }
 
-.micRings {
+.micRings, .micRingsOuter {
   position: absolute;
-  inset: -20px;
   border-radius: 50%;
-  border: 2px solid transparent;
-  transition: border-color var(--transition-base);
+  border: none;
+  pointer-events: none;
 }
-
-.micRingsActive {
-  border-color: rgba(239, 91, 91, 0.2);
-  animation: pulseGlow 1.5s ease-in-out infinite;
-}
-
-.micRingsOuter {
-  position: absolute;
-  inset: -40px;
-  border-radius: 50%;
-  border: 1px solid transparent;
-  transition: border-color var(--transition-base);
-}
-
-.micRingsOuterActive {
-  border-color: rgba(239, 91, 91, 0.1);
-  animation: pulseGlow 1.5s ease-in-out 0.3s infinite;
-}
+.micRings { inset: -16px; }
+.micRingsOuter { inset: -32px; }
 
 .micBtn {
-  width: 100px;
-  height: 100px;
+  width: 80px;
+  height: 80px;
   border-radius: 50%;
-  background: var(--bg-secondary);
-  border: 2px solid var(--border);
+  background: var(--gradient-accent);
+  border: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--transition-base), border-color var(--transition-base),
-    transform var(--transition-spring), box-shadow var(--transition-base);
+  cursor: pointer;
+  transition: transform 150ms var(--ease-out), box-shadow 150ms;
   position: relative;
   z-index: 1;
+  box-shadow: var(--shadow-accent);
 }
+.micBtn:hover:not(:disabled) { transform: scale(1.06); box-shadow: var(--shadow-accent-lg); }
+.micBtn:active:not(:disabled) { transform: scale(0.94); }
 
-.micBtn:hover:not(:disabled) {
-  background: var(--bg-tertiary);
-  border-color: var(--border-active);
-  transform: scale(1.05);
-}
+.micBtnRecording { background: var(--red); box-shadow: 0 4px 24px rgba(239, 68, 68, 0.35); }
+.micBtnRecording:hover:not(:disabled) { box-shadow: 0 8px 32px rgba(239, 68, 68, 0.4); }
+.micBtnProcessing { background: var(--gradient-accent); opacity: 0.6; }
+.micBtnDisabled { opacity: 0.3; cursor: not-allowed; }
 
-.micBtn:active:not(:disabled) {
-  transform: scale(0.95);
-}
+.micIcon { color: #fff; }
+.micIconRecording { color: #fff; }
+.micIconProcessing { color: #fff; }
 
-.micBtnRecording {
-  background: var(--error-bg);
-  border-color: var(--error);
-  box-shadow: 0 0 30px rgba(239, 91, 91, 0.2);
-}
-
-.micBtnRecording:hover {
-  background: var(--error-bg) !important;
-}
-
-.micBtnProcessing {
-  border-color: var(--accent);
-  animation: pulseGlow 2s ease-in-out infinite;
-}
-
-.micBtnDisabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.micIcon {
-  color: var(--text-secondary);
-  transition: color var(--transition-base);
-}
-
-.micIconRecording {
-  color: var(--error);
-}
-
-.micIconProcessing {
-  color: var(--accent);
-}
-
-/* Waveform visualization */
+/* Waveform */
 .waveform {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 3px;
   height: 40px;
-  margin-bottom: 32px;
+  margin-bottom: 36px;
   min-width: 200px;
 }
 
 .waveBar {
   width: 3px;
   border-radius: 2px;
-  background: var(--accent);
-  transition: height 100ms ease;
-  min-height: 4px;
+  background: var(--glass-border-hover);
+  transition: height 80ms ease-out, background 150ms;
+  min-height: 3px;
 }
+.waveBarRecording { background: var(--accent-text); }
 
-.waveBarRecording {
-  background: var(--error);
-}
+/* Transcript / Response */
+.transcript, .response { width: 100%; max-width: 540px; margin-bottom: 24px; }
 
-/* Transcript */
-.transcript {
-  width: 100%;
-  max-width: 600px;
-  min-height: 60px;
-  margin-bottom: 24px;
-}
-
-.transcriptLabel {
+.transcriptLabel, .responseLabel {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-tertiary);
+  color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 8px;
+  letter-spacing: 1.2px;
+  margin-bottom: 10px;
 }
 
-.transcriptText {
-  font-size: 15px;
-  color: var(--text-primary);
-  line-height: 1.6;
+.transcriptText, .responseText {
+  font-size: 14px;
+  color: var(--text-0);
+  line-height: 1.7;
   text-align: center;
-  padding: 16px 20px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: 18px 22px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
   min-height: 56px;
 }
 
-.transcriptEmpty {
-  color: var(--text-tertiary);
-  font-style: italic;
-}
+.transcriptEmpty { color: var(--text-2); font-style: italic; }
 
-/* Response section */
-.response {
-  width: 100%;
-  max-width: 600px;
-}
-
-.responseLabel {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-tertiary);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-  margin-bottom: 8px;
-}
-
-.responseText {
-  font-size: 14px;
-  color: var(--text-primary);
-  line-height: 1.6;
-  padding: 16px 20px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  max-height: 300px;
-  overflow-y: auto;
-}
+.responseText { max-height: 300px; overflow-y: auto; text-align: left; }
 
 /* Audio player */
 .audioPlayer {
@@ -246,40 +138,36 @@
   align-items: center;
   gap: 12px;
   margin-top: 12px;
-  padding: 10px 16px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  padding: 12px 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
 }
 
 .playBtn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
-  background: var(--accent);
+  background: var(--gradient-accent);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
   flex-shrink: 0;
-  transition: background var(--transition-fast), transform var(--transition-fast);
+  border: none;
+  cursor: pointer;
+  transition: transform var(--duration-fast), box-shadow var(--duration-fast);
+  box-shadow: var(--shadow-accent);
 }
+.playBtn:hover { transform: scale(1.08); box-shadow: var(--shadow-accent-lg); }
 
-.playBtn:hover {
-  background: var(--accent-hover);
-  transform: scale(1.05);
-}
+.audioLabel { font-size: 12px; color: var(--text-1); }
 
-.audioLabel {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-/* Config section */
+/* Config */
 .config {
   display: flex;
-  gap: 12px;
-  margin-top: 32px;
+  gap: 8px;
+  margin-top: 36px;
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -288,46 +176,41 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
+  padding: 7px 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-full);
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-1);
 }
 
 .configSelect {
   background: transparent;
   border: none;
-  color: var(--text-primary);
+  color: var(--text-0);
   font-size: 12px;
   font-family: var(--font-sans);
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0 2px;
+  outline: none;
 }
 
 .configSelect option {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  background: var(--surface-0);
+  color: var(--text-0);
 }
 
-/* Instructions */
 .instructions {
-  margin-top: 32px;
+  margin-top: 36px;
   text-align: center;
-  color: var(--text-tertiary);
+  color: var(--text-2);
   font-size: 13px;
-  line-height: 1.6;
+  line-height: 1.7;
   max-width: 400px;
 }
 
 @media (max-width: 768px) {
-  .container {
-    padding: 32px 16px;
-  }
-
-  .micBtn {
-    width: 80px;
-    height: 80px;
-  }
+  .container { padding: 32px 16px; }
+  .micBtn { width: 72px; height: 72px; }
+  .transcript, .response { max-width: 100%; }
 }

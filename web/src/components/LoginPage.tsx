@@ -41,13 +41,6 @@ export function LoginPage() {
 
   return (
     <div className={styles.page}>
-      {/* Animated gradient mesh background */}
-      <div className={styles.meshBg}>
-        <div className={styles.meshOrb} />
-        <div className={styles.meshOrb} />
-        <div className={styles.meshOrb} />
-      </div>
-
       <div className={styles.card}>
         <div className={styles.logo}>
           <div className={styles.logoIcon}>M</div>

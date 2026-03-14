@@ -270,12 +270,43 @@ function resolveTTSProvider(explicit: string): string {
   return '';
 }
 
-function resolveTTSVoice(explicit: string, ttsProvider: string): string {
+function resolveTTSVoice(explicit: string, ttsProvider: string, text?: string): string {
   if (explicit) return explicit;
-  // Sensible defaults per provider
-  if (ttsProvider === 'doubao') return 'zh_female_sajiaonvyou_moon_bigtts';
-  if (ttsProvider === 'elevenlabs') return 'EXAVITQu4vr4xnSDxMaL'; // Bella
-  return 'alloy'; // OpenAI
+
+  // Auto-detect language from response text to pick the right voice
+  const isChinese = text ? detectChinese(text) : true;
+
+  if (ttsProvider === 'doubao') {
+    return isChinese
+      ? 'zh_female_sajiaonvyou_moon_bigtts'   // Chinese female voice
+      : 'en_female_amanda_mars_bigtts';         // English female voice
+  }
+  if (ttsProvider === 'elevenlabs') return 'EXAVITQu4vr4xnSDxMaL'; // Bella (multilingual)
+  return 'alloy'; // OpenAI (multilingual)
+}
+
+/**
+ * Detect whether text is primarily Chinese.
+ * Returns true if ≥15% of characters are CJK.
+ */
+function detectChinese(text: string): boolean {
+  if (!text) return true;
+  let cjk = 0;
+  let total = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) || 0;
+    if (code > 0x2f) { // skip whitespace/punctuation
+      total++;
+      if (
+        (code >= 0x4e00 && code <= 0x9fff) ||   // CJK Unified
+        (code >= 0x3400 && code <= 0x4dbf) ||   // CJK Extension A
+        (code >= 0xf900 && code <= 0xfaff)      // CJK Compat
+      ) {
+        cjk++;
+      }
+    }
+  }
+  return total === 0 || cjk / total >= 0.15;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,16 +327,18 @@ export async function handleVoiceRequest(
   const language = params.get('language') || params.get('lang') || 'zh';
   const sttProvider = resolveSTTProvider(params.get('stt') || '');
   const ttsProvider = resolveTTSProvider(params.get('tts') || '');
-  const ttsVoice = resolveTTSVoice(params.get('ttsVoice') || params.get('voice') || '', ttsProvider);
+  const explicitVoice = params.get('ttsVoice') || params.get('voice') || '';
   const sendCards = params.get('sendCards') === 'true';
+  const sttOnly = params.get('sttOnly') === 'true';
 
-  if (!botName) {
+  // sttOnly mode doesn't need a bot — just transcribe and return
+  if (!sttOnly && !botName) {
     jsonResponse(res, 400, { error: 'Missing required query param: botName' });
     return;
   }
 
-  const bot = registry.get(botName);
-  if (!bot) {
+  const bot = botName ? registry.get(botName) : undefined;
+  if (!sttOnly && !bot) {
     jsonResponse(res, 404, { error: `Bot not found: ${botName}` });
     return;
   }
@@ -318,7 +351,7 @@ export async function handleVoiceRequest(
   }
 
   const ext = detectAudioExt(req.headers['content-type'], audioBuffer);
-  logger.info({ botName, chatId, audioSize: audioBuffer.length, ext, sttProvider, ttsProvider }, 'Voice request received');
+  logger.info({ botName: botName || '(sttOnly)', chatId, audioSize: audioBuffer.length, ext, sttProvider, sttOnly }, 'Voice request received');
 
   // Step 1: STT
   let transcript: string;
@@ -332,6 +365,13 @@ export async function handleVoiceRequest(
     jsonResponse(res, 200, { success: true, transcript: '', responseText: '', error: 'No speech detected' });
     return;
   }
+
+  // sttOnly mode: just return the transcript, skip agent + TTS
+  if (sttOnly) {
+    logger.info({ transcript, sttProvider }, 'STT-only transcript');
+    jsonResponse(res, 200, { success: true, transcript });
+    return;
+  }
   logger.info({ botName, chatId, transcript, sttProvider }, 'Voice transcript');
 
   const voiceMode = params.get('voiceMode') === 'true';
@@ -342,7 +382,7 @@ export async function handleVoiceRequest(
     : transcript;
 
   // Step 2: Agent execution (voice mode uses maxTurns=1 for speed)
-  const talkResult = await bot.bridge.executeApiTask({
+  const talkResult = await bot!.bridge.executeApiTask({
     prompt: agentPrompt,
     chatId,
     userId: 'voice',
@@ -356,12 +396,17 @@ export async function handleVoiceRequest(
 
   // Step 3: Optional TTS
   if (ttsProvider && responseText) {
+    // Resolve voice AFTER we have the response text, so language detection works
+    const ttsVoice = resolveTTSVoice(explicitVoice, ttsProvider, responseText);
+
     try {
       // Truncate very long responses for TTS
       // Doubao V3 limit: 1024 bytes (~300 Chinese chars); OpenAI/ElevenLabs: ~4000 chars
+      const isCn = detectChinese(responseText);
       const maxChars = ttsProvider === 'doubao' ? 300 : 4000;
+      const truncSuffix = isCn ? '... 内容过长，已截断。' : '... Content truncated.';
       const ttsText = responseText.length > maxChars
-        ? responseText.slice(0, maxChars - 10) + '... 内容过长，已截断。'
+        ? responseText.slice(0, maxChars - 10) + truncSuffix
         : responseText;
 
       let audioOut: Buffer;
