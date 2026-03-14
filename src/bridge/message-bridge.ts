@@ -50,6 +50,8 @@ export interface ApiTaskOptions {
   onUpdate?: (state: CardState, messageId: string, final: boolean) => void;
   /** Called when Claude asks a question. Return the answer JSON string. */
   onQuestion?: (question: PendingQuestion) => Promise<string>;
+  /** Called with output files after execution completes (before cleanup). */
+  onOutputFiles?: (files: import('./outputs-manager.js').OutputFile[]) => void;
 }
 
 export interface ApiTaskResult {
@@ -775,6 +777,12 @@ export class MessageBridge {
 
       await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
 
+      // Notify web clients about output files before cleanup
+      if (options.onOutputFiles) {
+        const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+        if (outputFiles.length > 0) options.onOutputFiles(outputFiles);
+      }
+
       const durationMs = Date.now() - startTime;
       this.audit.log({
         event: 'api_task_complete', botName: this.config.name, chatId, userId, prompt,
@@ -833,6 +841,11 @@ export class MessageBridge {
           options.onUpdate?.(lastState, effectiveMessageId, true);
 
           await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+
+          if (options.onOutputFiles) {
+            const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+            if (outputFiles.length > 0) options.onOutputFiles(outputFiles);
+          }
 
           return {
             success: lastState.status === 'complete',

@@ -25,10 +25,19 @@
 }
 @keyframes callSpin { to { transform: rotate(360deg); } }
 
+/* ═══ Chat Layout (chat + file panel) ═══ */
+.chatLayout {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
 /* ═══ Container ═══ */
 .container {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
   height: 100%;
   position: relative;
   background: var(--void);
@@ -832,6 +841,510 @@
   box-shadow: var(--shadow-md);
 }
 
+/* ═══ User Bubble Wrap (text + attachments) ═══ */
+.userBubbleWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 80%;
+}
+
+/* ═══ Attachment Grid ═══ */
+.attachGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.attachCard {
+  display: block;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  background: var(--surface-1);
+  text-decoration: none;
+  max-width: 280px;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+.attachCard:hover { border-color: var(--accent); box-shadow: var(--shadow-glow); }
+
+.attachImg {
+  max-width: 260px;
+  max-height: 200px;
+  min-height: 60px;
+  display: block;
+  object-fit: cover;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  background: var(--surface-1);
+}
+.attachImgCompact {
+  width: 100%;
+  max-height: 120px;
+  min-height: 40px;
+  display: block;
+  object-fit: cover;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  background: var(--surface-1);
+}
+
+.attachVideo {
+  max-width: 300px;
+  max-height: 200px;
+  display: block;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  background: #000;
+}
+.attachVideoCompact {
+  width: 100%;
+  max-height: 120px;
+  display: block;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  background: #000;
+}
+
+.attachCardAudio {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  min-width: 220px;
+}
+.attachAudioInfo { display: flex; align-items: center; gap: 8px; color: var(--text-1); }
+.attachAudio { width: 100%; height: 32px; }
+
+.attachCardFile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  text-decoration: none;
+  transition: border-color var(--duration-fast), background var(--duration-fast);
+  min-width: 180px;
+}
+.attachCardFile:hover { border-color: var(--accent); background: var(--surface-hover); }
+
+.attachFileIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.attachFileExt {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.attachFileMeta { flex: 1; min-width: 0; }
+.attachFileName {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachFileSize {
+  display: block;
+  font-size: 11px;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+
+.attachFileDownload {
+  color: var(--text-2);
+  flex-shrink: 0;
+  transition: color var(--duration-fast);
+}
+.attachCardFile:hover .attachFileDownload { color: var(--accent); }
+
+.attachName {
+  display: block;
+  padding: 4px 8px 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
+/* ═══ File Panel Toggle ═══ */
+.filePanelToggle {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+.filePanelToggle:hover { background: var(--surface-hover); border-color: var(--glass-border-hover); }
+.filePanelToggleActive { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.filePanelBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ═══ Resize Handle ═══ */
+.resizeHandle {
+  width: 5px;
+  cursor: col-resize;
+  background: var(--glass-border);
+  flex-shrink: 0;
+  transition: background var(--duration-fast);
+}
+.resizeHandle:hover { background: var(--accent); }
+
+/* ═══ File Panel ═══ */
+.filePanel {
+  flex-shrink: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+  border-left: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+.filePanelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.filePanelClose {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.filePanelClose:hover { background: var(--surface-hover); color: var(--text-0); }
+
+.filePanelList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ═══ File Preview (in right panel) ═══ */
+.panelBackBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.panelBackBtn:hover { background: var(--surface-hover); color: var(--text-0); }
+
+.panelHeaderIcon {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.panelHeaderIcon:hover { background: var(--surface-hover); color: var(--text-0); }
+
+.previewTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewBody {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+}
+
+/* Image */
+.previewImage {
+  max-width: 100%;
+  object-fit: contain;
+  padding: 8px;
+}
+
+/* Video */
+.previewVideo {
+  width: 100%;
+  outline: none;
+}
+
+/* Audio */
+.previewAudioWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 16px;
+  width: 100%;
+}
+.previewAudioIcon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-lg);
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+.previewAudioIcon svg { width: 28px; height: 28px; }
+.previewAudioName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-0);
+  text-align: center;
+  word-break: break-all;
+}
+.previewAudioPlayer {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* PDF / HTML iframe */
+.previewIframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff;
+}
+
+/* DOCX (docx-preview) */
+.previewDocx {
+  width: 100%;
+  overflow: auto;
+  background: #fff;
+  padding: 0;
+}
+.previewDocx :global(.docx-wrapper) {
+  background: #fff !important;
+  padding: 8px !important;
+}
+.previewDocx :global(.docx-wrapper > section.docx) {
+  box-shadow: none !important;
+  margin: 0 auto !important;
+  padding: 16px !important;
+  min-height: auto !important;
+}
+
+/* XLSX (SheetJS HTML) */
+.previewXlsx {
+  width: 100%;
+  overflow: auto;
+  padding: 12px 16px;
+  background: #fff;
+  color: #1a1a1a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.previewXlsx :global(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+.previewXlsx :global(th),
+.previewXlsx :global(td) {
+  border: 1px solid #ddd;
+  padding: 5px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+.previewXlsx :global(th) {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+.previewXlsx :global(tr:nth-child(even)) {
+  background: #fafafa;
+}
+
+/* Markdown */
+.previewMarkdown {
+  width: 100%;
+  overflow: auto;
+  padding: 16px 20px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-0);
+}
+.previewMarkdown h1,
+.previewMarkdown h2,
+.previewMarkdown h3 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: var(--text-0);
+}
+.previewMarkdown pre {
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  padding: 12px 16px;
+  overflow-x: auto;
+}
+.previewMarkdown code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+.previewMarkdown table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.previewMarkdown th,
+.previewMarkdown td {
+  border: 1px solid var(--glass-border);
+  padding: 8px 12px;
+  text-align: left;
+}
+.previewMarkdown img { max-width: 100%; }
+
+/* Code / plain text */
+.previewCode {
+  width: 100%;
+  overflow: auto;
+  padding: 12px 16px;
+  background: var(--surface-1);
+}
+.previewCode pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-0);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* Loading */
+.previewLoading {
+  color: var(--text-2);
+  font-size: 14px;
+  padding: 40px;
+}
+
+/* Unsupported format */
+.previewUnsupported {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  width: 100%;
+}
+.previewUnsupportedIcon {
+  width: 60px;
+  height: 60px;
+  border-radius: var(--r-lg);
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 700;
+}
+.previewUnsupportedName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-0);
+  word-break: break-all;
+}
+.previewUnsupportedSize {
+  font-size: 12px;
+  color: var(--text-2);
+}
+.previewDownloadBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 20px;
+  border-radius: var(--r-md);
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: opacity var(--duration-fast);
+}
+.previewDownloadBtn:hover { opacity: 0.85; }
+
 /* ═══ Responsive ═══ */
 @media (max-width: 768px) {
   .messageListInner { padding: 20px 16px 12px; }
@@ -842,4 +1355,10 @@
   .emptyHints { grid-template-columns: 1fr; }
   .callCenterBtn { width: 76px; height: 76px; }
   .callHangup { width: 48px; height: 48px; }
+  .filePanel { display: none; }
+  .resizeHandle { display: none; }
+  .filePanelToggle { display: none; }
+  .attachImg { max-width: 200px; }
+  .attachCard { max-width: 220px; }
+  .previewModal { width: 95vw; height: 90vh; }
 }

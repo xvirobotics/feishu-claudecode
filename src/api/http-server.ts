@@ -41,6 +41,25 @@ function jsonResponse(res: http.ServerResponse, status: number, body: unknown): 
   res.end(json);
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function wrapPreviewHtml(title: string, body: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(title)}</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;margin:0;padding:20px 24px;color:#1a1a1a;line-height:1.6;font-size:14px;background:#fff}
+h1,h2,h3{margin-top:1.2em;margin-bottom:.4em}
+h2{font-size:16px;color:#555;border-bottom:1px solid #eee;padding-bottom:4px}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+th,td{border:1px solid #ddd;padding:6px 10px;text-align:left}
+th{background:#f5f5f5;font-weight:600}
+tr:nth-child(even){background:#fafafa}
+img{max-width:100%}
+p{margin:.6em 0}
+</style></head><body>${body}</body></html>`;
+}
+
 const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1 MB
 
 function readBody(req: http.IncomingMessage): Promise<string> {
@@ -83,10 +102,12 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     const method = req.method || 'GET';
     const url = req.url || '/';
 
-    // Auth check if secret is configured (exempt /web/ static files and /memory/ proxy — WS auth is handled via ?token=)
-    if (secret && !url.startsWith('/web') && !url.startsWith('/memory')) {
+    // Auth check if secret is configured (exempt /web/ static files, /memory/ proxy, /api/files/ — WS auth is handled via ?token=)
+    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/')) {
       const auth = req.headers.authorization;
-      if (auth !== `Bearer ${secret}`) {
+      // Also support ?token= query param for upload endpoint (like WebSocket does)
+      const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
+      if (auth !== `Bearer ${secret}` && urlToken !== secret) {
         jsonResponse(res, 401, { error: 'Unauthorized' });
         return;
       }
@@ -136,6 +157,125 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
         logger.info({ chatId, filename: safeName, size: buffer.length }, 'File uploaded');
         jsonResponse(res, 200, { path: filePath, filename: safeName, size: buffer.length });
+        return;
+      }
+
+      // Route: GET /api/files/preview/<chatId>/<filename> — convert docx/xlsx to HTML for preview
+      if (method === 'GET' && url.startsWith('/api/files/preview/')) {
+        const filePart = decodeURIComponent(url.slice('/api/files/preview/'.length).split('?')[0]);
+        const fullPath = path.resolve(path.join(os.tmpdir(), 'metabot-uploads', filePart));
+        const uploadsRoot = path.resolve(path.join(os.tmpdir(), 'metabot-uploads'));
+
+        if (!fullPath.startsWith(uploadsRoot)) {
+          res.writeHead(403, { 'Content-Type': 'text/plain' });
+          res.end('Forbidden');
+          return;
+        }
+
+        try {
+          if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('File not found');
+            return;
+          }
+
+          const ext = path.extname(fullPath).toLowerCase();
+          let html = '';
+
+          if (ext === '.docx') {
+            const mammoth = await import('mammoth');
+            const result = await mammoth.default.convertToHtml({ path: fullPath });
+            html = wrapPreviewHtml(path.basename(fullPath), result.value);
+          } else if (ext === '.xlsx' || ext === '.xls') {
+            const XLSX = await import('xlsx');
+            const workbook = XLSX.read(fs.readFileSync(fullPath));
+            const tables: string[] = [];
+            for (const name of workbook.SheetNames) {
+              const sheet = workbook.Sheets[name];
+              tables.push(`<h2>${escapeHtml(name)}</h2>` + XLSX.utils.sheet_to_html(sheet));
+            }
+            html = wrapPreviewHtml(path.basename(fullPath), tables.join('\n'));
+          } else if (ext === '.pptx' || ext === '.ppt') {
+            // Try libreoffice conversion
+            const { execSync } = await import('child_process');
+            const tmpOut = path.join(os.tmpdir(), 'metabot-preview-' + Date.now());
+            fs.mkdirSync(tmpOut, { recursive: true });
+            try {
+              execSync(`soffice --headless --convert-to html --outdir "${tmpOut}" "${fullPath}"`, { timeout: 30000 });
+              const htmlFile = fs.readdirSync(tmpOut).find((f: string) => f.endsWith('.html'));
+              if (htmlFile) {
+                html = fs.readFileSync(path.join(tmpOut, htmlFile), 'utf-8');
+              } else {
+                throw new Error('LibreOffice conversion produced no output');
+              }
+            } finally {
+              fs.rmSync(tmpOut, { recursive: true, force: true });
+            }
+          } else {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('Unsupported format for preview');
+            return;
+          }
+
+          const buf = Buffer.from(html, 'utf-8');
+          res.writeHead(200, {
+            'Content-Type': 'text/html; charset=utf-8',
+            'Content-Length': buf.length.toString(),
+            'Cache-Control': 'private, max-age=300',
+          });
+          res.end(buf);
+        } catch (err: any) {
+          logger.error({ err, path: fullPath }, 'File preview conversion error');
+          res.writeHead(500, { 'Content-Type': 'text/plain' });
+          res.end('Conversion failed: ' + (err.message || 'unknown error'));
+        }
+        return;
+      }
+
+      // Route: GET /api/files/<chatId>/<filename> — serve uploaded files for preview/download
+      if (method === 'GET' && url.startsWith('/api/files/')) {
+        const filePart = decodeURIComponent(url.slice('/api/files/'.length).split('?')[0]);
+        const fullPath = path.resolve(path.join(os.tmpdir(), 'metabot-uploads', filePart));
+        const uploadsRoot = path.resolve(path.join(os.tmpdir(), 'metabot-uploads'));
+
+        // Security: prevent directory traversal
+        if (!fullPath.startsWith(uploadsRoot)) {
+          res.writeHead(403, { 'Content-Type': 'text/plain' });
+          res.end('Forbidden');
+          return;
+        }
+
+        try {
+          if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile()) {
+            const ext = path.extname(fullPath).toLowerCase();
+            const mimeMap: Record<string, string> = {
+              '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+              '.webp': 'image/webp', '.svg': 'image/svg+xml', '.bmp': 'image/bmp',
+              '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo',
+              '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.m4a': 'audio/mp4', '.flac': 'audio/flac',
+              '.pdf': 'application/pdf', '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+              '.zip': 'application/zip', '.txt': 'text/plain; charset=utf-8',
+              '.json': 'application/json; charset=utf-8', '.csv': 'text/csv; charset=utf-8',
+              '.md': 'text/markdown; charset=utf-8',
+            };
+            const contentType = mimeMap[ext] || 'application/octet-stream';
+            const content = fs.readFileSync(fullPath);
+            const fileName = path.basename(fullPath);
+            res.writeHead(200, {
+              'Content-Type': contentType,
+              'Content-Length': content.length.toString(),
+              'Content-Disposition': `inline; filename="${encodeURIComponent(fileName)}"`,
+              'Cache-Control': 'private, max-age=3600',
+            });
+            res.end(content);
+            return;
+          }
+        } catch { /* fall through */ }
+
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('File not found');
         return;
       }
 

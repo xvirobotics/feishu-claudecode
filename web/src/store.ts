@@ -80,6 +80,11 @@ export interface AppStore {
     messageId: string,
     text: string,
   ) => void;
+  addMessageAttachment: (
+    sessionId: string,
+    messageId: string,
+    attachment: import('./types').FileAttachment,
+  ) => void;
   clearSessions: () => void;
   getOrCreateBotSession: (botName: string) => string;
 
@@ -218,6 +223,22 @@ export const useStore = create<AppStore>((set, get) => ({
     const messages = session.messages.map((m) =>
       m.id === messageId ? { ...m, text } : m,
     );
+    sessions.set(sessionId, { ...session, messages, updatedAt: Date.now() });
+    persistSessions(sessions);
+    set({ sessions });
+  },
+
+  addMessageAttachment(sessionId: string, messageId: string, attachment: import('./types').FileAttachment) {
+    const sessions = new Map(get().sessions);
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    const messages = session.messages.map((m) => {
+      if (m.id === messageId) {
+        return { ...m, attachments: [...(m.attachments || []), attachment] };
+      }
+      return m;
+    });
     sessions.set(sessionId, { ...session, messages, updatedAt: Date.now() });
     persistSessions(sessions);
     set({ sessions });

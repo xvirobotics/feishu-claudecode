@@ -12,7 +12,9 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { useStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
-import type { CardState, ChatMessage, ToolCall } from '../types';
+import type { CardState, ChatMessage, FileAttachment, ToolCall } from '../types';
+import { renderAsync as renderDocx } from 'docx-preview';
+import * as XLSX from 'xlsx';
 import styles from './ChatView.module.css';
 
 /* ---- Tiny icons ---- */
@@ -30,6 +32,14 @@ function IconCheck() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function IconChevronLeft() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="15 18 9 12 15 6" />
     </svg>
   );
 }
@@ -125,6 +135,306 @@ function IconX() {
       <line x1="18" y1="6" x2="6" y2="18" />
       <line x1="6" y1="6" x2="18" y2="18" />
     </svg>
+  );
+}
+
+function IconFile() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+    </svg>
+  );
+}
+
+function IconFileSidebar() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <line x1="15" y1="3" x2="15" y2="21" />
+    </svg>
+  );
+}
+
+function IconDownload() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
+    </svg>
+  );
+}
+
+/* ---- File helpers ---- */
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileCategory(type: string): 'image' | 'video' | 'audio' | 'other' {
+  if (type.startsWith('image/')) return 'image';
+  if (type.startsWith('video/')) return 'video';
+  if (type.startsWith('audio/')) return 'audio';
+  return 'other';
+}
+
+function fileExt(name: string): string {
+  return (name.split('.').pop() || '').toLowerCase();
+}
+
+/** Can we render this file as text content (markdown, code, plain text)? */
+function isTextPreviewable(name: string, type: string): boolean {
+  const textExts = new Set(['md', 'txt', 'json', 'csv', 'xml', 'yaml', 'yml', 'toml', 'ini', 'log',
+    'js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp',
+    'css', 'scss', 'less', 'html', 'htm', 'sh', 'bash', 'zsh', 'fish', 'sql', 'graphql',
+    'swift', 'kt', 'scala', 'lua', 'r', 'pl', 'php', 'dart', 'zig', 'env', 'gitignore',
+    'dockerfile', 'makefile', 'cmake']);
+  const ext = fileExt(name);
+  return textExts.has(ext) || type.startsWith('text/') || type === 'application/json' || type === 'application/xml';
+}
+
+/** Can we embed this in an iframe? */
+function isEmbedPreviewable(name: string): boolean {
+  const ext = fileExt(name);
+  return ext === 'pdf';
+}
+
+/** Office docs that we render client-side */
+function isOfficePreviewable(name: string): 'docx' | 'xlsx' | 'pptx' | false {
+  const ext = fileExt(name);
+  if (ext === 'docx') return 'docx';
+  if (ext === 'xlsx' || ext === 'xls') return 'xlsx';
+  if (ext === 'pptx') return 'pptx';
+  return false;
+}
+
+/** Build the server-side preview conversion URL (for pptx fallback) */
+function serverPreviewUrl(fileUrl: string): string {
+  return fileUrl.replace('/api/files/', '/api/files/preview/');
+}
+
+/* ---- File Preview Content (rendered inside the right panel) ---- */
+
+function FilePreviewContent({ file }: { file: FileAttachment }) {
+  const [textContent, setTextContent] = useState<string | null>(null);
+  const [xlsxHtml, setXlsxHtml] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const docxRef = useRef<HTMLDivElement>(null);
+  const cat = fileCategory(file.type);
+  const ext = fileExt(file.name);
+  const officeType = isOfficePreviewable(file.name);
+
+  // Fetch text content
+  useEffect(() => {
+    setTextContent(null);
+    setXlsxHtml(null);
+    setError(null);
+    if (isTextPreviewable(file.name, file.type)) {
+      setLoading(true);
+      fetch(file.url)
+        .then((r) => r.text())
+        .then((t) => { setTextContent(t); setLoading(false); })
+        .catch(() => { setError('Failed to load file.'); setLoading(false); });
+    }
+  }, [file.url, file.name, file.type]);
+
+  // DOCX: render with docx-preview
+  useEffect(() => {
+    if (officeType !== 'docx' || !docxRef.current) return;
+    setLoading(true);
+    setError(null);
+    fetch(file.url)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => {
+        if (docxRef.current) {
+          docxRef.current.innerHTML = '';
+          return renderDocx(buf, docxRef.current, undefined, { inWrapper: true });
+        }
+      })
+      .then(() => setLoading(false))
+      .catch((err) => { setError('Failed to render DOCX: ' + err.message); setLoading(false); });
+  }, [file.url, officeType]);
+
+  // XLSX: parse and render with SheetJS
+  useEffect(() => {
+    if (officeType !== 'xlsx') return;
+    setLoading(true);
+    setError(null);
+    fetch(file.url)
+      .then((r) => r.arrayBuffer())
+      .then((buf) => {
+        const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+        const parts: string[] = [];
+        for (const name of wb.SheetNames) {
+          const sheet = wb.Sheets[name];
+          parts.push(`<h3 style="margin:16px 0 8px;font-size:14px;color:#555">${name}</h3>`);
+          parts.push(XLSX.utils.sheet_to_html(sheet, { editable: false }));
+        }
+        setXlsxHtml(parts.join('\n'));
+        setLoading(false);
+      })
+      .catch((err) => { setError('Failed to render spreadsheet: ' + err.message); setLoading(false); });
+  }, [file.url, officeType]);
+
+  if (error) {
+    return <div className={styles.previewLoading}>{error}</div>;
+  }
+
+  // Image
+  if (cat === 'image') {
+    return <img src={file.url} alt={file.name} className={styles.previewImage} />;
+  }
+
+  // Video
+  if (cat === 'video') {
+    return <video src={file.url} controls autoPlay className={styles.previewVideo} />;
+  }
+
+  // Audio
+  if (cat === 'audio') {
+    return (
+      <div className={styles.previewAudioWrap}>
+        <div className={styles.previewAudioIcon}><IconFile /></div>
+        <div className={styles.previewAudioName}>{file.name}</div>
+        <audio src={file.url} controls autoPlay className={styles.previewAudioPlayer} />
+      </div>
+    );
+  }
+
+  // PDF
+  if (isEmbedPreviewable(file.name)) {
+    return <iframe src={file.url} className={styles.previewIframe} title={file.name} />;
+  }
+
+  // DOCX — client-side rendering via docx-preview
+  if (officeType === 'docx') {
+    return (
+      <>
+        {loading && <div className={styles.previewLoading}>Rendering document...</div>}
+        <div ref={docxRef} className={styles.previewDocx} />
+      </>
+    );
+  }
+
+  // XLSX — client-side rendering via SheetJS
+  if (officeType === 'xlsx') {
+    if (loading) return <div className={styles.previewLoading}>Rendering spreadsheet...</div>;
+    if (xlsxHtml) {
+      return <div className={styles.previewXlsx} dangerouslySetInnerHTML={{ __html: xlsxHtml }} />;
+    }
+    return null;
+  }
+
+  // PPTX — server-side conversion fallback (requires libreoffice)
+  if (officeType === 'pptx') {
+    return (
+      <div className={styles.previewUnsupported}>
+        <div className={styles.previewUnsupportedIcon}>PPTX</div>
+        <div className={styles.previewUnsupportedName}>{file.name}</div>
+        <div className={styles.previewUnsupportedSize}>{formatFileSize(file.size)}</div>
+        <a href={file.url} download={file.name} className={styles.previewDownloadBtn}>Download</a>
+      </div>
+    );
+  }
+
+  // Text / Markdown / Code
+  if (isTextPreviewable(file.name, file.type)) {
+    if (loading) return <div className={styles.previewLoading}>Loading...</div>;
+    if (textContent === null) return null;
+
+    if (ext === 'md') {
+      return (
+        <div className={styles.previewMarkdown}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+            {textContent}
+          </ReactMarkdown>
+        </div>
+      );
+    }
+
+    if (ext === 'html' || ext === 'htm') {
+      return <iframe srcDoc={textContent} className={styles.previewIframe} title={file.name} sandbox="allow-same-origin" />;
+    }
+
+    return (
+      <div className={styles.previewCode}>
+        <pre><code>{textContent}</code></pre>
+      </div>
+    );
+  }
+
+  // Unsupported — download prompt
+  return (
+    <div className={styles.previewUnsupported}>
+      <div className={styles.previewUnsupportedIcon}>{ext.toUpperCase()}</div>
+      <div className={styles.previewUnsupportedName}>{file.name}</div>
+      <div className={styles.previewUnsupportedSize}>{formatFileSize(file.size)}</div>
+      <a href={file.url} download={file.name} className={styles.previewDownloadBtn}>Download</a>
+    </div>
+  );
+}
+
+/* ---- File Attachment Card ---- */
+
+function FileAttachmentCard({ file, compact, onPreview }: { file: FileAttachment; compact?: boolean; onPreview?: (f: FileAttachment) => void }) {
+  const [imgError, setImgError] = useState(false);
+  const cat = fileCategory(file.type);
+  const handleClick = (e: React.MouseEvent) => {
+    if (onPreview) { e.preventDefault(); onPreview(file); }
+  };
+
+  if (cat === 'image' && !imgError) {
+    return (
+      <a href={file.url} onClick={handleClick} className={styles.attachCard}>
+        <img
+          src={file.url}
+          alt={file.name}
+          className={compact ? styles.attachImgCompact : styles.attachImg}
+          onError={() => setImgError(true)}
+        />
+        <span className={styles.attachName}>{file.name}</span>
+      </a>
+    );
+  }
+
+  if (cat === 'video') {
+    return (
+      <div className={styles.attachCard} onClick={handleClick} style={{ cursor: 'pointer' }}>
+        <video src={file.url} preload="metadata" className={compact ? styles.attachVideoCompact : styles.attachVideo} />
+        <span className={styles.attachName}>{file.name}</span>
+      </div>
+    );
+  }
+
+  if (cat === 'audio') {
+    return (
+      <div className={styles.attachCardAudio} onClick={handleClick} style={{ cursor: 'pointer' }}>
+        <div className={styles.attachAudioInfo}>
+          <IconFile />
+          <span className={styles.attachFileName}>{file.name}</span>
+        </div>
+        <audio src={file.url} controls preload="metadata" className={styles.attachAudio} />
+      </div>
+    );
+  }
+
+  // Generic file card
+  const extLabel = file.name.split('.').pop()?.toUpperCase() || 'FILE';
+  return (
+    <a href={file.url} onClick={handleClick} className={styles.attachCardFile}>
+      <div className={styles.attachFileIcon}>
+        <span className={styles.attachFileExt}>{extLabel}</span>
+      </div>
+      <div className={styles.attachFileMeta}>
+        <span className={styles.attachFileName}>{file.name}</span>
+        <span className={styles.attachFileSize}>{formatFileSize(file.size)}</span>
+      </div>
+      <div className={styles.attachFileDownload}><IconDownload /></div>
+    </a>
   );
 }
 
@@ -896,25 +1206,38 @@ export function ChatView() {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Upload files to server and return paths
-  const uploadFiles = useCallback(async (files: PendingFile[], sessionId: string): Promise<string[]> => {
-    const paths: string[] = [];
+  // Upload files to server and return attachments
+  const uploadFiles = useCallback(async (files: PendingFile[], sessionId: string): Promise<FileAttachment[]> => {
+    const attachments: FileAttachment[] = [];
     for (const f of files) {
-      const params = new URLSearchParams({ filename: f.file.name, chatId: sessionId });
-      const res = await fetch(`/api/upload?${params.toString()}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': f.file.type || 'application/octet-stream',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: f.file,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        paths.push(data.path);
+      try {
+        const params = new URLSearchParams({ filename: f.file.name, chatId: sessionId });
+        if (token) params.set('token', token);
+        const res = await fetch(`/api/upload?${params.toString()}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': f.file.type || 'application/octet-stream',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: f.file,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          attachments.push({
+            name: f.file.name,
+            type: f.file.type || 'application/octet-stream',
+            size: f.file.size,
+            url: `/api/files/${encodeURIComponent(sessionId)}/${encodeURIComponent(data.filename)}`,
+            path: data.path,
+          });
+        } else {
+          console.error(`Upload failed for ${f.file.name}: ${res.status} ${res.statusText}`);
+        }
+      } catch (err) {
+        console.error(`Upload error for ${f.file.name}:`, err);
       }
     }
-    return paths;
+    return attachments;
   }, [token]);
 
   // Send message
@@ -940,11 +1263,18 @@ export function ChatView() {
 
     // Upload files first if any
     let fileInfo = '';
+    let attachments: FileAttachment[] = [];
     if (hasFiles) {
-      const filePaths = await uploadFiles(pendingFiles, sessionId);
-      if (filePaths.length > 0) {
-        const fileList = filePaths.map((p) => `- ${p}`).join('\n');
-        fileInfo = `\n\n[Uploaded files — please read and process them]\n${fileList}`;
+      attachments = await uploadFiles(pendingFiles, sessionId);
+      if (attachments.length > 0) {
+        const lines = attachments.map((a) => {
+          const cat = fileCategory(a.type);
+          if (cat === 'image') return `  - ${a.path} (image: ${a.name}, ${formatFileSize(a.size)})`;
+          if (cat === 'audio') return `  - ${a.path} (audio: ${a.name}, ${formatFileSize(a.size)})`;
+          if (cat === 'video') return `  - ${a.path} (video: ${a.name}, ${formatFileSize(a.size)})`;
+          return `  - ${a.path} (${a.name}, ${formatFileSize(a.size)})`;
+        });
+        fileInfo = `\n\nThe user uploaded ${attachments.length} file(s):\n${lines.join('\n')}\n\nFor text-based files (txt, csv, json, md, code, etc.), use the Read tool. For images, use the Read tool to view them. For binary files (pdf, docx, xlsx, etc.), acknowledge receipt and describe what you can help with.`;
       }
       // Clear pending files
       pendingFiles.forEach((f) => { if (f.previewUrl) URL.revokeObjectURL(f.previewUrl); });
@@ -952,19 +1282,34 @@ export function ChatView() {
     }
 
     const fullText = (text + fileInfo).trim();
-    const displayText = hasFiles
-      ? text || `Uploaded ${pendingFiles.length} file(s)`
-      : text;
+
+    // If upload failed and no text, abort
+    if (!fullText) {
+      // Show error as system message
+      if (hasFiles) {
+        addMessage(sessionId, {
+          id: generateId(),
+          type: 'system',
+          text: 'File upload failed. Please try again.',
+          timestamp: Date.now(),
+        });
+      }
+      return;
+    }
+
+    // Don't show fallback text when attachments exist — the file cards speak for themselves
+    const displayText = text || '';
 
     const userMsgId = generateId();
     const assistantMsgId = generateId();
 
-    // Add user message
+    // Add user message with attachments
     addMessage(sessionId, {
       id: userMsgId,
       type: 'user',
       text: displayText,
       timestamp: Date.now(),
+      ...(attachments.length > 0 ? { attachments } : {}),
     });
 
     // Add placeholder assistant message
@@ -1026,9 +1371,52 @@ export function ChatView() {
     [],
   );
 
+  // ── File panel & preview state ──
+  const [filePanelOpen, setFilePanelOpen] = useState(false);
+  const [filePanelWidth, setFilePanelWidth] = useState(420);
+  const resizingRef = useRef(false);
+  const [previewFile, setPreviewFile] = useState<FileAttachment | null>(null);
+
+  // Open panel and show preview when clicking a file
+  const openPreview = useCallback((file: FileAttachment) => {
+    setPreviewFile(file);
+    setFilePanelOpen(true);
+  }, []);
+
+  // Collect all attachments from messages in this session
+  const allFiles = useMemo(() => {
+    const files: FileAttachment[] = [];
+    for (const msg of messages) {
+      if (msg.attachments) files.push(...msg.attachments);
+    }
+    return files;
+  }, [messages]);
+
+  // Resize handler for file panel
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    resizingRef.current = true;
+    const startX = e.clientX;
+    const startWidth = filePanelWidth;
+
+    const onMove = (ev: MouseEvent) => {
+      if (!resizingRef.current) return;
+      const delta = startX - ev.clientX;
+      setFilePanelWidth(Math.max(280, Math.min(700, startWidth + delta)));
+    };
+    const onUp = () => {
+      resizingRef.current = false;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [filePanelWidth]);
+
   const hasMessages = messages.length > 0;
 
   return (
+    <div className={styles.chatLayout}>
     <div className={styles.container}>
       {/* Messages or empty state */}
       {hasMessages ? (
@@ -1051,7 +1439,16 @@ export function ChatView() {
                 style={{ animationDelay: `${Math.min(i * 50, 300)}ms` }}
               >
                 {msg.type === 'user' && (
-                  <div className={styles.userBubble}>{msg.text}</div>
+                  <div className={styles.userBubbleWrap}>
+                    {msg.attachments && msg.attachments.length > 0 && (
+                      <div className={styles.attachGrid}>
+                        {msg.attachments.map((file, fi) => (
+                          <FileAttachmentCard key={fi} file={file} onPreview={openPreview} />
+                        ))}
+                      </div>
+                    )}
+                    {msg.text && <div className={styles.userBubble}>{msg.text}</div>}
+                  </div>
                 )}
                 {msg.type === 'system' && (
                   <div className={styles.systemBubble}>{msg.text}</div>
@@ -1176,6 +1573,63 @@ export function ChatView() {
           <span>{connected ? '' : 'Reconnecting...'}</span>
         </div>
       </div>
+
+      {/* File panel toggle button (floating) */}
+      {allFiles.length > 0 && (
+        <button
+          className={`${styles.filePanelToggle} ${filePanelOpen ? styles.filePanelToggleActive : ''}`}
+          onClick={() => { setFilePanelOpen(!filePanelOpen); if (filePanelOpen) setPreviewFile(null); }}
+          title={filePanelOpen ? 'Hide files' : `Show files (${allFiles.length})`}
+        >
+          <IconFileSidebar />
+          <span className={styles.filePanelBadge}>{allFiles.length}</span>
+        </button>
+      )}
+    </div>{/* end container */}
+
+    {/* Right side panel: file list or file preview */}
+    {filePanelOpen && allFiles.length > 0 && (
+      <>
+        <div className={styles.resizeHandle} onMouseDown={handleResizeStart} />
+        <div className={styles.filePanel} style={{ width: filePanelWidth }}>
+          {previewFile ? (
+            /* ── Preview view ── */
+            <>
+              <div className={styles.filePanelHeader}>
+                <button className={styles.panelBackBtn} onClick={() => setPreviewFile(null)} title="Back to files">
+                  <IconChevronLeft />
+                </button>
+                <span className={styles.previewTitle}>{previewFile.name}</span>
+                <a href={previewFile.url} download={previewFile.name} className={styles.panelHeaderIcon} title="Download">
+                  <IconDownload />
+                </a>
+                <button className={styles.panelHeaderIcon} onClick={() => { setFilePanelOpen(false); setPreviewFile(null); }}>
+                  <IconX />
+                </button>
+              </div>
+              <div className={styles.previewBody}>
+                <FilePreviewContent file={previewFile} />
+              </div>
+            </>
+          ) : (
+            /* ── File list view ── */
+            <>
+              <div className={styles.filePanelHeader}>
+                <span>Files ({allFiles.length})</span>
+                <button className={styles.filePanelClose} onClick={() => setFilePanelOpen(false)}>
+                  <IconX />
+                </button>
+              </div>
+              <div className={styles.filePanelList}>
+                {allFiles.map((file, i) => (
+                  <FileAttachmentCard key={i} file={file} compact onPreview={openPreview} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </>
+    )}
     </div>
   );
 }

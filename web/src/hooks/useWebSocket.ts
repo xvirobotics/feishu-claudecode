@@ -16,6 +16,7 @@ export function useWebSocket() {
   const setBots = useStore((s) => s.setBots);
   const updateMessageState = useStore((s) => s.updateMessageState);
   const addMessage = useStore((s) => s.addMessage);
+  const addMessageAttachment = useStore((s) => s.addMessageAttachment);
 
   const wsRef = useRef<WebSocket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -101,6 +102,26 @@ export function useWebSocket() {
             break;
           }
 
+          case 'file': {
+            // Attach output file to the latest assistant message in this chat
+            const store2 = useStore.getState();
+            const fileSession = store2.sessions.get(msg.chatId);
+            if (fileSession) {
+              // Find the last assistant message
+              const lastAssistant = [...fileSession.messages].reverse().find((m) => m.type === 'assistant');
+              if (lastAssistant) {
+                addMessageAttachment(msg.chatId, lastAssistant.id, {
+                  name: msg.name,
+                  type: msg.mimeType,
+                  size: msg.size || 0,
+                  url: msg.url,
+                  path: '',
+                });
+              }
+            }
+            break;
+          }
+
           case 'notice':
             // Add as system message to active session
             {
@@ -144,7 +165,7 @@ export function useWebSocket() {
         if (mountedRef.current) connect();
       }, delay);
     };
-  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage]);
+  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment]);
 
   const send = useCallback(
     (msg: WSOutgoingMessage) => {

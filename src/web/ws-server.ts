@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Server, IncomingMessage, ServerResponse } from 'node:http';
 import type { BotRegistry, BotInfo } from '../api/bot-registry.js';
@@ -23,7 +24,7 @@ type ServerMessage =
   | { type: 'complete'; chatId: string; messageId: string; state: CardState }
   | { type: 'error'; chatId: string; messageId?: string; error: string }
   | { type: 'notice'; chatId: string; title: string; content: string; color?: string }
-  | { type: 'file'; chatId: string; url: string; name: string; mimeType: string }
+  | { type: 'file'; chatId: string; url: string; name: string; mimeType: string; size?: number }
   | { type: 'pong' };
 
 // ─── MIME types for static file serving ────────────────────────────────────
@@ -227,6 +228,39 @@ async function handleChat(
           sendMessage(ws, { type: 'complete', chatId, messageId: msgId, state });
         } else {
           sendMessage(ws, { type: 'state', chatId, messageId: msgId, state });
+        }
+      },
+      onOutputFiles: (files) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        // Copy output files to uploads dir so they're accessible via /api/files/
+        const uploadsDir = path.join(os.tmpdir(), 'metabot-uploads', chatId);
+        fs.mkdirSync(uploadsDir, { recursive: true });
+        for (const file of files) {
+          try {
+            const destPath = path.join(uploadsDir, file.fileName);
+            fs.copyFileSync(file.filePath, destPath);
+            const ext = file.extension.replace('.', '');
+            const mimeMap: Record<string, string> = {
+              png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml',
+              mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg',
+              pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+              xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+              pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+              zip: 'application/zip', txt: 'text/plain', json: 'application/json', csv: 'text/csv', md: 'text/markdown',
+              html: 'text/html',
+            };
+            const mimeType = mimeMap[ext] || 'application/octet-stream';
+            sendMessage(ws, {
+              type: 'file',
+              chatId,
+              url: `/api/files/${encodeURIComponent(chatId)}/${encodeURIComponent(file.fileName)}`,
+              name: file.fileName,
+              mimeType,
+              size: file.sizeBytes,
+            });
+          } catch (err) {
+            logger.warn({ err, file: file.fileName }, 'Failed to copy output file for web');
+          }
         }
       },
       onQuestion: (question: PendingQuestion): Promise<string> => {

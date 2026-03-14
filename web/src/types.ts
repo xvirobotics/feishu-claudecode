@@ -46,12 +46,21 @@ export interface BotInfo {
   workingDirectory: string;
 }
 
+export interface FileAttachment {
+  name: string;
+  type: string;   // MIME type
+  size: number;
+  url: string;     // /api/files/chatId/filename — for browser preview
+  path: string;    // server absolute path — for Claude to read
+}
+
 export interface ChatMessage {
   id: string;
   type: 'user' | 'assistant' | 'system';
   text: string;
   state?: CardState;
   timestamp: number;
+  attachments?: FileAttachment[];
 }
 
 export interface ChatSession {
@@ -90,6 +99,7 @@ export type WSIncomingMessage =
   | { type: 'complete'; chatId: string; messageId: string; state: CardState }
   | { type: 'error'; chatId: string; messageId: string; error: string }
   | { type: 'notice'; text: string }
+  | { type: 'file'; chatId: string; url: string; name: string; mimeType: string; size?: number }
   | { type: 'pong' };
 
 export type WSOutgoingMessage =

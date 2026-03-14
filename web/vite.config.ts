@@ -18,6 +18,7 @@ export default defineConfig({
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           markdown: ['react-markdown', 'remark-gfm', 'rehype-highlight'],
+          'office-preview': ['docx-preview', 'xlsx'],
         },
       },
     },
