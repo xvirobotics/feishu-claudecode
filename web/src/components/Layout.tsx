@@ -146,14 +146,14 @@ function relTime(ts: number): string {
 function sessionPreview(session: ChatSession): { text: string; status?: string } {
   if (session.messages.length === 0) return { text: 'Start a conversation' };
   const last = session.messages[session.messages.length - 1];
-  if (last.type === 'user') return { text: last.text.slice(0, 60) };
+  if (last.type === 'user') return { text: (last.text || '').slice(0, 60) };
   if (last.state) {
     if (last.state.status === 'thinking') return { text: '', status: 'thinking' };
     if (last.state.status === 'running') return { text: '', status: 'running' };
     if (last.state.status === 'error') return { text: last.state.errorMessage?.slice(0, 50) || 'Error', status: 'error' };
     return { text: (last.text || 'Done').slice(0, 60) };
   }
-  return { text: last.text.slice(0, 60) };
+  return { text: (last.text || '').slice(0, 60) };
 }
 
 /* ═══════════════════════════════════════════════════════════════

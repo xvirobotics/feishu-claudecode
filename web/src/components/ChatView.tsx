@@ -28,6 +28,14 @@ function IconSend() {
   );
 }
 
+function IconStop() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+    </svg>
+  );
+}
+
 function IconCheck() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -189,7 +197,7 @@ function fileExt(name: string): string {
 function isTextPreviewable(name: string, type: string): boolean {
   const textExts = new Set(['md', 'txt', 'json', 'csv', 'xml', 'yaml', 'yml', 'toml', 'ini', 'log',
     'js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp',
-    'css', 'scss', 'less', 'html', 'htm', 'sh', 'bash', 'zsh', 'fish', 'sql', 'graphql',
+    'css', 'scss', 'less', 'sh', 'bash', 'zsh', 'fish', 'sql', 'graphql',
     'swift', 'kt', 'scala', 'lua', 'r', 'pl', 'php', 'dart', 'zig', 'env', 'gitignore',
     'dockerfile', 'makefile', 'cmake']);
   const ext = fileExt(name);
@@ -199,7 +207,7 @@ function isTextPreviewable(name: string, type: string): boolean {
 /** Can we embed this in an iframe? */
 function isEmbedPreviewable(name: string): boolean {
   const ext = fileExt(name);
-  return ext === 'pdf';
+  return ext === 'pdf' || ext === 'html' || ext === 'htm';
 }
 
 /** Office docs that we render client-side */
@@ -305,9 +313,10 @@ function FilePreviewContent({ file }: { file: FileAttachment }) {
     );
   }
 
-  // PDF
+  // PDF / HTML
   if (isEmbedPreviewable(file.name)) {
-    return <iframe src={file.url} className={styles.previewIframe} title={file.name} />;
+    const isHtml = ext === 'html' || ext === 'htm';
+    return <iframe src={file.url} className={styles.previewIframe} title={file.name} sandbox={isHtml ? 'allow-scripts allow-same-origin' : undefined} />;
   }
 
   // DOCX — client-side rendering via docx-preview
@@ -354,10 +363,6 @@ function FilePreviewContent({ file }: { file: FileAttachment }) {
           </ReactMarkdown>
         </div>
       );
-    }
-
-    if (ext === 'html' || ext === 'htm') {
-      return <iframe srcDoc={textContent} className={styles.previewIframe} title={file.name} sandbox="allow-same-origin" />;
     }
 
     return (
@@ -425,7 +430,7 @@ function FileAttachmentCard({ file, compact, onPreview }: { file: FileAttachment
   // Generic file card
   const extLabel = file.name.split('.').pop()?.toUpperCase() || 'FILE';
   return (
-    <a href={file.url} onClick={handleClick} className={styles.attachCardFile}>
+    <div className={styles.attachCardFile} onClick={handleClick} style={{ cursor: 'pointer' }}>
       <div className={styles.attachFileIcon}>
         <span className={styles.attachFileExt}>{extLabel}</span>
       </div>
@@ -433,8 +438,16 @@ function FileAttachmentCard({ file, compact, onPreview }: { file: FileAttachment
         <span className={styles.attachFileName}>{file.name}</span>
         <span className={styles.attachFileSize}>{formatFileSize(file.size)}</span>
       </div>
-      <div className={styles.attachFileDownload}><IconDownload /></div>
-    </a>
+      <a
+        href={file.url}
+        download={file.name}
+        className={styles.attachFileDownload}
+        onClick={(e) => e.stopPropagation()}
+        title="Download"
+      >
+        <IconDownload />
+      </a>
+    </div>
   );
 }
 
@@ -641,9 +654,11 @@ function PendingQuestionUI({
 function AssistantMessageView({
   msg,
   onAnswer,
+  onPreview,
 }: {
   msg: ChatMessage;
   onAnswer: (toolUseId: string, answer: string) => void;
+  onPreview?: (f: FileAttachment) => void;
 }) {
   const state = msg.state;
 
@@ -669,6 +684,14 @@ function AssistantMessageView({
           >
             {msg.text}
           </ReactMarkdown>
+        </div>
+      )}
+
+      {msg.attachments && msg.attachments.length > 0 && (
+        <div className={styles.attachGrid}>
+          {msg.attachments.map((file, fi) => (
+            <FileAttachmentCard key={fi} file={file} onPreview={onPreview} />
+          ))}
         </div>
       )}
 
@@ -778,6 +801,19 @@ export function ChatView() {
 
   const session = activeSessionId ? sessions.get(activeSessionId) : undefined;
   const messages = session?.messages || [];
+
+  // Detect if Claude is currently processing (thinking/running)
+  const isRunning = useMemo(() => {
+    if (!messages.length) return false;
+    const last = messages[messages.length - 1];
+    return last.type === 'assistant' && (last.state?.status === 'thinking' || last.state?.status === 'running');
+  }, [messages]);
+
+  // Stop the current task
+  const handleStop = useCallback(() => {
+    if (!activeSessionId) return;
+    send({ type: 'stop', chatId: activeSessionId });
+  }, [activeSessionId, send]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -1345,8 +1381,12 @@ export function ChatView() {
         e.preventDefault();
         handleSend();
       }
+      if (e.key === 'Escape' && isRunning) {
+        e.preventDefault();
+        handleStop();
+      }
     },
-    [handleSend],
+    [handleSend, isRunning, handleStop],
   );
 
   const handleAnswer = useCallback(
@@ -1454,7 +1494,7 @@ export function ChatView() {
                   <div className={styles.systemBubble}>{msg.text}</div>
                 )}
                 {msg.type === 'assistant' && (
-                  <AssistantMessageView msg={msg} onAnswer={handleAnswer} />
+                  <AssistantMessageView msg={msg} onAnswer={handleAnswer} onPreview={openPreview} />
                 )}
               </div>
             ))}
@@ -1559,14 +1599,25 @@ export function ChatView() {
           >
             <IconPhone />
           </button>
-          <button
-            className={styles.sendBtn}
-            onClick={handleSend}
-            disabled={(!input.trim() && pendingFiles.length === 0) || !connected}
-            title="Send (Enter)"
-          >
-            <IconSend />
-          </button>
+          {isRunning ? (
+            <button
+              className={`${styles.sendBtn} ${styles.stopBtn}`}
+              onClick={handleStop}
+              disabled={!connected}
+              title="Stop (Esc)"
+            >
+              <IconStop />
+            </button>
+          ) : (
+            <button
+              className={styles.sendBtn}
+              onClick={handleSend}
+              disabled={(!input.trim() && pendingFiles.length === 0) || !connected}
+              title="Send (Enter)"
+            >
+              <IconSend />
+            </button>
+          )}
         </div>
         <div className={styles.inputHint}>
           <span>Enter to send, Shift+Enter for newline</span>

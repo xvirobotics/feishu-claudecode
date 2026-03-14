@@ -83,7 +83,7 @@
 
 /* ── User bubble — gradient pill with glow ── */
 .userBubble {
-  max-width: 68%;
+  max-width: 80%;
   padding: 12px 20px;
   background: var(--gradient-accent-vivid);
   color: #fff;
@@ -91,6 +91,7 @@
   font-size: 14px;
   line-height: 1.55;
   word-break: break-word;
+  white-space: pre-line;
   font-weight: 450;
   box-shadow: var(--shadow-accent);
   letter-spacing: -0.1px;
@@ -512,6 +513,14 @@
 }
 .sendBtn:active:not(:disabled) { transform: scale(0.94); }
 .sendBtn:disabled { opacity: 0.2; cursor: not-allowed; box-shadow: none; }
+
+.stopBtn {
+  background: var(--gradient-accent);
+  box-shadow: var(--shadow-accent);
+}
+.stopBtn:hover:not(:disabled) {
+  box-shadow: var(--shadow-accent-lg);
+}
 
 /* Attach button */
 .attachBtn {
