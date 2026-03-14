@@ -20,6 +20,8 @@ MetaBot sets it free. It gives every agent a Claude Code brain, persistent share
 | **MetaSkill** | Agent factory. `/metaskill ios app` generates a complete `.claude/` agent team (orchestrator + specialists + code-reviewer). |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. |
 | **IM Bridge** | Chat with any agent from Feishu/Lark or Telegram (including mobile). Streaming cards with color-coded status. |
+| **Web UI** | Browser-based chat at `/web/` with WebSocket streaming, phone call voice mode (VAD), MetaMemory browser, dark/light themes. [Learn more](features/web-ui.md) |
+| **Voice Assistant** | Hands-free voice control via iOS Shortcuts (Jarvis mode) or Web UI phone call mode. Server-side STT + TTS. [Learn more](features/voice-jarvis.md) |
 | **Agent Bus** | REST API on port 9100. Agents talk to each other via `mb talk`. Create/remove bots at runtime. |
 | **Peers** | Federation system for cross-instance bot discovery and task routing. |
 | **Task Scheduler** | One-time delays and recurring cron jobs. Timezone-aware, persists across restarts. |

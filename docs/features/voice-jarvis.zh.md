@@ -2,12 +2,15 @@
 
 通过 AirPods 和 Siri 免手免屏与任意 MetaBot Agent 语音交流。无需安装 App，只用 iOS 快捷指令。
 
-## 两种模式
+## 三种模式
 
 | 模式 | STT | TTS | 质量 | 配置时间 |
 |------|-----|-----|------|---------|
+| **Web 电话模式** | 豆包 / Whisper | 豆包 / OpenAI / ElevenLabs | 高质量 | 5 分钟 |
 | **简单模式**（Siri STT） | Siri 内置 | Siri 朗读 | 基础 | 5 分钟 |
 | **Pro 模式**（服务端 STT） | 豆包 / Whisper | 豆包 / OpenAI / ElevenLabs | 高质量 | 10 分钟 |
+
+**新功能：Web 电话模式** — 无需 iOS 快捷指令。打开 Web UI，点击电话图标即可开始对话。VAD 自动检测说完。详见 [Web UI — 电话语音模式](web-ui.md#电话语音模式)。
 
 **推荐：Pro 模式** — 服务端 STT（豆包或 Whisper）语音识别效果远优于 Siri，尤其是中文和中英混合输入。配置火山引擎密钥后默认使用豆包。
 
@@ -112,6 +115,7 @@
 | `tts` | `doubao` | TTS 服务：`doubao`、`openai` 或 `elevenlabs`（根据已配置的密钥自动选择） |
 | `ttsVoice` | （按服务商） | TTS 声音（豆包: speaker ID；OpenAI: alloy/echo/fable/onyx/nova/shimmer；ElevenLabs: voice ID） |
 | `sendCards` | `false` | 同时发送到飞书 |
+| `voiceMode` | `false` | 启用语音模式（简短回复，`maxTurns=1`） |
 
 ---
 
@@ -232,6 +236,7 @@
 | `VOLCENGINE_TTS_RESOURCE_ID` | 豆包 TTS 资源 ID（默认: `volc.service_type.10029`） |
 | `OPENAI_API_KEY` | Whisper STT 和 OpenAI TTS 备选 |
 | `ELEVENLABS_API_KEY` | ElevenLabs TTS 必需 |
+| `VOICE_MODEL` | 语音模式使用的 Claude 模型（可选覆盖） |
 
 ## 限制
 

@@ -70,6 +70,17 @@ Falls back to the first Feishu bot's credentials if not set.
 | `METABOT_URL` | `http://localhost:9100` | MetaBot API URL (for CLI) |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL (for CLI) |
 
+## Voice
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VOLCENGINE_TTS_APPID` | — | Doubao STT + TTS (recommended) |
+| `VOLCENGINE_TTS_ACCESS_KEY` | — | Doubao STT + TTS (recommended) |
+| `VOLCENGINE_TTS_RESOURCE_ID` | `volc.service_type.10029` | Doubao TTS resource ID |
+| `OPENAI_API_KEY` | — | Fallback for Whisper STT + OpenAI TTS |
+| `ELEVENLABS_API_KEY` | — | ElevenLabs TTS |
+| `VOICE_MODEL` | — | Override Claude model for voice mode |
+
 ## Third-Party AI Providers
 
 MetaBot supports any Anthropic-compatible API:

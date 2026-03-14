@@ -2,12 +2,15 @@
 
 Talk to any MetaBot agent hands-free using AirPods and Siri. No app needed — just an iOS Shortcut.
 
-## Two Modes
+## Three Modes
 
 | Mode | STT | TTS | Quality | Setup |
 |------|-----|-----|---------|-------|
+| **Web Call** | Doubao / Whisper | Doubao / OpenAI / ElevenLabs | High | 5 min |
 | **Simple** (Siri STT) | Siri built-in | Siri Speak Text | Basic | 5 min |
 | **Pro** (Server STT) | Doubao / Whisper | Doubao / OpenAI / ElevenLabs | High | 10 min |
+
+**New: Web Call Mode** — No iOS Shortcut needed. Open the Web UI, tap the phone icon, and start talking. VAD auto-detects when you finish speaking. See [Web UI — Phone Call Mode](web-ui.md#phone-call-mode) for details.
 
 **Recommended: Pro mode** — Server-side STT (Doubao or Whisper) has much better speech recognition, especially for Chinese + mixed-language input. Doubao is the default when Volcengine keys are configured.
 
@@ -110,6 +113,7 @@ Search and add **Play Sound**:
 | `tts` | `doubao` | TTS provider: `doubao`, `openai`, or `elevenlabs` (auto-selects based on available keys) |
 | `ttsVoice` | (per provider) | TTS voice (Doubao: speaker ID; OpenAI: alloy/echo/fable/onyx/nova/shimmer; ElevenLabs: voice ID) |
 | `sendCards` | `false` | Also send response to Feishu |
+| `voiceMode` | `false` | Enable voice mode (brief responses, `maxTurns=1`) |
 
 ---
 
@@ -228,6 +232,7 @@ Server-side STT (Doubao or Whisper) + Agent execution + optional TTS. Defaults t
 | `VOLCENGINE_TTS_RESOURCE_ID` | Doubao TTS resource ID (default: `volc.service_type.10029`) |
 | `OPENAI_API_KEY` | Fallback for Whisper STT and OpenAI TTS |
 | `ELEVENLABS_API_KEY` | Required for ElevenLabs TTS |
+| `VOICE_MODEL` | Override Claude model for voice mode (optional) |
 
 ## Limitations
 

@@ -53,3 +53,31 @@ API_SECRET=your-secret
 ```
 
 This allows `mb` and `mm` commands to work from any machine.
+
+## HTTPS with Caddy
+
+HTTPS is required for the Web UI's phone call voice mode on mobile browsers (microphone access needs a secure context). [Caddy](https://caddyserver.com/) is the recommended reverse proxy — it handles Let's Encrypt certificates automatically.
+
+```bash
+# Install Caddy
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt-get update && sudo apt-get install caddy
+
+# Configure (replace with your domain)
+sudo tee /etc/caddy/Caddyfile > /dev/null << 'EOF'
+metabot.yourdomain.com {
+    reverse_proxy localhost:9100
+}
+EOF
+sudo systemctl restart caddy
+```
+
+**Prerequisites:**
+
+- A domain with an A record pointing to your server's public IP
+- Ports 80 and 443 open for Let's Encrypt validation
+
+Caddy automatically obtains and renews certificates. WebSocket connections (`/ws`) are proxied transparently — no additional configuration needed.
+
+For full setup details, see the [Web UI docs](../features/web-ui.md#https-setup).

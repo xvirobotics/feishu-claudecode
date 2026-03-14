@@ -33,12 +33,23 @@ MetaBot is a TypeScript ESM project that connects IM platforms (Feishu, Telegram
 
 ## Message Flow
 
+**IM (Feishu/Telegram):**
+
 ```
 IM Client → EventHandler (parse, @mention filter)
          → MessageBridge (command routing, task management)
          → ClaudeExecutor (Agent SDK query)
          → StreamProcessor (card state tracking)
          → IM card updates (streaming)
+```
+
+**Web UI:**
+
+```
+Web Browser → WebSocket (/ws?token=API_SECRET)
+           → ws-server.ts
+           → MessageBridge.executeApiTask(onUpdate, onQuestion)
+           → streaming CardState back to browser
 ```
 
 ## Key Modules
@@ -56,4 +67,6 @@ IM Client → EventHandler (parse, @mention filter)
 | `src/feishu/message-sender.ts` | Feishu API wrapper for sending/updating cards, uploading images. |
 | `src/bridge/rate-limiter.ts` | Throttles card updates (1.5s default) to avoid API rate limits. |
 | `src/api/peer-manager.ts` | Cross-instance bot discovery and task forwarding. |
+| `src/api/voice-handler.ts` | Voice API: Doubao/Whisper STT, agent execution, Doubao/OpenAI/ElevenLabs TTS. |
+| `src/web/ws-server.ts` | WebSocket server for Web UI. Token auth, heartbeat, static file serving. |
 | `src/bridge/outputs-manager.ts` | Output file lifecycle (prepare, scan, cleanup, type routing). |
