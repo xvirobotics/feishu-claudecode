@@ -125,7 +125,8 @@ export class StreamProcessor {
           }
         }
       } else if (block.type === 'tool_result') {
-        this.completeCurrentTool();
+        const output = extractToolOutput(block.content);
+        this.completeCurrentTool(output);
       }
     }
   }
@@ -200,7 +201,8 @@ export class StreamProcessor {
 
     this.currentToolName = name;
     const detail = formatToolDetail(name, input);
-    this.toolCalls.push({ name, detail, status: 'running' });
+    const inputStr = formatToolInput(name, input);
+    this.toolCalls.push({ name, detail, status: 'running', input: inputStr || undefined });
 
     // Track image file paths and plan file paths from Write tool
     if (name === 'Write' && input && typeof input === 'object') {
@@ -214,13 +216,16 @@ export class StreamProcessor {
     }
   }
 
-  private completeCurrentTool(): void {
+  private completeCurrentTool(output?: string): void {
     if (this.currentToolName) {
       const tool = this.toolCalls.find(
         (t) => t.name === this.currentToolName && t.status === 'running',
       );
       if (tool) {
         tool.status = 'done';
+        if (output) {
+          tool.output = output;
+        }
       }
       this.currentToolName = null;
     }
@@ -338,4 +343,51 @@ function shortenPath(filePath: string): string {
 function truncate(text: string, max: number): string {
   if (text.length <= max) return text;
   return text.slice(0, max) + '...';
+}
+
+function formatToolInput(name: string, input: unknown): string {
+  if (!input || typeof input !== 'object') return '';
+  const inp = input as Record<string, unknown>;
+
+  switch (name) {
+    case 'Read':
+      return inp.file_path ? String(inp.file_path) : '';
+    case 'Write':
+    case 'Edit':
+      return inp.file_path ? String(inp.file_path) : '';
+    case 'Bash':
+      return inp.command ? String(inp.command) : '';
+    case 'Glob':
+      return inp.pattern ? String(inp.pattern) : '';
+    case 'Grep':
+      return inp.pattern ? String(inp.pattern) : '';
+    case 'WebSearch':
+      return inp.query ? String(inp.query) : '';
+    case 'WebFetch':
+      return inp.url ? String(inp.url) : '';
+    default:
+      // For unknown tools, serialize the full input
+      try {
+        return JSON.stringify(input, null, 2);
+      } catch {
+        return '';
+      }
+  }
+}
+
+function extractToolOutput(content: unknown): string {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  // content can be an array of content blocks
+  if (Array.isArray(content)) {
+    return content
+      .map((c: any) => (typeof c === 'string' ? c : c?.text || ''))
+      .filter(Boolean)
+      .join('\n');
+  }
+  try {
+    return JSON.stringify(content);
+  } catch {
+    return '';
+  }
 }

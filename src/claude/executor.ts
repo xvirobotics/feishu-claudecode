@@ -81,6 +81,8 @@ export type SDKMessage = {
       name?: string;
       id?: string;
       input?: unknown;
+      content?: string | unknown;
+      tool_use_id?: string;
     }>;
   };
   // Result fields

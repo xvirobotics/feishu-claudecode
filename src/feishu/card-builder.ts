@@ -12,9 +12,9 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
 
 const MAX_CONTENT_LENGTH = 28000;
 
-function truncateContent(text: string): string {
-  if (text.length <= MAX_CONTENT_LENGTH) return text;
-  const half = Math.floor(MAX_CONTENT_LENGTH / 2) - 50;
+function truncateContent(text: string, maxLen: number = MAX_CONTENT_LENGTH): string {
+  if (text.length <= maxLen) return text;
+  const half = Math.floor(maxLen / 2) - 50;
   return (
     text.slice(0, half) +
     '\n\n... (content truncated) ...\n\n' +
@@ -26,21 +26,49 @@ export function buildCard(state: CardState): string {
   const config = STATUS_CONFIG[state.status];
   const elements: unknown[] = [];
 
-  // Tool calls section
+  // Tool calls section — each completed tool in a collapsible panel, running tool as plain text
   if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
+    for (const t of state.toolCalls) {
       const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
-    elements.push({
-      tag: 'markdown',
-      content: toolLines.join('\n'),
-    });
+      if (t.status === 'done' && (t.input || t.output)) {
+        // Completed tool with details — collapsible panel
+        const bodyParts: string[] = [];
+        if (t.input) {
+          bodyParts.push(`**Input:**\n\`\`\`\n${truncateContent(t.input, 2000)}\n\`\`\``);
+        }
+        if (t.output) {
+          bodyParts.push(`**Output:**\n\`\`\`\n${truncateContent(t.output, 2000)}\n\`\`\``);
+        }
+        elements.push({
+          tag: 'collapsible_panel',
+          expanded: false,
+          header: {
+            title: {
+              tag: 'plain_text',
+              content: `${icon} ${t.name} ${t.detail}`,
+            },
+          },
+          border: { color: 'grey' },
+          body: [
+            {
+              tag: 'markdown',
+              content: bodyParts.join('\n'),
+            },
+          ],
+        });
+      } else {
+        // Running tool or no details — plain text line
+        elements.push({
+          tag: 'markdown',
+          content: `${icon} **${t.name}** ${t.detail}`,
+        });
+      }
+    }
     elements.push({ tag: 'hr' });
   }
 
-  // Thinking content (collapsible)
-  if (state.thinkingText) {
+  // Thinking content (collapsible) — only if non-empty
+  if (state.thinkingText?.trim()) {
     elements.push({
       tag: 'collapsible_panel',
       expanded: false,

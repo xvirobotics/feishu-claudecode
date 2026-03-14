@@ -28,10 +28,11 @@ describe('buildCard', () => {
     };
     const json = JSON.parse(buildCard(state));
     expect(json.header.template).toBe('blue');
-    const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('Read'));
-    expect(md).toBeDefined();
-    expect(md.content).toContain('✅');
-    expect(md.content).toContain('⏳');
+    const mdElements = json.elements.filter((e: any) => e.tag === 'markdown');
+    const allContent = mdElements.map((e: any) => e.content).join('\n');
+    expect(allContent).toContain('Read');
+    expect(allContent).toContain('✅');
+    expect(allContent).toContain('⏳');
   });
 
   it('builds complete card with stats', () => {

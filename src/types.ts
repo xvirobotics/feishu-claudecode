@@ -6,6 +6,8 @@ export interface ToolCall {
   name: string;
   detail: string;
   status: 'running' | 'done';
+  input?: string;
+  output?: string;
 }
 
 export interface PendingQuestion {
