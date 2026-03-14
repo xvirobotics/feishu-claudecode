@@ -271,10 +271,12 @@ export class MessageBridge {
 
     // Send initial "thinking" card
     const displayPrompt = fileKey ? '📎 ' + text : imageKey ? '🖼️ ' + text : text;
+    const taskStartTime = Date.now();
     const processorConfig: StreamProcessorConfig = {
       model: this.config.claude.model,
       thinking: this.config.claude.thinking ? String((this.config.claude.thinking as Record<string, unknown>).type || '') : undefined,
       effort: this.config.claude.effort,
+      startTime: taskStartTime,
     };
     const processor = new StreamProcessor(displayPrompt, processorConfig, cwd);
     const initialState: CardState = {
@@ -282,6 +284,7 @@ export class MessageBridge {
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      startTime: taskStartTime,
     };
 
     const messageId = await this.sender.sendCard(chatId, initialState);
@@ -347,6 +350,14 @@ export class MessageBridge {
     resetIdleTimer();
 
     let lastState: CardState = initialState;
+
+    // Periodic timer to update card during thinking/running (shows elapsed time)
+    const thinkingTimerId = setInterval(() => {
+      if (lastState.startTime && (lastState.status === 'thinking' || lastState.status === 'running')) {
+        // Re-render the card with updated elapsed time
+        rateLimiter.schedule(() => this.sender.updateCard(messageId, lastState));
+      }
+    }, 3000);
 
     try {
       for await (const message of executionHandle.stream) {
@@ -502,6 +513,7 @@ export class MessageBridge {
       await rateLimiter.cancelAndWait();
       await this.sendFinalCard(messageId, errorState, chatId);
     } finally {
+      clearInterval(thinkingTimerId);
       clearTimeout(timeoutId);
       if (idleTimerId) clearTimeout(idleTimerId);
       if (runningTask.questionTimeoutId) {
@@ -535,10 +547,12 @@ export class MessageBridge {
     const outputsDir = this.outputsManager.prepareDir(chatId);
 
     const displayPrompt = prompt;
+    const taskStartTime = Date.now();
     const processorConfig: StreamProcessorConfig = {
       model: this.config.claude.model,
       thinking: this.config.claude.thinking ? String((this.config.claude.thinking as Record<string, unknown>).type || '') : undefined,
       effort: this.config.claude.effort,
+      startTime: taskStartTime,
     };
     const processor = new StreamProcessor(displayPrompt, processorConfig, cwd);
     const rateLimiter = new RateLimiter(1500);
@@ -550,6 +564,7 @@ export class MessageBridge {
         userPrompt: displayPrompt,
         responseText: '',
         toolCalls: [],
+        startTime: taskStartTime,
       };
       messageId = await this.sender.sendCard(chatId, initialState);
     }

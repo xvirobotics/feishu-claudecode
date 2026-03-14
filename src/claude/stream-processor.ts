@@ -23,6 +23,7 @@ export interface StreamProcessorConfig {
   model?: string;
   thinking?: string;
   effort?: string;
+  startTime?: number;
 }
 
 export class StreamProcessor {
@@ -105,6 +106,7 @@ export class StreamProcessor {
       toolCalls: [...this.toolCalls],
       toolSummaries: this.toolSummaries.length > 0 ? [...this.toolSummaries] : undefined,
       subagentTasks: this.subagentTasks.size > 0 ? [...this.subagentTasks.values()] : undefined,
+      startTime: this._config.startTime,
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestion || undefined,
@@ -237,6 +239,7 @@ export class StreamProcessor {
       toolCalls: [...this.toolCalls],
       toolSummaries: this.toolSummaries.length > 0 ? [...this.toolSummaries] : undefined,
       subagentTasks: this.subagentTasks.size > 0 ? [...this.subagentTasks.values()] : undefined,
+      startTime: this._config.startTime,
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       errorMessage: isError

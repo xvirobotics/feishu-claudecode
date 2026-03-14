@@ -36,6 +36,7 @@ export interface CardState {
   toolCalls: ToolCall[];
   toolSummaries?: string[];
   subagentTasks?: SubagentTask[];
+  startTime?: number;
   costUsd?: number;
   durationMs?: number;
   errorMessage?: string;

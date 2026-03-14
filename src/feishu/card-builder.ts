@@ -22,9 +22,20 @@ function truncateContent(text: string, maxLen: number = MAX_CONTENT_LENGTH): str
   );
 }
 
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${min}m${sec}s`;
+}
+
 export function buildCard(state: CardState): string {
   const config = STATUS_CONFIG[state.status];
   const elements: unknown[] = [];
+
+  // Calculate elapsed time for header
+  const elapsed = state.startTime ? formatElapsed(Date.now() - state.startTime) : undefined;
 
   // Tool calls section — each completed tool in a collapsible panel, running tool as plain text
   if (state.toolCalls.length > 0) {
@@ -150,7 +161,7 @@ export function buildCard(state: CardState): string {
   } else if (state.status === 'thinking') {
     elements.push({
       tag: 'markdown',
-      content: '_Claude is thinking..._',
+      content: elapsed ? `_Claude is thinking... (${elapsed})_` : '_Claude is thinking..._',
     });
   }
 
@@ -234,7 +245,9 @@ export function buildCard(state: CardState): string {
     header: {
       template: config.color,
       title: {
-        content: `${config.icon} ${config.title}`,
+        content: elapsed && (state.status === 'thinking' || state.status === 'running')
+          ? `${config.icon} ${config.title} (${elapsed})`
+          : `${config.icon} ${config.title}`,
         tag: 'plain_text',
       },
     },
