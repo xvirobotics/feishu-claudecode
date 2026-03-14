@@ -7,9 +7,9 @@
 | 模式 | STT | TTS | 质量 | 配置时间 |
 |------|-----|-----|------|---------|
 | **简单模式**（Siri STT） | Siri 内置 | Siri 朗读 | 基础 | 5 分钟 |
-| **Pro 模式**（Whisper STT） | OpenAI Whisper | OpenAI / ElevenLabs | 高质量 | 10 分钟 |
+| **Pro 模式**（服务端 STT） | 豆包 / Whisper | 豆包 / OpenAI / ElevenLabs | 高质量 | 10 分钟 |
 
-**推荐：Pro 模式** — Whisper 语音识别效果远优于 Siri，尤其是中文和中英混合输入。
+**推荐：Pro 模式** — 服务端 STT（豆包或 Whisper）语音识别效果远优于 Siri，尤其是中文和中英混合输入。配置火山引擎密钥后默认使用豆包。
 
 ## 工作原理
 
@@ -27,7 +27,7 @@
   通过 Siri 语音回复
 ```
 
-### Pro 模式（Whisper STT）
+### Pro 模式（服务端 STT）
 
 ```
 "Hey Siri, Jarvis"
@@ -36,7 +36,7 @@
         ↓
   HTTP POST 音频到 MetaBot /api/voice
         ↓
-  Whisper STT → Agent → 可选 TTS
+  豆包/Whisper STT → Agent → 可选 TTS
         ↓
   通过 Siri 或 TTS 音频回复
 ```
@@ -53,7 +53,7 @@
 - AirPods（或任何支持 Siri 的耳机）
 - MetaBot 服务器可从外网访问（公网 IP + 9100 端口开放）
 - MetaBot `.env` 中的 `API_SECRET`
-- MetaBot `.env` 中设置 `OPENAI_API_KEY`（用于 Whisper STT）
+- MetaBot `.env` 中设置 `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY`（推荐，用于豆包 STT+TTS），或 `OPENAI_API_KEY`（用于 Whisper STT 备选）
 
 ### 第 1 步：创建快捷指令
 
@@ -104,8 +104,9 @@
 | `botName` | （必填） | 要对话的 Bot |
 | `chatId` | `voice_default` | 会话 ID，用于多轮对话 |
 | `language` | `zh` | STT 语言提示（`zh`、`en`、`auto`） |
-| `tts` | （无） | TTS 服务：`openai`、`elevenlabs` 或 `doubao` |
-| `ttsVoice` | `alloy` | TTS 声音（OpenAI: alloy/echo/fable/onyx/nova/shimmer；ElevenLabs: voice ID；Doubao: speaker ID） |
+| `stt` | `doubao` | STT 服务：`doubao` 或 `whisper`（根据已配置的密钥自动选择） |
+| `tts` | `doubao` | TTS 服务：`doubao`、`openai` 或 `elevenlabs`（根据已配置的密钥自动选择） |
+| `ttsVoice` | （按服务商） | TTS 声音（豆包: speaker ID；OpenAI: alloy/echo/fable/onyx/nova/shimmer；ElevenLabs: voice ID） |
 | `sendCards` | `false` | 同时发送到飞书 |
 
 ---
@@ -194,10 +195,10 @@
 
 ### POST `/api/voice`
 
-服务端 Whisper STT + Agent 执行 + 可选 TTS。
+服务端 STT（豆包或 Whisper）+ Agent 执行 + 可选 TTS。配置火山引擎密钥后默认使用豆包。
 
 **请求：**
-- Body：原始音频字节（m4a、wav、webm、mp3、ogg — 最大 25 MB）
+- Body：原始音频字节（m4a、wav、webm、mp3、ogg — 最大 100 MB）
 - 认证：`Authorization: Bearer YOUR_API_SECRET`
 - 配置通过 URL 查询参数（见上表）
 
@@ -222,11 +223,11 @@
 
 | 变量 | 说明 |
 |------|------|
-| `OPENAI_API_KEY` | Whisper STT 和 OpenAI TTS 必需 |
-| `ELEVENLABS_API_KEY` | ElevenLabs TTS 必需 |
-| `VOLCENGINE_TTS_APPID` | 豆包 TTS 必需（火山引擎控制台获取） |
-| `VOLCENGINE_TTS_ACCESS_KEY` | 豆包 TTS 必需（火山引擎控制台获取） |
+| `VOLCENGINE_TTS_APPID` | 豆包 STT + TTS 必需（推荐，火山引擎控制台获取） |
+| `VOLCENGINE_TTS_ACCESS_KEY` | 豆包 STT + TTS 必需（推荐，火山引擎控制台获取） |
 | `VOLCENGINE_TTS_RESOURCE_ID` | 豆包 TTS 资源 ID（默认: `volc.service_type.10029`） |
+| `OPENAI_API_KEY` | Whisper STT 和 OpenAI TTS 备选 |
+| `ELEVENLABS_API_KEY` | ElevenLabs TTS 必需 |
 
 ## 限制
 
@@ -234,7 +235,7 @@
 - Siri 听写对很长的语音输入可能截断（仅简单模式）
 - 长回复（代码、详细分析）更适合在飞书中阅读
 - 需要网络连接（Siri + Whisper STT + MetaBot API）
-- Whisper 音频文件需小于 25 MB
+- 音频文件需小于 100 MB（豆包）/ 25 MB（Whisper）
 
 ## 安全
 

@@ -7,9 +7,9 @@ Talk to any MetaBot agent hands-free using AirPods and Siri. No app needed — j
 | Mode | STT | TTS | Quality | Setup |
 |------|-----|-----|---------|-------|
 | **Simple** (Siri STT) | Siri built-in | Siri Speak Text | Basic | 5 min |
-| **Pro** (Whisper STT) | OpenAI Whisper | OpenAI / ElevenLabs | High | 10 min |
+| **Pro** (Server STT) | Doubao / Whisper | Doubao / OpenAI / ElevenLabs | High | 10 min |
 
-**Recommended: Pro mode** — Whisper has much better speech recognition, especially for Chinese + mixed-language input.
+**Recommended: Pro mode** — Server-side STT (Doubao or Whisper) has much better speech recognition, especially for Chinese + mixed-language input. Doubao is the default when Volcengine keys are configured.
 
 ## How It Works
 
@@ -27,7 +27,7 @@ Talk to any MetaBot agent hands-free using AirPods and Siri. No app needed — j
   Response spoken back via Siri
 ```
 
-### Pro Mode (Whisper STT)
+### Pro Mode (Server STT)
 
 ```
 "Hey Siri, Jarvis"
@@ -36,7 +36,7 @@ Talk to any MetaBot agent hands-free using AirPods and Siri. No app needed — j
         ↓
   HTTP POST audio to MetaBot /api/voice
         ↓
-  Whisper STT → Agent → optional TTS
+  Doubao/Whisper STT → Agent → optional TTS
         ↓
   Response spoken back via Siri or TTS audio
 ```
@@ -53,7 +53,7 @@ Zero screen interaction. Works while walking, hiking, driving.
 - AirPods (or any earphones with Siri support)
 - MetaBot server accessible from the internet (public IP + port 9100 open)
 - Your `API_SECRET` from MetaBot's `.env`
-- `OPENAI_API_KEY` set in MetaBot's `.env` (for Whisper STT)
+- `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY` set in `.env` (for Doubao STT+TTS, recommended), or `OPENAI_API_KEY` (for Whisper STT fallback)
 
 ### Step 1: Create the Shortcut
 
@@ -102,8 +102,9 @@ Search and add **Speak Text**:
 | `botName` | (required) | Bot to talk to |
 | `chatId` | `voice_default` | Session ID for multi-turn |
 | `language` | `zh` | STT language hint (`zh`, `en`, `auto`) |
-| `tts` | (none) | TTS provider: `openai`, `elevenlabs`, or `doubao` |
-| `ttsVoice` | `alloy` | TTS voice (OpenAI: alloy/echo/fable/onyx/nova/shimmer; ElevenLabs: voice ID; Doubao: speaker ID) |
+| `stt` | `doubao` | STT provider: `doubao` or `whisper` (auto-selects based on available keys) |
+| `tts` | `doubao` | TTS provider: `doubao`, `openai`, or `elevenlabs` (auto-selects based on available keys) |
+| `ttsVoice` | (per provider) | TTS voice (Doubao: speaker ID; OpenAI: alloy/echo/fable/onyx/nova/shimmer; ElevenLabs: voice ID) |
 | `sendCards` | `false` | Also send response to Feishu |
 
 ---
@@ -190,10 +191,10 @@ Set `sendCards` to `true` (boolean) in the JSON body if you also want to see the
 
 ### POST `/api/voice`
 
-Server-side Whisper STT + Agent execution + optional TTS.
+Server-side STT (Doubao or Whisper) + Agent execution + optional TTS. Defaults to Doubao for both STT and TTS when Volcengine keys are configured.
 
 **Request:**
-- Body: raw audio bytes (m4a, wav, webm, mp3, ogg — max 25 MB)
+- Body: raw audio bytes (m4a, wav, webm, mp3, ogg — max 100 MB)
 - Auth: `Authorization: Bearer YOUR_API_SECRET`
 - Config via query params (see table above)
 
@@ -218,11 +219,11 @@ Server-side Whisper STT + Agent execution + optional TTS.
 
 | Variable | Description |
 |----------|-------------|
-| `OPENAI_API_KEY` | Required for Whisper STT and OpenAI TTS |
-| `ELEVENLABS_API_KEY` | Required for ElevenLabs TTS |
-| `VOLCENGINE_TTS_APPID` | Required for Doubao TTS |
-| `VOLCENGINE_TTS_ACCESS_KEY` | Required for Doubao TTS |
+| `VOLCENGINE_TTS_APPID` | Required for Doubao STT + TTS (recommended) |
+| `VOLCENGINE_TTS_ACCESS_KEY` | Required for Doubao STT + TTS (recommended) |
 | `VOLCENGINE_TTS_RESOURCE_ID` | Doubao TTS resource ID (default: `volc.service_type.10029`) |
+| `OPENAI_API_KEY` | Fallback for Whisper STT and OpenAI TTS |
+| `ELEVENLABS_API_KEY` | Required for ElevenLabs TTS |
 
 ## Limitations
 
@@ -230,7 +231,7 @@ Server-side Whisper STT + Agent execution + optional TTS.
 - Siri's dictation may truncate very long voice input (Simple mode only)
 - Long agent responses (code, detailed analysis) are better consumed as text in Feishu
 - Requires internet connectivity for Siri, Whisper STT, and MetaBot API
-- Whisper audio files must be under 25 MB
+- Audio files must be under 100 MB (Doubao) / 25 MB (Whisper)
 
 ## Security
 
