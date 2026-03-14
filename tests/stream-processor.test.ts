@@ -88,7 +88,7 @@ describe('StreamProcessor', () => {
   });
 
   it('populates workingDirectory from constructor arg', () => {
-    const p = new StreamProcessor('hi', '/home/user/project');
+    const p = new StreamProcessor('hi', undefined, '/home/user/project');
     const state = p.processMessage(msg({ type: 'system', session_id: 'sess-1' }));
     expect(state.workingDirectory).toBe('/home/user/project');
   });
