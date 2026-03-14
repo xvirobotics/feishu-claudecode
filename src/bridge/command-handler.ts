@@ -6,6 +6,9 @@ import { SessionManager } from '../claude/session-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
+import { ensureSkillInstalled, ensureSkillsInstalled } from '../utils/skill-installer.js';
+
+const CONTRIBUTION_SKILLS = ['report-bug', 'fix-issue', 'request-feature'];
 
 export class CommandHandler {
   private docSync: DocSync | null = null;
@@ -97,6 +100,8 @@ export class CommandHandler {
 
       case '/memory': {
         const args = text.slice('/memory'.length).trim();
+        // Ensure metamemory skill is available to all Claude sessions
+        ensureSkillInstalled('metamemory', this.logger).catch(() => {});
         await this.handleMemoryCommand(chatId, args);
         return true;
       }
@@ -106,6 +111,13 @@ export class CommandHandler {
         await this.handleSyncCommand(chatId, args);
         return true;
       }
+
+      case '/report-bug':
+      case '/fix-issue':
+      case '/request-feature':
+        // Install contribution skills so Claude can use them regardless of working directory
+        ensureSkillsInstalled(CONTRIBUTION_SKILLS, this.logger).catch(() => {});
+        return false; // pass through to Claude
 
       default:
         // Unrecognized /xxx commands — not handled here, pass through to Claude
