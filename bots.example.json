@@ -13,7 +13,10 @@
       "feishuAppSecret": "secret2",
       "defaultWorkingDirectory": "/home/user/project-beta",
       "maxTurns": 30,
-      "maxBudgetUsd": 0.5
+      "maxBudgetUsd": 0.5,
+      "model": "claude-sonnet-4-6",
+      "thinking": { "type": "adaptive" },
+      "effort": "high"
     }
   ],
   "telegramBots": [
