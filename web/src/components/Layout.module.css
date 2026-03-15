@@ -262,6 +262,19 @@
   text-overflow: ellipsis;
 }
 
+.platformBadge {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent-softer);
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
 .botTime {
   font-size: 11px;
   color: var(--text-2);

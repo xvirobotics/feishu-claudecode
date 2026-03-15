@@ -7,24 +7,34 @@ import type { BotRegistry, BotInfo } from '../api/bot-registry.js';
 import type { Logger } from '../utils/logger.js';
 import type { CardState, PendingQuestion } from '../types.js';
 import type { PeerManager } from '../api/peer-manager.js';
+import { ChatSubscriptionManager } from './chat-subscriptions.js';
+import { GroupManager, type ChatGroup } from './group-manager.js';
 
 // ─── Client → Server messages ──────────────────────────────────────────────
 
 type ClientMessage =
   | { type: 'chat'; botName: string; chatId: string; text: string; messageId?: string }
+  | { type: 'group_chat'; groupId: string; chatId: string; text: string; messageId?: string }
   | { type: 'stop'; chatId: string; botName?: string }
   | { type: 'answer'; chatId: string; toolUseId: string; answer: string }
+  | { type: 'create_group'; name: string; members: string[] }
+  | { type: 'delete_group'; groupId: string }
+  | { type: 'list_groups' }
   | { type: 'ping' };
 
 // ─── Server → Client messages ──────────────────────────────────────────────
 
 type ServerMessage =
   | { type: 'connected'; bots: BotInfo[] }
-  | { type: 'state'; chatId: string; messageId: string; state: CardState }
-  | { type: 'complete'; chatId: string; messageId: string; state: CardState }
+  | { type: 'bots_updated'; bots: BotInfo[] }
+  | { type: 'state'; chatId: string; messageId: string; state: CardState; botName?: string }
+  | { type: 'complete'; chatId: string; messageId: string; state: CardState; botName?: string }
   | { type: 'error'; chatId: string; messageId?: string; error: string }
   | { type: 'notice'; chatId: string; title: string; content: string; color?: string }
   | { type: 'file'; chatId: string; url: string; name: string; mimeType: string; size?: number }
+  | { type: 'group_created'; group: ChatGroup }
+  | { type: 'group_deleted'; groupId: string }
+  | { type: 'groups_list'; groups: ChatGroup[] }
   | { type: 'pong' };
 
 // ─── MIME types for static file serving ────────────────────────────────────
@@ -49,6 +59,13 @@ const MIME_TYPES: Record<string, string> = {
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 
+export interface WebSocketHandle {
+  /** Broadcast updated bot list to all connected WS clients. */
+  broadcastBotList: () => void;
+  /** Chat subscription manager for pub/sub streaming. */
+  subscriptions: ChatSubscriptionManager;
+}
+
 /**
  * Set up a WebSocket server on the existing HTTP server for the Web UI.
  */
@@ -58,10 +75,19 @@ export function setupWebSocketServer(
   logger: Logger,
   secret?: string,
   peerManager?: PeerManager,
-): void {
+): WebSocketHandle {
   const wsLogger = logger.child({ module: 'ws' });
 
   const wss = new WebSocketServer({ noServer: true });
+
+  // Track all connected clients for broadcasting
+  const connectedClients = new Set<WebSocket>();
+
+  // Chat subscription manager for pub/sub streaming
+  const subscriptions = new ChatSubscriptionManager();
+
+  // Group manager for group chat
+  const groupManager = new GroupManager();
 
   // Handle HTTP upgrade requests
   server.on('upgrade', (req, socket, head) => {
@@ -92,6 +118,7 @@ export function setupWebSocketServer(
   // Handle new WebSocket connections
   wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
     wsLogger.info('WebSocket client connected');
+    connectedClients.add(ws);
 
     // Per-connection state
     const pendingAnswers = new Map<string, {
@@ -136,6 +163,7 @@ export function setupWebSocketServer(
       switch (msg.type) {
         case 'chat':
           chatBotMap.set(msg.chatId, msg.botName);
+          subscriptions.subscribe(msg.chatId, ws);
           handleChat(ws, msg, registry, peerManager, pendingAnswers, wsLogger).catch((err) => {
             wsLogger.error({ err, chatId: msg.chatId }, 'WS chat handler error');
             sendMessage(ws, { type: 'error', chatId: msg.chatId, messageId: msg.messageId, error: err.message || 'Internal error' });
@@ -150,6 +178,51 @@ export function setupWebSocketServer(
           handleAnswer(msg, pendingAnswers, wsLogger);
           break;
 
+        case 'group_chat':
+          handleGroupChat(ws, msg, groupManager, registry, subscriptions, pendingAnswers, wsLogger).catch((err) => {
+            wsLogger.error({ err, chatId: msg.chatId }, 'WS group chat handler error');
+            sendMessage(ws, { type: 'error', chatId: msg.chatId, messageId: msg.messageId, error: err.message || 'Internal error' });
+          });
+          break;
+
+        case 'create_group': {
+          const { name, members } = msg;
+          if (!name || !members || members.length < 2) {
+            sendMessage(ws, { type: 'error', chatId: '', error: 'Group needs a name and at least 2 members' });
+            break;
+          }
+          // Validate all members exist
+          const invalid = members.filter((m) => !registry.get(m));
+          if (invalid.length > 0) {
+            sendMessage(ws, { type: 'error', chatId: '', error: `Unknown bot(s): ${invalid.join(', ')}` });
+            break;
+          }
+          const group = groupManager.create(name, members);
+          wsLogger.info({ groupId: group.id, name, members }, 'Group created');
+          // Broadcast to all clients
+          for (const client of connectedClients) {
+            sendMessage(client, { type: 'group_created', group });
+          }
+          break;
+        }
+
+        case 'delete_group': {
+          const deleted = groupManager.delete(msg.groupId);
+          if (deleted) {
+            wsLogger.info({ groupId: msg.groupId }, 'Group deleted');
+            for (const client of connectedClients) {
+              sendMessage(client, { type: 'group_deleted', groupId: msg.groupId });
+            }
+          } else {
+            sendMessage(ws, { type: 'error', chatId: '', error: `Group not found: ${msg.groupId}` });
+          }
+          break;
+        }
+
+        case 'list_groups':
+          sendMessage(ws, { type: 'groups_list', groups: groupManager.list() });
+          break;
+
         case 'ping':
           sendMessage(ws, { type: 'pong' });
           break;
@@ -161,6 +234,8 @@ export function setupWebSocketServer(
 
     ws.on('close', () => {
       wsLogger.info('WebSocket client disconnected');
+      connectedClients.delete(ws);
+      subscriptions.unsubscribeAll(ws);
       clearInterval(heartbeat);
       // Reject all pending answers
       for (const [, { reject }] of pendingAnswers) {
@@ -176,6 +251,20 @@ export function setupWebSocketServer(
   });
 
   wsLogger.info('WebSocket server initialized on /ws');
+
+  return {
+    broadcastBotList() {
+      const bots = registry.list();
+      const peerBots = peerManager?.getPeerBots() ?? [];
+      const msg = JSON.stringify({ type: 'bots_updated', bots: [...bots, ...peerBots] });
+      for (const ws of connectedClients) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(msg);
+        }
+      }
+    },
+    subscriptions,
+  };
 }
 
 // ─── Message handlers ──────────────────────────────────────────────────────
@@ -347,6 +436,93 @@ function handleAnswer(
   logger.info({ chatId, toolUseId }, 'WS answer resolved');
 }
 
+// ─── Group chat handler ──────────────────────────────────────────────────
+
+async function handleGroupChat(
+  ws: WebSocket,
+  msg: Extract<ClientMessage, { type: 'group_chat' }>,
+  groupManager: GroupManager,
+  registry: BotRegistry,
+  subscriptions: ChatSubscriptionManager,
+  pendingAnswers: Map<string, { resolve: (answer: string) => void; reject: (err: Error) => void }>,
+  logger: Logger,
+): Promise<void> {
+  const { groupId, chatId, text, messageId: clientMessageId } = msg;
+
+  const group = groupManager.get(groupId);
+  if (!group) {
+    sendMessage(ws, { type: 'error', chatId, error: `Group not found: ${groupId}` });
+    return;
+  }
+
+  // Parse @mention to route to specific bot
+  const mentionMatch = text.match(/^@(\S+)\s+([\s\S]*)$/);
+  if (!mentionMatch) {
+    sendMessage(ws, { type: 'error', chatId, error: 'In group chat, use @botName to address a specific bot' });
+    return;
+  }
+
+  const targetBot = mentionMatch[1];
+  const prompt = mentionMatch[2].trim();
+
+  if (!group.members.includes(targetBot)) {
+    sendMessage(ws, { type: 'error', chatId, error: `Bot "${targetBot}" is not a member of this group` });
+    return;
+  }
+
+  const bot = registry.get(targetBot);
+  if (!bot) {
+    sendMessage(ws, { type: 'error', chatId, error: `Bot not found: ${targetBot}` });
+    return;
+  }
+
+  // Use per-bot chatId to avoid "chat busy" conflicts between bots
+  const botChatId = `group-${groupId}-${targetBot}`;
+
+  // Subscribe the client to the group chatId for receiving updates
+  subscriptions.subscribe(chatId, ws);
+
+  logger.info({ groupId, targetBot, chatId, botChatId, promptLength: prompt.length }, 'Group chat request');
+
+  try {
+    await bot.bridge.executeApiTask({
+      prompt,
+      chatId: botChatId,
+      userId: 'web',
+      sendCards: false,
+      groupMembers: group.members,
+      onUpdate: (state: CardState, bridgeMessageId: string, final: boolean) => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const msgId = clientMessageId || bridgeMessageId;
+        const msgType = final ? 'complete' : 'state';
+        // Broadcast to all subscribers of this group chat using the user-facing chatId
+        subscriptions.broadcast(chatId, {
+          type: msgType,
+          chatId,
+          messageId: msgId,
+          state,
+          botName: targetBot,
+        });
+      },
+      onQuestion: (question: PendingQuestion): Promise<string> => {
+        return new Promise<string>((resolve, reject) => {
+          pendingAnswers.set(question.toolUseId, { resolve, reject });
+          const timeout = setTimeout(() => {
+            pendingAnswers.delete(question.toolUseId);
+            resolve(JSON.stringify({ answers: { _timeout: 'User did not respond in time, please decide on your own.' } }));
+          }, 5 * 60 * 1000);
+          const wrappedResolve = (answer: string) => { clearTimeout(timeout); resolve(answer); };
+          const wrappedReject = (err: Error) => { clearTimeout(timeout); reject(err); };
+          pendingAnswers.set(question.toolUseId, { resolve: wrappedResolve, reject: wrappedReject });
+        });
+      },
+    });
+  } catch (err: any) {
+    logger.error({ err, chatId, targetBot }, 'WS group chat error');
+    sendMessage(ws, { type: 'error', chatId, messageId: clientMessageId, error: err.message || 'Task execution failed' });
+  }
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 function sendMessage(ws: WebSocket, msg: ServerMessage): void {
@@ -406,7 +582,7 @@ export function serveStaticFiles(
       const contentType = MIME_TYPES[ext] || 'application/octet-stream';
       const content = fs.readFileSync(fullPath);
       // Hashed assets get long cache; index.html gets no-cache
-      const isHashed = filePath.startsWith('assets/') && /\-[a-zA-Z0-9]{8,}\./.test(filePath);
+      const isHashed = filePath.startsWith('assets/') && /-[a-zA-Z0-9]{8,}\./.test(filePath);
       const cacheControl = isHashed ? 'public, max-age=31536000, immutable' : 'no-cache';
       res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': cacheControl });
       res.end(content);

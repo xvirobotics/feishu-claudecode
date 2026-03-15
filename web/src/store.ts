@@ -7,6 +7,7 @@ import type {
   ActiveView,
   BotInfo,
   CardState,
+  ChatGroup,
   ChatMessage,
   ChatSession,
   Theme,
@@ -74,6 +75,7 @@ export interface AppStore {
     sessionId: string,
     messageId: string,
     state: CardState,
+    botName?: string,
   ) => void;
   updateMessageText: (
     sessionId: string,
@@ -85,8 +87,16 @@ export interface AppStore {
     messageId: string,
     attachment: import('./types').FileAttachment,
   ) => void;
+  markRunningMessagesDisconnected: () => void;
   clearSessions: () => void;
   getOrCreateBotSession: (botName: string) => string;
+
+  // Groups
+  groups: ChatGroup[];
+  setGroups: (groups: ChatGroup[]) => void;
+  addGroup: (group: ChatGroup) => void;
+  removeGroup: (groupId: string) => void;
+  createGroupSession: (group: ChatGroup) => string;
 
   // Navigation
   activeView: ActiveView;
@@ -200,14 +210,14 @@ export const useStore = create<AppStore>((set, get) => ({
     set({ sessions });
   },
 
-  updateMessageState(sessionId: string, messageId: string, state: CardState) {
+  updateMessageState(sessionId: string, messageId: string, state: CardState, botName?: string) {
     const sessions = new Map(get().sessions);
     const session = sessions.get(sessionId);
     if (!session) return;
 
     const messages = session.messages.map((m) =>
       m.id === messageId
-        ? { ...m, state, text: state.responseText || m.text }
+        ? { ...m, state, text: state.responseText || m.text, ...(botName ? { botName } : {}) }
         : m,
     );
     sessions.set(sessionId, { ...session, messages, updatedAt: Date.now() });
@@ -244,6 +254,25 @@ export const useStore = create<AppStore>((set, get) => ({
     set({ sessions });
   },
 
+  markRunningMessagesDisconnected() {
+    const sessions = new Map(get().sessions);
+    let changed = false;
+    for (const [id, session] of sessions) {
+      const messages = session.messages.map((m) => {
+        if (m.type === 'assistant' && m.state && (m.state.status === 'thinking' || m.state.status === 'running')) {
+          changed = true;
+          return { ...m, state: { ...m.state, status: 'error' as const, errorMessage: 'Connection lost' } };
+        }
+        return m;
+      });
+      if (changed) sessions.set(id, { ...session, messages });
+    }
+    if (changed) {
+      persistSessions(sessions);
+      set({ sessions });
+    }
+  },
+
   clearSessions() {
     localStorage.removeItem('metabot:sessions');
     set({ sessions: new Map(), activeSessionId: null });
@@ -272,6 +301,36 @@ export const useStore = create<AppStore>((set, get) => ({
     sessions.set(id, session);
     persistSessions(sessions);
     set({ sessions, activeSessionId: id, activeBotName: botName });
+    return id;
+  },
+
+  /* ---- Groups ---- */
+  groups: [],
+  setGroups(groups: ChatGroup[]) {
+    set({ groups });
+  },
+  addGroup(group: ChatGroup) {
+    set({ groups: [...get().groups, group] });
+  },
+  removeGroup(groupId: string) {
+    set({ groups: get().groups.filter((g) => g.id !== groupId) });
+  },
+  createGroupSession(group: ChatGroup) {
+    const state = get();
+    const id = generateId();
+    const session: ChatSession = {
+      id,
+      botName: group.name,  // display name in sidebar
+      title: group.name,
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      groupId: group.id,
+    };
+    const sessions = new Map(state.sessions);
+    sessions.set(id, session);
+    persistSessions(sessions);
+    set({ sessions, activeSessionId: id, activeView: 'chat' });
     return id;
   },
 

@@ -2,7 +2,8 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
-import type { BotInfo, ChatSession } from '../types';
+import type { BotInfo, ChatGroup, ChatSession } from '../types';
+import { GroupCreateDialog } from './chat';
 import s from './Layout.module.css';
 
 /* ═══════════════════════════════════════════════════════════════
@@ -204,6 +205,7 @@ function BotCard({
         <div className={s.botInfo}>
           <div className={s.botNameRow}>
             <span className={s.botName}>{bot.name}</span>
+            {bot.platform === 'web' && <span className={s.platformBadge}>Web</span>}
             {latest && <span className={s.botTime}>{relTime(latest.updatedAt)}</span>}
           </div>
           <div className={s.botPreview}>
@@ -282,6 +284,65 @@ function BotCard({
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   GroupCard — each group rendered as a card
+   ═══════════════════════════════════════════════════════════════ */
+
+function GroupCard({
+  group,
+  sessions: groupSessions,
+  activeSessionId,
+  activeView,
+  onSessionClick,
+  onNewSession,
+  onDelete,
+}: {
+  group: ChatGroup;
+  sessions: ChatSession[];
+  activeSessionId: string | null;
+  activeView: string;
+  onSessionClick: (id: string) => void;
+  onNewSession: (group: ChatGroup) => void;
+  onDelete: (groupId: string) => void;
+}) {
+  const sorted = [...groupSessions].sort((a, b) => b.updatedAt - a.updatedAt);
+  const latest = sorted[0] || null;
+  const isActive = latest && activeSessionId === latest.id && activeView === 'chat';
+
+  return (
+    <div className={s.botCard} data-active={isActive || undefined}>
+      <div
+        className={s.botRow}
+        onClick={() => {
+          if (latest) onSessionClick(latest.id);
+          else onNewSession(group);
+        }}
+      >
+        <div className={s.avatar}>
+          <GradientAvatar name={group.name} size={44} />
+        </div>
+        <div className={s.botInfo}>
+          <div className={s.botNameRow}>
+            <span className={s.botName}>{group.name}</span>
+            <span className={s.platformBadge}>Group</span>
+          </div>
+          <div className={s.botPreview}>
+            <span>{group.members.join(', ')}</span>
+          </div>
+        </div>
+        <button
+          className={s.addBtn}
+          onClick={(e) => { e.stopPropagation(); onDelete(group.id); }}
+          title="Delete group"
+          style={{ opacity: 1 }}
+        >
+          <IconX size={12} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
    Layout — the shell
    Desktop: sidebar + main side-by-side
    Mobile: native stack navigation (list ↔ chat) + bottom tabs
@@ -306,7 +367,12 @@ export function Layout({ children }: LayoutProps) {
   const createSession = useStore((s) => s.createSession);
   const deleteSession = useStore((s) => s.deleteSession);
 
-  useWebSocket();
+  const groups = useStore((s) => s.groups);
+  const createGroupSession = useStore((s) => s.createGroupSession);
+
+  const { send } = useWebSocket();
+
+  const [showGroupDialog, setShowGroupDialog] = useState(false);
 
   /* ── Mobile detection ── */
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
@@ -356,6 +422,37 @@ export function Layout({ children }: LayoutProps) {
 
   const activeBot = bots.find((b) => b.name === activeBotName);
 
+  // Group sessions by groupId
+  const sessionsByGroup = useMemo(() => {
+    const map = new Map<string, ChatSession[]>();
+    for (const session of sessions.values()) {
+      if (session.groupId) {
+        const list = map.get(session.groupId) || [];
+        list.push(session);
+        map.set(session.groupId, list);
+      }
+    }
+    return map;
+  }, [sessions]);
+
+  const handleGroupSessionClick = useCallback((id: string) => {
+    setActiveSession(id);
+    setView('chat');
+    navigate('/');
+    setMobileShowChat(true);
+  }, [setActiveSession, setView, navigate]);
+
+  const handleNewGroupSession = useCallback((group: ChatGroup) => {
+    createGroupSession(group);
+    setView('chat');
+    navigate('/');
+    setMobileShowChat(true);
+  }, [createGroupSession, setView, navigate]);
+
+  const handleDeleteGroup = useCallback((groupId: string) => {
+    send({ type: 'delete_group', groupId });
+  }, [send]);
+
   /* ── Shared bot list ── */
   const botList = (
     <>
@@ -377,6 +474,35 @@ export function Layout({ children }: LayoutProps) {
             onDeleteSession={handleDeleteSession}
           />
         ))
+      )}
+
+      {/* Groups section */}
+      {groups.length > 0 && (
+        <>
+          <div className={s.agentsHeader} style={{ padding: '14px 10px 6px' }}>
+            <span className={s.agentsLabel}>Groups</span>
+          </div>
+          {groups.map((group) => (
+            <GroupCard
+              key={group.id}
+              group={group}
+              sessions={sessionsByGroup.get(group.id) || []}
+              activeSessionId={activeSessionId}
+              activeView={activeView}
+              onSessionClick={handleGroupSessionClick}
+              onNewSession={handleNewGroupSession}
+              onDelete={handleDeleteGroup}
+            />
+          ))}
+        </>
+      )}
+
+      {/* New Group button */}
+      {bots.length >= 2 && (
+        <button className={s.expandToggle} style={{ padding: '10px 14px' }} onClick={() => setShowGroupDialog(true)}>
+          <IconPlus />
+          <span>New Group</span>
+        </button>
       )}
     </>
   );
@@ -457,6 +583,11 @@ export function Layout({ children }: LayoutProps) {
             </button>
           </nav>
         )}
+
+        {/* Group create dialog */}
+        {showGroupDialog && (
+          <GroupCreateDialog onClose={() => setShowGroupDialog(false)} onSend={send} />
+        )}
       </div>
     );
   }
@@ -524,6 +655,11 @@ export function Layout({ children }: LayoutProps) {
 
       {/* ═══ Main content ═══ */}
       <main className={s.main}>{children}</main>
+
+      {/* Group create dialog */}
+      {showGroupDialog && (
+        <GroupCreateDialog onClose={() => setShowGroupDialog(false)} onSend={send} />
+      )}
     </div>
   );
 }

@@ -1,0 +1,13 @@
+node_modules/
+web/node_modules/
+dist/
+.env
+bots.json
+data/
+logs/
+site/
+.git/
+.claude/
+*.log
+nohup.out
+.DS_Store

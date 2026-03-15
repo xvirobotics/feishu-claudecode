@@ -17,6 +17,10 @@ export function useWebSocket() {
   const updateMessageState = useStore((s) => s.updateMessageState);
   const addMessage = useStore((s) => s.addMessage);
   const addMessageAttachment = useStore((s) => s.addMessageAttachment);
+  const markRunningMessagesDisconnected = useStore((s) => s.markRunningMessagesDisconnected);
+  const addGroup = useStore((s) => s.addGroup);
+  const removeGroup = useStore((s) => s.removeGroup);
+  const setGroups = useStore((s) => s.setGroups);
 
   const wsRef = useRef<WebSocket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -51,6 +55,9 @@ export function useWebSocket() {
       reconnectAttempt.current = 0;
       setConnected(true);
 
+      // Request group list
+      ws.send(JSON.stringify({ type: 'list_groups' }));
+
       // Start heartbeat
       heartbeatRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -68,12 +75,16 @@ export function useWebSocket() {
             setBots(msg.bots);
             break;
 
+          case 'bots_updated':
+            setBots(msg.bots);
+            break;
+
           case 'state':
-            updateMessageState(msg.chatId, msg.messageId, msg.state);
+            updateMessageState(msg.chatId, msg.messageId, msg.state, msg.botName);
             break;
 
           case 'complete':
-            updateMessageState(msg.chatId, msg.messageId, msg.state);
+            updateMessageState(msg.chatId, msg.messageId, msg.state, msg.botName);
             break;
 
           case 'error': {
@@ -137,6 +148,18 @@ export function useWebSocket() {
             break;
           }
 
+          case 'group_created':
+            addGroup(msg.group);
+            break;
+
+          case 'group_deleted':
+            removeGroup(msg.groupId);
+            break;
+
+          case 'groups_list':
+            setGroups(msg.groups);
+            break;
+
           case 'pong':
             // heartbeat ack — nothing to do
             break;
@@ -153,6 +176,7 @@ export function useWebSocket() {
     ws.onclose = () => {
       if (!mountedRef.current) return;
       setConnected(false);
+      markRunningMessagesDisconnected();
       if (heartbeatRef.current) clearInterval(heartbeatRef.current);
 
       // Reconnect with exponential backoff
@@ -165,7 +189,7 @@ export function useWebSocket() {
         if (mountedRef.current) connect();
       }, delay);
     };
-  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment]);
+  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups]);
 
   const send = useCallback(
     (msg: WSOutgoingMessage) => {

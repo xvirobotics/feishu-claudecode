@@ -10,6 +10,7 @@ import type { IMessageSender } from './bridge/message-sender.interface.js';
 import type { BotConfigBase } from './config.js';
 import { startTelegramBot, type TelegramBotHandle } from './telegram/telegram-bot.js';
 import { BotRegistry } from './api/bot-registry.js';
+import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
@@ -142,7 +143,19 @@ async function main() {
     });
   }
 
-  const allNames = [...feishuHandles.map((h) => h.name), ...telegramHandles.map((h) => h.name)];
+  // Register web-only bots (no IM platform — accessible via Web UI only)
+  for (const webConfig of appConfig.webBots) {
+    const botLogger = logger.child({ bot: webConfig.name });
+    const sender = new NullSender();
+    const bridge = new MessageBridge(webConfig, botLogger, sender, appConfig.memoryServerUrl, appConfig.memory.secret || undefined);
+    registry.register({ name: webConfig.name, platform: 'web', config: webConfig, bridge, sender });
+  }
+
+  const allNames = [
+    ...feishuHandles.map((h) => h.name),
+    ...telegramHandles.map((h) => h.name),
+    ...appConfig.webBots.map((b) => b.name),
+  ];
   logger.info({ bots: allNames }, 'All bots started');
 
   // Create task scheduler

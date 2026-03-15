@@ -61,6 +61,8 @@ export interface ChatMessage {
   state?: CardState;
   timestamp: number;
   attachments?: FileAttachment[];
+  /** In group chats, which bot sent this message. */
+  botName?: string;
 }
 
 export interface ChatSession {
@@ -70,6 +72,17 @@ export interface ChatSession {
   messages: ChatMessage[];
   createdAt: number;
   updatedAt: number;
+  /** If set, this session is a group chat. */
+  groupId?: string;
+}
+
+/* --- Group types --- */
+
+export interface ChatGroup {
+  id: string;
+  name: string;
+  members: string[];
+  createdAt: number;
 }
 
 /* --- Memory types --- */
@@ -95,17 +108,25 @@ export interface MemoryDocument {
 
 export type WSIncomingMessage =
   | { type: 'connected'; bots: BotInfo[] }
-  | { type: 'state'; chatId: string; messageId: string; state: CardState }
-  | { type: 'complete'; chatId: string; messageId: string; state: CardState }
+  | { type: 'bots_updated'; bots: BotInfo[] }
+  | { type: 'state'; chatId: string; messageId: string; state: CardState; botName?: string }
+  | { type: 'complete'; chatId: string; messageId: string; state: CardState; botName?: string }
   | { type: 'error'; chatId: string; messageId: string; error: string }
   | { type: 'notice'; text?: string; chatId?: string; title?: string; content?: string }
   | { type: 'file'; chatId: string; url: string; name: string; mimeType: string; size?: number }
+  | { type: 'group_created'; group: ChatGroup }
+  | { type: 'group_deleted'; groupId: string }
+  | { type: 'groups_list'; groups: ChatGroup[] }
   | { type: 'pong' };
 
 export type WSOutgoingMessage =
   | { type: 'chat'; botName: string; chatId: string; text: string; messageId: string }
+  | { type: 'group_chat'; groupId: string; chatId: string; text: string; messageId: string }
   | { type: 'stop'; chatId: string }
   | { type: 'answer'; chatId: string; toolUseId: string; answer: string }
+  | { type: 'create_group'; name: string; members: string[] }
+  | { type: 'delete_group'; groupId: string }
+  | { type: 'list_groups' }
   | { type: 'ping' };
 
 export type ActiveView = 'chat' | 'memory' | 'voice' | 'settings';

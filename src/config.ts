@@ -41,6 +41,7 @@ export interface PeerConfig {
 export interface AppConfig {
   feishuBots: BotConfig[];
   telegramBots: TelegramBotConfig[];
+  webBots: BotConfigBase[];
   /** Dedicated Feishu service app for wiki sync & doc reader (independent of chat bots). */
   feishuService?: {
     appId: string;
@@ -126,6 +127,27 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
   };
 }
 
+// --- Web bot JSON entry (used in bots.json — no IM credentials needed) ---
+
+export interface WebBotJsonEntry {
+  name: string;
+  description?: string;
+  defaultWorkingDirectory: string;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  model?: string;
+  outputsBaseDir?: string;
+  downloadsDir?: string;
+}
+
+export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
+  return {
+    name: entry.name,
+    ...(entry.description ? { description: entry.description } : {}),
+    claude: buildClaudeConfig(entry),
+  };
+}
+
 // --- Shared Claude config builder ---
 
 function buildClaudeConfig(entry: {
@@ -194,6 +216,7 @@ export interface PeerJsonEntry {
 export interface BotsJsonNewFormat {
   feishuBots?: FeishuBotJsonEntry[];
   telegramBots?: TelegramBotJsonEntry[];
+  webBots?: WebBotJsonEntry[];
   peers?: PeerJsonEntry[];
 }
 
@@ -202,6 +225,7 @@ export function loadAppConfig(): AppConfig {
 
   let feishuBots: BotConfig[] = [];
   let telegramBots: TelegramBotConfig[] = [];
+  let webBots: BotConfigBase[] = [];
   let parsedConfig: unknown;
 
   if (botsConfigPath) {
@@ -217,7 +241,7 @@ export function loadAppConfig(): AppConfig {
       }
       feishuBots = (parsed as FeishuBotJsonEntry[]).map(feishuBotFromJson);
     } else if (parsed && typeof parsed === 'object') {
-      // New format: { feishuBots: [...], telegramBots: [...] }
+      // New format: { feishuBots: [...], telegramBots: [...], webBots: [...] }
       const cfg = parsed as BotsJsonNewFormat;
       if (cfg.feishuBots) {
         feishuBots = cfg.feishuBots.map(feishuBotFromJson);
@@ -225,7 +249,10 @@ export function loadAppConfig(): AppConfig {
       if (cfg.telegramBots) {
         telegramBots = cfg.telegramBots.map(telegramBotFromJson);
       }
-      if (feishuBots.length === 0 && telegramBots.length === 0) {
+      if (cfg.webBots) {
+        webBots = cfg.webBots.map(webBotFromJson);
+      }
+      if (feishuBots.length === 0 && telegramBots.length === 0 && webBots.length === 0) {
         throw new Error(`BOTS_CONFIG file must define at least one bot: ${resolved}`);
       }
     } else {
@@ -302,6 +329,7 @@ export function loadAppConfig(): AppConfig {
   return {
     feishuBots,
     telegramBots,
+    webBots,
     feishuService,
     log: {
       level: process.env.LOG_LEVEL || 'info',

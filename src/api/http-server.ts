@@ -9,11 +9,14 @@ import type { TaskScheduler } from '../scheduler/task-scheduler.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import { addBot, removeBot, getBotEntry } from './bots-config-writer.js';
 import { installSkillsToWorkDir } from './skills-installer.js';
+import { webBotFromJson } from '../config.js';
+import { NullSender } from '../web/null-sender.js';
+import { MessageBridge } from '../bridge/message-bridge.js';
 import { metrics } from '../utils/metrics.js';
 import { FeishuDocReader } from '../feishu/doc-reader.js';
 import type { PeerManager } from './peer-manager.js';
 import { handleVoiceRequest } from './voice-handler.js';
-import { setupWebSocketServer, serveStaticFiles } from '../web/ws-server.js';
+import { setupWebSocketServer, serveStaticFiles, type WebSocketHandle } from '../web/ws-server.js';
 
 interface ApiServerOptions {
   port: number;
@@ -97,6 +100,9 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 export function startApiServer(options: ApiServerOptions): http.Server {
   const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
+
+  // Will be set after WebSocket server is initialized
+  const ws: { handle?: WebSocketHandle } = {};
 
   const server = http.createServer(async (req, res) => {
     const method = req.method || 'GET';
@@ -360,11 +366,28 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         const bot = registry.get(botName);
         if (bot) {
           logger.info({ botName, chatId, promptLength: prompt.length }, 'API talk request');
+
+          // If WS clients are subscribed to this chatId, stream updates to them
+          const subs = ws.handle?.subscriptions;
+          const hasWsSubscribers = subs && (subs.getSubscribers(chatId)?.size ?? 0) > 0;
+
           const result = await bot.bridge.executeApiTask({
             prompt,
             chatId,
             userId: 'api',
             sendCards: sendCards ?? true,
+            ...(hasWsSubscribers ? {
+              onUpdate: (state, bridgeMessageId, final) => {
+                const msgType = final ? 'complete' : 'state';
+                subs!.broadcast(chatId, {
+                  type: msgType,
+                  chatId,
+                  messageId: bridgeMessageId,
+                  state,
+                  botName,
+                });
+              },
+            } : {}),
           });
           jsonResponse(res, result.success ? 200 : 500, result);
           return;
@@ -620,8 +643,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           jsonResponse(res, 400, { error: 'Missing required fields: platform, name' });
           return;
         }
-        if (platform !== 'feishu' && platform !== 'telegram') {
-          jsonResponse(res, 400, { error: 'platform must be "feishu" or "telegram"' });
+        if (platform !== 'feishu' && platform !== 'telegram' && platform !== 'web') {
+          jsonResponse(res, 400, { error: 'platform must be "feishu", "telegram", or "web"' });
           return;
         }
 
@@ -644,7 +667,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
             ...(body.model ? { model: body.model } : {}),
           };
-        } else {
+        } else if (platform === 'telegram') {
           const token = body.telegramBotToken as string;
           const workDir = body.defaultWorkingDirectory as string;
           if (!token || !workDir) {
@@ -660,6 +683,21 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
             ...(body.model ? { model: body.model } : {}),
           };
+        } else {
+          // Web platform — no IM credentials needed
+          const workDir = body.defaultWorkingDirectory as string;
+          if (!workDir) {
+            jsonResponse(res, 400, { error: 'Web bot requires: defaultWorkingDirectory' });
+            return;
+          }
+          entry = {
+            name,
+            ...(body.description ? { description: body.description } : {}),
+            defaultWorkingDirectory: workDir,
+            ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
+            ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
+            ...(body.model ? { model: body.model } : {}),
+          };
         }
 
         try {
@@ -667,19 +705,34 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           const workDir = (body.defaultWorkingDirectory as string);
           fs.mkdirSync(workDir, { recursive: true });
 
-          addBot(botsConfigPath, platform, entry as any);
+          addBot(botsConfigPath, platform as 'feishu' | 'telegram' | 'web', entry as any);
           logger.info({ name, platform }, 'Bot added to config');
 
           // Optionally install skills
           if (body.installSkills) {
-            installSkillsToWorkDir(workDir, logger, { platform: platform as 'feishu' | 'telegram' });
+            installSkillsToWorkDir(workDir, logger, { platform: platform as 'feishu' | 'telegram' | 'web' });
+          }
+
+          // Web bots can be activated immediately (no IM connection needed)
+          let activated = false;
+          if (platform === 'web') {
+            const config = webBotFromJson(entry as any);
+            const sender = new NullSender();
+            const bridge = new MessageBridge(config, logger, sender,
+              memoryServerUrl || 'http://localhost:8100',
+              memoryAuthToken);
+            registry.register({ name, platform: 'web', config, bridge, sender });
+            activated = true;
+            logger.info({ name }, 'Web bot activated immediately');
+            // Broadcast updated bot list to WS clients
+            ws.handle?.broadcastBotList();
           }
 
           jsonResponse(res, 201, {
             name,
             platform,
             workingDirectory: workDir,
-            message: 'Bot added. PM2 will restart to activate it.',
+            message: activated ? 'Bot added and activated.' : 'Bot added. PM2 will restart to activate it.',
           });
         } catch (err: any) {
           if (err.message?.includes('already exists')) {
@@ -752,7 +805,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           }
           registry.deregister(name);
           logger.info({ name }, 'Bot removed from config');
-          jsonResponse(res, 200, { name, removed: true, message: 'Bot removed. PM2 will restart to deactivate it.' });
+          ws.handle?.broadcastBotList();
+          jsonResponse(res, 200, { name, removed: true, message: 'Bot removed.' });
         } catch (err: any) {
           if (err.message?.includes('Cannot remove the last bot')) {
             jsonResponse(res, 400, { error: err.message });
@@ -942,7 +996,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   });
 
   // Set up WebSocket server for Web UI streaming
-  setupWebSocketServer(server, registry, logger, secret, peerManager);
+  ws.handle = setupWebSocketServer(server, registry, logger, secret, peerManager);
 
   server.listen(port, host, () => {
     logger.info({ host, port }, 'API server started');

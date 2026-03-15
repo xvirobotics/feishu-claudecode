@@ -6,6 +6,7 @@ import { ChatView } from './components/ChatView';
 import { MemoryView } from './components/MemoryView';
 import { VoiceView } from './components/VoiceView';
 import { SettingsView } from './components/SettingsView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export function App() {
   const token = useStore((s) => s.token);
@@ -15,14 +16,18 @@ export function App() {
   }
 
   return (
-    <Layout>
-      <Routes>
-        <Route path="/" element={<ChatView />} />
-        <Route path="/memory" element={<MemoryView />} />
-        <Route path="/voice" element={<VoiceView />} />
-        <Route path="/settings" element={<SettingsView />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Layout>
+    <ErrorBoundary>
+      <Layout>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={<ChatView />} />
+            <Route path="/memory" element={<MemoryView />} />
+            <Route path="/voice" element={<VoiceView />} />
+            <Route path="/settings" element={<SettingsView />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ErrorBoundary>
+      </Layout>
+    </ErrorBoundary>
   );
 }
