@@ -1,7 +1,7 @@
 export { MessageList } from './MessageList';
 export { InputBar, type PendingFile } from './InputBar';
 export { CallOverlayUI, useCallMode } from './CallOverlay';
-export { useFilePanel, FilePanelToggle, FilePanelContent } from './FilePanel';
+export { useFilePanel, FilePanelToggle, FilePanelContent, MobileFileOverlay } from './FilePanel';
 export { EmptyState } from './EmptyState';
 export { AssistantMessageView } from './AssistantMessage';
 export { FileAttachmentCard } from './FileAttachmentCard';
