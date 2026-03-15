@@ -117,8 +117,10 @@ export type SDKMessage = {
   // Task notification fields
   task_id?: string;
   description?: string;
+  prompt?: string;
   status?: string;
   usage?: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+  last_tool_name?: string;
 };
 
 export interface ExecutionHandle {
