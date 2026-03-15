@@ -18,6 +18,8 @@ import { startMemoryServer } from './memory/memory-server.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
 import { TwilioHandler } from './twilio/twilio-handler.js';
+import { DeviceStore } from './api/device-store.js';
+import { PushService } from './api/push-service.js';
 
 interface FeishuBotHandle {
   name: string;
@@ -233,6 +235,22 @@ async function main() {
     logger.info({ phone: appConfig.twilio.phoneNumber, defaultBot: appConfig.twilio.defaultBotName }, 'Twilio phone call handler initialized');
   }
 
+  // Initialize APNs push notification service
+  let pushService: PushService | undefined;
+  let deviceStore: DeviceStore | undefined;
+  if (process.env.APNS_KEY_PATH && process.env.APNS_KEY_ID && process.env.APNS_TEAM_ID) {
+    const dataDir = appConfig.memory.databaseDir || './data';
+    deviceStore = new DeviceStore(dataDir, logger);
+    pushService = new PushService({
+      keyPath: process.env.APNS_KEY_PATH,
+      keyId: process.env.APNS_KEY_ID,
+      teamId: process.env.APNS_TEAM_ID,
+      bundleId: process.env.APNS_BUNDLE_ID || 'com.metabot.app',
+      production: process.env.APNS_PRODUCTION === 'true',
+    }, deviceStore, logger);
+    logger.info({ keyId: process.env.APNS_KEY_ID, bundleId: process.env.APNS_BUNDLE_ID || 'com.metabot.app' }, 'APNs push notification service initialized');
+  }
+
   // Resolve bots config path for API-driven bot CRUD
   const botsConfigPath = process.env.BOTS_CONFIG
     ? path.resolve(process.env.BOTS_CONFIG)
@@ -252,6 +270,8 @@ async function main() {
     memoryServerUrl: appConfig.memoryServerUrl,
     memoryAuthToken: appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
     twilioHandler,
+    pushService,
+    deviceStore,
   });
 
   // Graceful shutdown
@@ -264,6 +284,9 @@ async function main() {
     apiServer.close();
     if (twilioHandler) {
       twilioHandler.destroy();
+    }
+    if (pushService) {
+      pushService.destroy();
     }
     if (docSync) {
       docSync.destroy();

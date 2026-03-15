@@ -7,6 +7,7 @@ final class AppState {
     // Services
     let auth = AuthService()
     let webSocket = WebSocketService()
+    let pushService = PushNotificationService()
 
     // Connection
     var serverURL: String {
@@ -64,6 +65,10 @@ final class AppState {
         guard let token = auth.token else { return }
         webSocket.connect(serverURL: serverURL, token: token)
         startListening()
+
+        // Configure push service and request permission
+        pushService.configure(serverURL: serverURL, token: token)
+        Task { await pushService.requestPermission() }
     }
 
     func disconnect() {
@@ -104,8 +109,14 @@ final class AppState {
         case .state(let chatId, let messageId, let state, _):
             updateMessageState(chatId: chatId, messageId: messageId, state: state)
 
-        case .complete(let chatId, let messageId, let state, _):
+        case .complete(let chatId, let messageId, let state, let botName):
             updateMessageState(chatId: chatId, messageId: messageId, state: state)
+            // Post local notification if app is in background
+            if UIApplication.shared.applicationState != .active {
+                let title = botName ?? "MetaBot"
+                let body = state.responseText?.prefix(200).description ?? "Task completed"
+                pushService.postLocalNotification(title: title, body: body, chatId: chatId)
+            }
 
         case .error(let chatId, let messageId, let error):
             if let messageId {
@@ -273,6 +284,9 @@ final class AppState {
             timestamp: Date().timeIntervalSince1970 * 1000
         )
         addMessage(chatId: sessionId, message: assistantMsg)
+
+        // Register this chatId for push notifications
+        pushService.registerForChat(chatId: sessionId)
 
         // Check if this is a group chat
         let session = sessions[sessionId]
