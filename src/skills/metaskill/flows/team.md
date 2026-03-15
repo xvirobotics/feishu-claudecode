@@ -467,32 +467,13 @@ cat .mcp.json | python3 -m json.tool > /dev/null && echo "Valid JSON" || echo "I
 - [server/skill]: ✓ configured / ⚠ skipped — add [ENV_VAR] to .mcp.json later
 
 ### Next Steps
-1. The agent team is already registered and available in the Web UI sidebar
+1. `cd <project-folder>` to enter the project
 2. Review CLAUDE.md and customize the routing table for your workflow
 3. Run `claude` inside the folder — agents, skills, rules, and MCP servers are all auto-discovered
 4. If any credentials were skipped, edit `.mcp.json` to add them before using those MCP servers
 5. Try: "Plan and implement [a feature relevant to this project type]"
 6. Claude will automatically break it down and delegate to specialist agents
 ```
-
----
-
-## PHASE 4.5: REGISTER AS BOT (Auto-Discovery)
-
-After the team is verified, register it as a web bot so it appears in the Web UI sidebar immediately.
-
-**Run this command from inside the project folder:**
-
-```bash
-curl -s -X POST "http://localhost:${METABOT_API_PORT:-9100}/api/bots" \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
-  -H "Content-Type: application/json" \
-  -d "{\"platform\":\"web\",\"name\":\"$(basename $(pwd))\",\"description\":\"Agent team created by MetaSkill\",\"defaultWorkingDirectory\":\"$(pwd)\",\"installSkills\":true}" \
-  | python3 -m json.tool 2>/dev/null || true
-```
-
-If the API call succeeds, the bot is immediately available in the Web UI sidebar — no restart needed.
-If it fails (e.g., no API secret configured, or the API server is not running), skip silently — the user can add the bot manually later via the API.
 
 ---
 

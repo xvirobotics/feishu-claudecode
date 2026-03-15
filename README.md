@@ -58,7 +58,6 @@ We built MetaBot to run [XVI Robotics](https://xvirobotics.com) as an **agent-na
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. Shared by all agents. Auto-syncs to Feishu Wiki when changes occur (debounced). Web UI: `http://localhost:8100?token=YOUR_TOKEN` (token shown in startup logs). |
 | **Feishu Doc Reader** | Read Feishu documents and wiki pages as Markdown. `fd read <url>` from CLI, or Claude auto-reads when users share Feishu URLs. Available as the `feishu-doc` skill. |
 | **IM Bridge** | Chat with any agent from Feishu/Lark or Telegram (including mobile). Streaming cards with color-coded status and tool call tracking. |
-| **Web UI** | Browser-based chat at `http://server:9100/web/` (use HTTPS via Caddy for voice). Real-time WebSocket streaming, Markdown rendering, tool call display, phone call mode with VAD, MetaMemory browser, dark/light themes. React 19 + Vite SPA. |
 | **Agent Bus** | REST API on port 9100. Agents talk to each other via `mb talk`. Create/remove bots at runtime. Exposed as the `/metabot` skill — loaded on demand, not injected into every prompt. |
 | **Peers** | Federation system for cross-instance bot discovery and task routing. Configure `METABOT_PEERS` to connect multiple MetaBot instances — same machine or remote. `mb talk alice/backend-bot` routes automatically. |
 | **Task Scheduler** | One-time delays and recurring cron jobs. `0 8 * * 1-5` = weekday 8am news briefing. Timezone-aware (default: Asia/Shanghai). Persists across restarts, auto-retries when busy. |
@@ -122,7 +121,6 @@ Prerequisites: Node.js 20+, [Claude Code CLI](https://github.com/anthropics/clau
 - **Self-growing organization** — a manager bot that creates new agents on demand, assigns tasks, schedules follow-ups
 - **Autonomous research pipeline** — agents that search, analyze, save findings to MetaMemory, and schedule next steps
 - **Voice assistant (Jarvis mode)** — "Hey Siri, Jarvis" from AirPods, hands-free voice control of any agent via iOS Shortcuts. Server-side Whisper STT for high-quality speech recognition. See [Voice Setup Guide](docs/features/voice-jarvis.md)
-- **Web phone call mode** — Tap the phone icon in Web UI for hands-free voice conversation. VAD auto-detects speech end, auto-cycles record→reply→record. Requires HTTPS (see CLAUDE.md for Caddy setup)
 
 ## Example Prompts
 

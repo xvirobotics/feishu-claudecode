@@ -10,16 +10,12 @@ import type { IMessageSender } from './bridge/message-sender.interface.js';
 import type { BotConfigBase } from './config.js';
 import { startTelegramBot, type TelegramBotHandle } from './telegram/telegram-bot.js';
 import { BotRegistry } from './api/bot-registry.js';
-import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
-import { TwilioHandler } from './twilio/twilio-handler.js';
-import { DeviceStore } from './api/device-store.js';
-import { PushService } from './api/push-service.js';
 
 interface FeishuBotHandle {
   name: string;
@@ -146,19 +142,7 @@ async function main() {
     });
   }
 
-  // Register web-only bots (no IM platform — accessible via Web UI only)
-  for (const webConfig of appConfig.webBots) {
-    const botLogger = logger.child({ bot: webConfig.name });
-    const sender = new NullSender();
-    const bridge = new MessageBridge(webConfig, botLogger, sender, appConfig.memoryServerUrl, appConfig.memory.secret || undefined);
-    registry.register({ name: webConfig.name, platform: 'web', config: webConfig, bridge, sender });
-  }
-
-  const allNames = [
-    ...feishuHandles.map((h) => h.name),
-    ...telegramHandles.map((h) => h.name),
-    ...appConfig.webBots.map((b) => b.name),
-  ];
+  const allNames = [...feishuHandles.map((h) => h.name), ...telegramHandles.map((h) => h.name)];
   logger.info({ bots: allNames }, 'All bots started');
 
   // Create task scheduler
@@ -228,29 +212,6 @@ async function main() {
     logger.info('Wiki sync service initialized (auto-sync enabled, /sync for manual trigger)');
   }
 
-  // Initialize Twilio phone call handler (Jarvis-style voice)
-  let twilioHandler: TwilioHandler | undefined;
-  if (appConfig.twilio) {
-    twilioHandler = new TwilioHandler(appConfig.twilio, registry, logger);
-    logger.info({ phone: appConfig.twilio.phoneNumber, defaultBot: appConfig.twilio.defaultBotName }, 'Twilio phone call handler initialized');
-  }
-
-  // Initialize APNs push notification service
-  let pushService: PushService | undefined;
-  let deviceStore: DeviceStore | undefined;
-  if (process.env.APNS_KEY_PATH && process.env.APNS_KEY_ID && process.env.APNS_TEAM_ID) {
-    const dataDir = appConfig.memory.databaseDir || './data';
-    deviceStore = new DeviceStore(dataDir, logger);
-    pushService = new PushService({
-      keyPath: process.env.APNS_KEY_PATH,
-      keyId: process.env.APNS_KEY_ID,
-      teamId: process.env.APNS_TEAM_ID,
-      bundleId: process.env.APNS_BUNDLE_ID || 'com.metabot.app',
-      production: process.env.APNS_PRODUCTION === 'true',
-    }, deviceStore, logger);
-    logger.info({ keyId: process.env.APNS_KEY_ID, bundleId: process.env.APNS_BUNDLE_ID || 'com.metabot.app' }, 'APNs push notification service initialized');
-  }
-
   // Resolve bots config path for API-driven bot CRUD
   const botsConfigPath = process.env.BOTS_CONFIG
     ? path.resolve(process.env.BOTS_CONFIG)
@@ -267,11 +228,6 @@ async function main() {
     docSync,
     feishuServiceClient,
     peerManager,
-    memoryServerUrl: appConfig.memoryServerUrl,
-    memoryAuthToken: appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
-    twilioHandler,
-    pushService,
-    deviceStore,
   });
 
   // Graceful shutdown
@@ -282,12 +238,6 @@ async function main() {
       peerManager.destroy();
     }
     apiServer.close();
-    if (twilioHandler) {
-      twilioHandler.destroy();
-    }
-    if (pushService) {
-      pushService.destroy();
-    }
     if (docSync) {
       docSync.destroy();
     }
