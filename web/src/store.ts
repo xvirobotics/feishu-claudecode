@@ -13,6 +13,40 @@ import type {
   Theme,
 } from './types';
 
+/* ---- team status types ---- */
+
+export interface BotStatus {
+  name: string;
+  description?: string;
+  specialties?: string[];
+  icon?: string;
+  platform: string;
+  workingDirectory: string;
+  status: 'idle' | 'busy' | 'error';
+  currentTask?: {
+    chatId: string;
+    startTime: number;
+    durationMs: number;
+  };
+  stats: {
+    totalTasks: number;
+    completedTasks: number;
+    failedTasks: number;
+    totalCostUsd: number;
+  };
+}
+
+export interface TeamStatus {
+  bots: BotStatus[];
+  summary: {
+    totalBots: number;
+    busyBots: number;
+    idleBots: number;
+    totalCostUsd: number;
+    totalTasks: number;
+  };
+}
+
 /* ---- helpers ---- */
 
 function generateId(): string {
@@ -105,6 +139,10 @@ export interface AppStore {
   // Theme
   theme: Theme;
   toggleTheme: () => void;
+
+  // Team
+  teamStatus: TeamStatus | null;
+  setTeamStatus: (status: TeamStatus) => void;
 
   // Sidebar
   sidebarOpen: boolean;
@@ -347,6 +385,12 @@ export const useStore = create<AppStore>((set, get) => ({
     localStorage.setItem('metabot:theme', next);
     document.documentElement.setAttribute('data-theme', next);
     set({ theme: next });
+  },
+
+  /* ---- Team ---- */
+  teamStatus: null,
+  setTeamStatus(status: TeamStatus) {
+    set({ teamStatus: status });
   },
 
   /* ---- Sidebar ---- */

@@ -129,5 +129,5 @@ export type WSOutgoingMessage =
   | { type: 'list_groups' }
   | { type: 'ping' };
 
-export type ActiveView = 'chat' | 'memory' | 'voice' | 'settings';
+export type ActiveView = 'chat' | 'memory' | 'voice' | 'settings' | 'team';
 export type Theme = 'dark' | 'light';

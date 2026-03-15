@@ -17,6 +17,8 @@ export interface RegisteredBot {
 export interface BotInfo {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
   platform: string;
   workingDirectory: string;
   /** Set when the bot comes from a peer instance. */
@@ -76,6 +78,8 @@ export class BotRegistry {
     return Array.from(this.bots.values()).map((b) => ({
       name: b.name,
       ...(b.config.description ? { description: b.config.description } : {}),
+      ...(b.config.specialties?.length ? { specialties: b.config.specialties } : {}),
+      ...(b.config.icon ? { icon: b.config.icon } : {}),
       platform: b.platform,
       workingDirectory: b.config.claude.defaultWorkingDirectory,
     }));

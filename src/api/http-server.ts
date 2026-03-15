@@ -21,6 +21,11 @@ import { setupWebSocketServer, serveStaticFiles, type WebSocketHandle } from '..
 import type { TwilioHandler } from '../twilio/twilio-handler.js';
 import type { PushService } from './push-service.js';
 import type { DeviceStore } from './device-store.js';
+import { IntentRouter } from './intent-router.js';
+import { getTeamStatus } from './team-status.js';
+import { CircuitBreaker } from './circuit-breaker.js';
+import { BudgetManager } from './budget-manager.js';
+import { TeamManager } from './team-manager.js';
 
 interface ApiServerOptions {
   port: number;
@@ -37,6 +42,9 @@ interface ApiServerOptions {
   twilioHandler?: TwilioHandler;
   pushService?: PushService;
   deviceStore?: DeviceStore;
+  circuitBreaker?: CircuitBreaker;
+  budgetManager?: BudgetManager;
+  teamManager?: TeamManager;
 }
 
 interface JsonBody {
@@ -108,6 +116,10 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, twilioHandler, pushService, deviceStore } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
   const asyncTaskStore = new AsyncTaskStore();
+  const intentRouter = new IntentRouter(logger);
+  const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker(logger);
+  const budgetManager = options.budgetManager ?? new BudgetManager(logger);
+  const teamManager = options.teamManager ?? new TeamManager(logger);
 
   // Will be set after WebSocket server is initialized
   const ws: { handle?: WebSocketHandle } = {};
@@ -356,6 +368,71 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         return;
       }
 
+      // Route: GET /api/team/status — aggregated team status
+      if (method === 'GET' && url === '/api/team/status') {
+        const status = getTeamStatus(registry);
+        jsonResponse(res, 200, status);
+        return;
+      }
+
+      // Route: POST /api/route — route a message to the best bot
+      if (method === 'POST' && url === '/api/route') {
+        const body = await parseJsonBody(req);
+        const message = body.message as string;
+        const currentBot = body.currentBot as string | undefined;
+        if (!message) {
+          jsonResponse(res, 400, { error: 'Missing required field: message' });
+          return;
+        }
+        const allBots = [...registry.list(), ...(peerManager?.getPeerBots() ?? [])];
+        const result = await intentRouter.route(message, allBots, currentBot);
+        jsonResponse(res, 200, result);
+        return;
+      }
+
+      // Route: GET /api/router/mode — get current router mode
+      if (method === 'GET' && url === '/api/router/mode') {
+        jsonResponse(res, 200, { mode: intentRouter.getMode() });
+        return;
+      }
+
+      // Route: PUT /api/router/mode — set router mode
+      if (method === 'PUT' && url === '/api/router/mode') {
+        const body = await parseJsonBody(req);
+        const mode = body.mode as string;
+        if (!['auto', 'suggest', 'manual'].includes(mode)) {
+          jsonResponse(res, 400, { error: 'Invalid mode. Use: auto, suggest, manual' });
+          return;
+        }
+        intentRouter.setMode(mode as 'auto' | 'suggest' | 'manual');
+        jsonResponse(res, 200, { mode });
+        return;
+      }
+
+      // Route: GET /api/bots/:name/profile — detailed bot profile with stats
+      if (method === 'GET' && /^\/api\/bots\/[^/]+\/profile$/.test(url)) {
+        const botName = decodeURIComponent(url.split('/')[3]);
+        const bot = registry.get(botName);
+        if (!bot) {
+          jsonResponse(res, 404, { error: `Bot not found: ${botName}` });
+          return;
+        }
+        const stats = bot.bridge.costTracker.getStats();
+        const botStats = stats.byBot[botName];
+        jsonResponse(res, 200, {
+          name: bot.name,
+          description: bot.config.description,
+          specialties: bot.config.specialties,
+          icon: bot.config.icon,
+          platform: bot.platform,
+          workingDirectory: bot.config.claude.defaultWorkingDirectory,
+          maxConcurrentTasks: bot.config.maxConcurrentTasks,
+          budgetLimitDaily: bot.config.budgetLimitDaily,
+          stats: botStats || { totalTasks: 0, completedTasks: 0, failedTasks: 0, totalCostUsd: 0 },
+        });
+        return;
+      }
+
       // Route: POST /api/devices/register — register device for push notifications
       if (method === 'POST' && url === '/api/devices/register') {
         if (!deviceStore) {
@@ -482,6 +559,19 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         // Try local registry first
         const bot = registry.get(botName);
         if (bot) {
+          // Circuit breaker check
+          if (!circuitBreaker.isAvailable(botName)) {
+            jsonResponse(res, 503, { error: `Bot "${botName}" is temporarily unavailable (circuit open)` });
+            return;
+          }
+
+          // Budget check
+          const budgetCheck = budgetManager.canAcceptTask(botName);
+          if (!budgetCheck.allowed) {
+            jsonResponse(res, 429, { error: budgetCheck.reason });
+            return;
+          }
+
           logger.info({ botName, chatId, promptLength: prompt.length, asyncMode }, 'API talk request');
 
           // Async mode: accept immediately, execute in background
@@ -509,6 +599,16 @@ export function startApiServer(options: ApiServerOptions): http.Server {
                   },
                 });
 
+                // Record circuit breaker and budget results
+                if (result.success) {
+                  circuitBreaker.recordSuccess(botName);
+                } else {
+                  circuitBreaker.recordFailure(botName);
+                }
+                if (result.costUsd) {
+                  budgetManager.recordCost(botName, result.costUsd);
+                }
+
                 // Send callback if configured
                 if (callbackChatId && callbackBotName) {
                   const callbackBot = registry.get(callbackBotName);
@@ -524,6 +624,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
                   }
                 }
               } catch (err: any) {
+                circuitBreaker.recordFailure(botName);
                 asyncTaskStore.update(asyncTask.id, {
                   status: 'failed',
                   completedAt: Date.now(),
@@ -562,6 +663,17 @@ export function startApiServer(options: ApiServerOptions): http.Server {
               },
             } : {}),
           });
+
+          // Record circuit breaker and budget results
+          if (result.success) {
+            circuitBreaker.recordSuccess(botName);
+          } else {
+            circuitBreaker.recordFailure(botName);
+          }
+          if (result.costUsd) {
+            budgetManager.recordCost(botName, result.costUsd);
+          }
+
           jsonResponse(res, result.success ? 200 : 500, result);
           return;
         }
@@ -1000,6 +1112,106 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           }
         }
         jsonResponse(res, 200, stats);
+        return;
+      }
+
+      // Route: GET /api/budgets
+      if (method === 'GET' && url === '/api/budgets') {
+        jsonResponse(res, 200, { budgets: budgetManager.getAllBudgets() });
+        return;
+      }
+
+      // Route: PUT /api/budgets/:botName
+      if (method === 'PUT' && url.match(/^\/api\/budgets\/[^/]+$/)) {
+        const botName = decodeURIComponent(url.split('/')[3]);
+        const body = await parseJsonBody(req);
+        const dailyLimitUsd = body.dailyLimitUsd as number;
+        if (typeof dailyLimitUsd !== 'number') {
+          jsonResponse(res, 400, { error: 'Missing required field: dailyLimitUsd' });
+          return;
+        }
+        budgetManager.setLimit(botName, dailyLimitUsd);
+        jsonResponse(res, 200, { botName, dailyLimitUsd });
+        return;
+      }
+
+      // Route: GET /api/costs/report
+      if (method === 'GET' && url.startsWith('/api/costs/report')) {
+        const parsed = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+        const period = (parsed.searchParams.get('period') || 'daily') as 'daily' | 'weekly' | 'monthly';
+        jsonResponse(res, 200, { period, report: budgetManager.getReport(period) });
+        return;
+      }
+
+      // Route: GET /api/circuits
+      if (method === 'GET' && url === '/api/circuits') {
+        jsonResponse(res, 200, { circuits: circuitBreaker.getStatus() });
+        return;
+      }
+
+      // Route: POST /api/circuits/:botName/reset
+      if (method === 'POST' && url.match(/^\/api\/circuits\/[^/]+\/reset$/)) {
+        const botName = decodeURIComponent(url.split('/')[3]);
+        circuitBreaker.reset(botName);
+        jsonResponse(res, 200, { reset: true, botName });
+        return;
+      }
+
+      // Route: GET /api/teams
+      if (method === 'GET' && url === '/api/teams') {
+        jsonResponse(res, 200, { teams: teamManager.list() });
+        return;
+      }
+
+      // Route: POST /api/teams
+      if (method === 'POST' && url === '/api/teams') {
+        const body = await parseJsonBody(req);
+        const name = body.name as string;
+        const members = body.members as string[] | undefined;
+        const budgetDailyUsd = body.budgetDailyUsd as number | undefined;
+        if (!name) {
+          jsonResponse(res, 400, { error: 'Missing required field: name' });
+          return;
+        }
+        try {
+          const team = teamManager.create(name, members, budgetDailyUsd);
+          jsonResponse(res, 201, team);
+        } catch (err: any) {
+          jsonResponse(res, 409, { error: err.message });
+        }
+        return;
+      }
+
+      // Route: GET /api/teams/:id
+      if (method === 'GET' && url.match(/^\/api\/teams\/[^/]+$/) && !url.endsWith('/teams/')) {
+        const id = decodeURIComponent(url.split('/')[3]);
+        const team = teamManager.get(id) || teamManager.getByName(id);
+        if (!team) {
+          jsonResponse(res, 404, { error: 'Team not found' });
+          return;
+        }
+        jsonResponse(res, 200, team);
+        return;
+      }
+
+      // Route: PUT /api/teams/:id
+      if (method === 'PUT' && url.match(/^\/api\/teams\/[^/]+$/)) {
+        const id = decodeURIComponent(url.split('/')[3]);
+        const body = await parseJsonBody(req);
+        const updated = teamManager.update(id, body as any);
+        if (!updated) {
+          jsonResponse(res, 404, { error: 'Team not found' });
+          return;
+        }
+        jsonResponse(res, 200, updated);
+        return;
+      }
+
+      // Route: DELETE /api/teams/:id
+      if (method === 'DELETE' && url.match(/^\/api\/teams\/[^/]+$/)) {
+        const id = decodeURIComponent(url.split('/')[3]);
+        const deleted = teamManager.delete(id);
+        jsonResponse(res, deleted ? 200 : 404, { deleted });
         return;
       }
 
