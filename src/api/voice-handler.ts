@@ -375,19 +375,29 @@ export async function handleVoiceRequest(
   logger.info({ botName, chatId, transcript, sttProvider }, 'Voice transcript');
 
   const voiceMode = params.get('voiceMode') === 'true';
+  const orchestratorMode = params.get('orchestrator') === 'true' || process.env.VOICE_ORCHESTRATOR === 'true';
 
-  // In voice mode, prepend instruction for brief conversational reply
-  const agentPrompt = voiceMode
-    ? `[Voice mode — respond in 1-2 concise spoken sentences. Be conversational and brief. Do NOT use any tools. Do NOT use markdown formatting. Respond in the same language the user speaks.]\n\n${transcript}`
-    : transcript;
+  // Build agent prompt based on mode
+  let agentPrompt: string;
+  if (orchestratorMode) {
+    agentPrompt = `[Voice orchestrator mode — you can delegate tasks to other bots via "mb talk". Respond in 1-3 concise spoken sentences. Be conversational. Do NOT use Bash/Write/Edit for code. Do NOT use markdown. Respond in the same language the user speaks.]\n\n${transcript}`;
+  } else if (voiceMode) {
+    agentPrompt = `[Voice mode — respond in 1-2 concise spoken sentences. Be conversational and brief. Do NOT use any tools. Do NOT use markdown formatting. Respond in the same language the user speaks.]\n\n${transcript}`;
+  } else {
+    agentPrompt = transcript;
+  }
 
-  // Step 2: Agent execution (voice mode uses maxTurns=1 for speed)
+  // Step 2: Agent execution (voice mode uses maxTurns=1, orchestrator uses maxTurns=3 with Bash)
   const talkResult = await bot!.bridge.executeApiTask({
     prompt: agentPrompt,
     chatId,
     userId: 'voice',
     sendCards,
-    ...(voiceMode ? { maxTurns: 1 } : {}),
+    ...(orchestratorMode
+      ? { maxTurns: 3, allowedTools: ['Bash'] }
+      : voiceMode
+        ? { maxTurns: 1 }
+        : {}),
   });
 
   const responseText = talkResult.responseText || '';

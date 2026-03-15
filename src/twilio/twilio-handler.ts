@@ -31,6 +31,7 @@ import {
 
 const FAST_RESPONSE_TIMEOUT_MS = 15_000;
 const CONVERSATION_TIMEOUT_MS = 25_000;
+const ORCHESTRATOR_TIMEOUT_MS = 45_000;
 
 /** Model to use for voice calls (fast, cheap). */
 const VOICE_MODEL = process.env.VOICE_MODEL || 'claude-sonnet-4-6';
@@ -44,6 +45,20 @@ const VOICE_SYSTEM_PROMPT = [
   '- If the user asks you to do something that requires tools (write code, search files, etc.), say: "I can\'t do that during our call, but I\'ll take note and can help you with that after we hang up."',
   '- Respond in the same language the user speaks.',
 ].join('\n');
+
+const VOICE_ORCHESTRATOR_PROMPT = [
+  '[Voice orchestrator mode]',
+  'You are on a live phone call AND can delegate tasks to your agent team. Rules:',
+  '- Respond in 1-3 concise spoken sentences. Be conversational and natural.',
+  '- You CAN use tools: mb talk (delegate to other bots), mb schedule (schedule tasks), mm search/get (query memory).',
+  '- Do NOT use Bash, Write, Edit, or other code tools during the call.',
+  '- After delegating, briefly tell the user what you did: "已经让后端团队去处理了"',
+  '- Do NOT use markdown, code blocks, or any formatting.',
+  '- Respond in the same language the user speaks.',
+].join('\n');
+
+const ORCHESTRATOR_ALLOWED_TOOLS = ['Bash']; // mb talk/schedule/mm are Bash commands
+const ORCHESTRATOR_MAX_TURNS = 3;
 
 export class TwilioHandler {
   private config: TwilioConfig;
@@ -178,21 +193,23 @@ export class TwilioHandler {
 
     const chatId = `twilio-${callerPhone || 'unknown'}`;
     const taskId = this.callbacks.createTaskId();
+    const isOrchestrator = process.env.VOICE_ORCHESTRATOR === 'true';
 
     const taskPromise = bot.bridge.executeApiTask({
-      prompt: `${VOICE_SYSTEM_PROMPT}\n\n${transcript}`,
+      prompt: `${isOrchestrator ? VOICE_ORCHESTRATOR_PROMPT : VOICE_SYSTEM_PROMPT}\n\n${transcript}`,
       chatId,
       userId: `twilio:${callerPhone}`,
       sendCards: false,
-      maxTurns: 1,
+      maxTurns: isOrchestrator ? ORCHESTRATOR_MAX_TURNS : 1,
       model: VOICE_MODEL,
-      allowedTools: [],
+      allowedTools: isOrchestrator ? ORCHESTRATOR_ALLOWED_TOOLS : [],
     });
 
+    const timeoutMs = isOrchestrator ? ORCHESTRATOR_TIMEOUT_MS : FAST_RESPONSE_TIMEOUT_MS;
     const raceResult = await Promise.race([
       taskPromise.then((r) => ({ type: 'complete' as const, result: r })),
       new Promise<{ type: 'timeout'; result: null }>((resolve) =>
-        setTimeout(() => resolve({ type: 'timeout', result: null }), FAST_RESPONSE_TIMEOUT_MS),
+        setTimeout(() => resolve({ type: 'timeout', result: null }), timeoutMs),
       ),
     ]);
 
@@ -259,22 +276,24 @@ export class TwilioHandler {
       return;
     }
 
-    // Execute with fast model, no tools, persistent chatId
+    // Execute with fast model, persistent chatId; orchestrator mode allows tools
+    const isOrchestrator = process.env.VOICE_ORCHESTRATOR === 'true';
     const taskPromise = bot.bridge.executeApiTask({
-      prompt: `${VOICE_SYSTEM_PROMPT}\n\n${transcript}`,
+      prompt: `${isOrchestrator ? VOICE_ORCHESTRATOR_PROMPT : VOICE_SYSTEM_PROMPT}\n\n${transcript}`,
       chatId,
       userId: 'twilio:conversation',
       sendCards: false,
-      maxTurns: 1,
+      maxTurns: isOrchestrator ? ORCHESTRATOR_MAX_TURNS : 1,
       model: VOICE_MODEL,
-      allowedTools: [],
+      allowedTools: isOrchestrator ? ORCHESTRATOR_ALLOWED_TOOLS : [],
     });
 
-    // Safety timeout to avoid Twilio HTTP timeout (~30s)
+    // Safety timeout to avoid Twilio HTTP timeout (~30s); orchestrator gets more time
+    const timeoutMs = isOrchestrator ? ORCHESTRATOR_TIMEOUT_MS : CONVERSATION_TIMEOUT_MS;
     const raceResult = await Promise.race([
       taskPromise.then((r) => ({ type: 'complete' as const, result: r })),
       new Promise<{ type: 'timeout'; result: null }>((resolve) =>
-        setTimeout(() => resolve({ type: 'timeout', result: null }), CONVERSATION_TIMEOUT_MS),
+        setTimeout(() => resolve({ type: 'timeout', result: null }), timeoutMs),
       ),
     ]);
 

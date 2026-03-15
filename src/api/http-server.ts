@@ -16,6 +16,7 @@ import { metrics } from '../utils/metrics.js';
 import { FeishuDocReader } from '../feishu/doc-reader.js';
 import type { PeerManager } from './peer-manager.js';
 import { handleVoiceRequest } from './voice-handler.js';
+import { AsyncTaskStore } from './async-task-store.js';
 import { setupWebSocketServer, serveStaticFiles, type WebSocketHandle } from '../web/ws-server.js';
 import type { TwilioHandler } from '../twilio/twilio-handler.js';
 import type { PushService } from './push-service.js';
@@ -106,6 +107,7 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 export function startApiServer(options: ApiServerOptions): http.Server {
   const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, twilioHandler, pushService, deviceStore } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
+  const asyncTaskStore = new AsyncTaskStore();
 
   // Will be set after WebSocket server is initialized
   const ws: { handle?: WebSocketHandle } = {};
@@ -403,6 +405,30 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         return;
       }
 
+      // Route: GET /api/talk/:taskId — async task status
+      if (method === 'GET' && url.startsWith('/api/talk/')) {
+        const taskId = url.slice('/api/talk/'.length).split('?')[0];
+        if (!taskId) {
+          jsonResponse(res, 400, { error: 'Missing taskId' });
+          return;
+        }
+        const task = asyncTaskStore.get(taskId);
+        if (!task) {
+          jsonResponse(res, 404, { error: 'Task not found' });
+          return;
+        }
+        jsonResponse(res, 200, {
+          taskId: task.id,
+          status: task.status,
+          botName: task.botName,
+          chatId: task.chatId,
+          createdAt: new Date(task.createdAt).toISOString(),
+          completedAt: task.completedAt ? new Date(task.completedAt).toISOString() : undefined,
+          result: task.result,
+        });
+        return;
+      }
+
       // Route: POST /api/talk (primary) + POST /api/tasks (deprecated alias)
       if (method === 'POST' && (url === '/api/talk' || url === '/api/tasks')) {
         const body = await parseJsonBody(req);
@@ -410,6 +436,9 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         const chatId = body.chatId as string;
         const prompt = body.prompt as string;
         const sendCards = body.sendCards as boolean | undefined;
+        const asyncMode = body.async === true;
+        const callbackChatId = body.callbackChatId as string | undefined;
+        const callbackBotName = body.callbackBotName as string | undefined;
 
         if (!rawBotName || !chatId || !prompt) {
           jsonResponse(res, 400, { error: 'Missing required fields: botName, chatId, prompt' });
@@ -453,7 +482,63 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         // Try local registry first
         const bot = registry.get(botName);
         if (bot) {
-          logger.info({ botName, chatId, promptLength: prompt.length }, 'API talk request');
+          logger.info({ botName, chatId, promptLength: prompt.length, asyncMode }, 'API talk request');
+
+          // Async mode: accept immediately, execute in background
+          if (asyncMode) {
+            const asyncTask = asyncTaskStore.create({
+              botName, chatId, prompt, callbackChatId, callbackBotName,
+            });
+
+            // Fire and forget
+            (async () => {
+              asyncTaskStore.update(asyncTask.id, { status: 'running' });
+              try {
+                const result = await bot.bridge.executeApiTask({
+                  prompt, chatId, userId: 'api', sendCards: sendCards ?? true,
+                });
+                asyncTaskStore.update(asyncTask.id, {
+                  status: result.success ? 'completed' : 'failed',
+                  completedAt: Date.now(),
+                  result: {
+                    success: result.success,
+                    responseText: result.responseText,
+                    costUsd: result.costUsd,
+                    durationMs: result.durationMs,
+                    error: result.error,
+                  },
+                });
+
+                // Send callback if configured
+                if (callbackChatId && callbackBotName) {
+                  const callbackBot = registry.get(callbackBotName);
+                  if (callbackBot) {
+                    const summary = result.responseText?.slice(0, 500) || 'Task completed';
+                    await callbackBot.bridge.executeApiTask({
+                      prompt: `[Async task callback] Bot "${botName}" finished a task. Result: ${summary}`,
+                      chatId: callbackChatId,
+                      userId: 'system',
+                      sendCards: true,
+                      maxTurns: 1,
+                    });
+                  }
+                }
+              } catch (err: any) {
+                asyncTaskStore.update(asyncTask.id, {
+                  status: 'failed',
+                  completedAt: Date.now(),
+                  result: { success: false, responseText: '', error: err.message },
+                });
+              }
+            })();
+
+            jsonResponse(res, 202, {
+              taskId: asyncTask.id,
+              status: 'accepted',
+              message: 'Task accepted for async execution',
+            });
+            return;
+          }
 
           // If WS clients are subscribed to this chatId, stream updates to them
           const subs = ws.handle?.subscriptions;
