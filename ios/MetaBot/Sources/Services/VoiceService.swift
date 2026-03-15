@@ -1,4 +1,5 @@
 import AVFoundation
+import Observation
 import Speech
 
 /// Voice recording and speech recognition service

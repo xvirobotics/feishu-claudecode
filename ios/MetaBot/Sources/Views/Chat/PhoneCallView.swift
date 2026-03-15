@@ -2,13 +2,24 @@ import AVFoundation
 import SwiftUI
 
 /// Phone call status phases
-enum CallPhase: String {
+enum CallPhase {
     case idle
-    case listening = "Listening..."
-    case speaking = "Speaking..."
-    case thinking = "Thinking..."
-    case playing = "Speaking..."
-    case error = "Error"
+    case listening
+    case speaking
+    case thinking
+    case playing
+    case error
+
+    var displayText: String {
+        switch self {
+        case .idle: return ""
+        case .listening: return "Listening..."
+        case .speaking: return "Speaking..."
+        case .thinking: return "Thinking..."
+        case .playing: return "AI Speaking..."
+        case .error: return "Error"
+        }
+    }
 }
 
 /// Full-screen phone call overlay for voice conversation
@@ -103,7 +114,7 @@ struct PhoneCallView: View {
                                 .symbolEffect(.variableColor.iterative)
                         }
 
-                        Text(callPhase.rawValue)
+                        Text(callPhase.displayText)
                             .font(.system(size: 15))
                             .foregroundStyle(.white.opacity(0.7))
                     }
@@ -205,17 +216,17 @@ struct PhoneCallView: View {
         Task {
             await voiceService.requestPermissions()
             guard voiceService.permissionGranted else {
-                errorMessage = "Microphone permission required"
+                await MainActor.run { errorMessage = "Microphone permission required" }
                 return
             }
 
-            // Start call timer
-            callTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
-                callDuration += 1
+            await MainActor.run {
+                // Start call timer on main runloop so it fires reliably
+                callTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+                    callDuration += 1
+                }
+                startListening()
             }
-
-            // Start first listen cycle
-            startListening()
         }
     }
 
@@ -242,7 +253,7 @@ struct PhoneCallView: View {
         silenceTimer?.cancel()
         lastSpeechTime = Date()
 
-        silenceTimer = Task { [weak voiceService] in
+        silenceTimer = Task { @MainActor [weak voiceService] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(200))
                 guard !Task.isCancelled, let voiceService else { break }
@@ -253,10 +264,7 @@ struct PhoneCallView: View {
                 if level > silenceThreshold {
                     lastSpeechTime = now
                 } else if now.timeIntervalSince(lastSpeechTime) > silenceDelay {
-                    // Silence detected — stop recording and process
-                    await MainActor.run {
-                        processRecording()
-                    }
+                    processRecording()
                     break
                 }
             }

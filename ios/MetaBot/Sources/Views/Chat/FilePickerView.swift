@@ -1,5 +1,4 @@
 import PhotosUI
-import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
