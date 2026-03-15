@@ -1,5 +1,4 @@
 import PDFKit
-import QuickLook
 import SwiftUI
 
 /// Full-screen file preview sheet

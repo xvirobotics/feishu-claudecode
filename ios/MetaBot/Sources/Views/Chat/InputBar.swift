@@ -92,6 +92,7 @@ struct InputBar: View {
                 // Send / Stop button
                 if appState.isRunning {
                     Button {
+                        Haptics.notification(.warning)
                         appState.stopTask()
                     } label: {
                         Image(systemName: "stop.fill")
@@ -154,6 +155,8 @@ struct InputBar: View {
 
         let finalText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !finalText.isEmpty || !pendingFiles.isEmpty else { return }
+
+        Haptics.impact(.light)
 
         if !pendingFiles.isEmpty {
             uploadAndSend(text: finalText)

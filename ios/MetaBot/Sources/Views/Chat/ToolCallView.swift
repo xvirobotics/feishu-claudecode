@@ -48,7 +48,7 @@ struct ToolCallView: View {
                 // Expanded list
                 if isExpanded {
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(toolCalls) { call in
+                        ForEach(Array(toolCalls.enumerated()), id: \.offset) { _, call in
                             HStack(spacing: 6) {
                                 if call.status == "running" {
                                     ProgressView()

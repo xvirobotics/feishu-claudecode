@@ -198,8 +198,43 @@ struct FileCardView: View {
     var compact: Bool = false
 
     var body: some View {
+        if file.category == .image {
+            imageCard
+        } else {
+            genericCard
+        }
+    }
+
+    /// Inline image thumbnail for image files
+    private var imageCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let url = URL(string: "\(serverURL)\(file.url)") {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(maxWidth: 260, maxHeight: 200)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                    case .failure:
+                        genericCard
+                    default:
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(.quaternary)
+                            .frame(width: 160, height: 100)
+                            .overlay {
+                                ProgressView()
+                            }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Generic file card with extension icon
+    private var genericCard: some View {
         HStack(spacing: 10) {
-            // Icon
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(Color.accentColor.opacity(0.15))

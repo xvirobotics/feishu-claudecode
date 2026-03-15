@@ -11,9 +11,8 @@ enum MessageStatus: String, Codable {
 
 /// Tool call information
 struct ToolCallInfo: Codable, Identifiable {
-    /// Stable unique ID based on name + detail + index (set during decoding context)
-    let toolId: String?
-    var id: String { toolId ?? (name + (detail ?? "") + (status ?? "")) }
+    /// Stable unique ID based on name + detail (status excluded for stability)
+    var id: String { name + (detail ?? "") }
     let name: String
     let detail: String?
     let status: String? // "running" or "done"
@@ -27,14 +26,6 @@ struct ToolCallInfo: Codable, Identifiable {
         name = try container.decode(String.self, forKey: .name)
         detail = try container.decodeIfPresent(String.self, forKey: .detail)
         status = try container.decodeIfPresent(String.self, forKey: .status)
-        toolId = nil
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(name, forKey: .name)
-        try container.encodeIfPresent(detail, forKey: .detail)
-        try container.encodeIfPresent(status, forKey: .status)
     }
 }
 
