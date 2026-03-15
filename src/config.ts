@@ -7,6 +7,10 @@ import * as path from 'node:path';
 export interface BotConfigBase {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
   claude: {
     defaultWorkingDirectory: string;
     maxTurns: number | undefined;
@@ -90,6 +94,10 @@ function required(name: string): string {
 export interface FeishuBotJsonEntry {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
   feishuAppId: string;
   feishuAppSecret: string;
   defaultWorkingDirectory: string;
@@ -104,6 +112,10 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
+    ...(entry.icon ? { icon: entry.icon } : {}),
+    ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
+    ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     feishu: {
       appId: entry.feishuAppId,
       appSecret: entry.feishuAppSecret,
@@ -117,6 +129,10 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
 export interface TelegramBotJsonEntry {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
   telegramBotToken: string;
   defaultWorkingDirectory: string;
   maxTurns?: number;
@@ -130,6 +146,10 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
+    ...(entry.icon ? { icon: entry.icon } : {}),
+    ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
+    ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     telegram: {
       botToken: entry.telegramBotToken,
     },
@@ -142,6 +162,10 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
 export interface WebBotJsonEntry {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
   defaultWorkingDirectory: string;
   maxTurns?: number;
   maxBudgetUsd?: number;
@@ -154,6 +178,10 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
+    ...(entry.icon ? { icon: entry.icon } : {}),
+    ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
+    ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     claude: buildClaudeConfig(entry),
   };
 }

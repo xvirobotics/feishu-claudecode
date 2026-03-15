@@ -122,6 +122,14 @@ export class MessageBridge {
     return this.runningTasks.has(chatId);
   }
 
+  /** Return info about all currently running tasks (for team status display). */
+  getRunningTasksInfo(): Array<{ chatId: string; startTime: number }> {
+    return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
+      chatId,
+      startTime: task.startTime,
+    }));
+  }
+
   /** Stop a running task for the given chatId. Returns true if a task was stopped. */
   stopChatTask(chatId: string): boolean {
     if (!this.runningTasks.has(chatId)) return false;
