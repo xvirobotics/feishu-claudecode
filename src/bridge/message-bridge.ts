@@ -46,6 +46,10 @@ export interface ApiTaskOptions {
   sendCards?: boolean;
   /** Override maxTurns for this task (e.g. 1 for voice mode). */
   maxTurns?: number;
+  /** Override model for this task (e.g. faster model for voice calls). */
+  model?: string;
+  /** Override allowed tools for this task (empty array = no tools). */
+  allowedTools?: string[];
   /** Called on every card state update (streaming). `final` is true on the last update. */
   onUpdate?: (state: CardState, messageId: string, final: boolean) => void;
   /** Called when Claude asks a question. Return the answer JSON string. */
@@ -624,6 +628,8 @@ export class MessageBridge {
       outputsDir,
       apiContext,
       maxTurns: options.maxTurns,
+      model: options.model,
+      allowedTools: options.allowedTools,
     });
 
     const startTime = Date.now();

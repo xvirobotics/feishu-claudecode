@@ -17,6 +17,7 @@ import { FeishuDocReader } from '../feishu/doc-reader.js';
 import type { PeerManager } from './peer-manager.js';
 import { handleVoiceRequest } from './voice-handler.js';
 import { setupWebSocketServer, serveStaticFiles, type WebSocketHandle } from '../web/ws-server.js';
+import type { TwilioHandler } from '../twilio/twilio-handler.js';
 
 interface ApiServerOptions {
   port: number;
@@ -30,6 +31,7 @@ interface ApiServerOptions {
   peerManager?: PeerManager;
   memoryServerUrl?: string;
   memoryAuthToken?: string;
+  twilioHandler?: TwilioHandler;
 }
 
 interface JsonBody {
@@ -98,7 +100,7 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, twilioHandler } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   // Will be set after WebSocket server is initialized
@@ -108,8 +110,21 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     const method = req.method || 'GET';
     const url = req.url || '/';
 
-    // Auth check if secret is configured (exempt /web/ static files, /memory/ proxy, /api/files/ — WS auth is handled via ?token=)
-    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/')) {
+    // Twilio webhook routes (exempt from Bearer auth — Twilio uses signature validation)
+    if (twilioHandler && url.startsWith('/twilio/')) {
+      try {
+        const handled = await twilioHandler.handleRequest(req, res, url.split('?')[0], method);
+        if (handled) return;
+      } catch (err: any) {
+        logger.error({ err, url }, 'Twilio handler error');
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal server error');
+        return;
+      }
+    }
+
+    // Auth check if secret is configured (exempt /web/ static files, /memory/ proxy, /api/files/, /twilio/ — WS auth is handled via ?token=)
+    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/') && !url.startsWith('/twilio/')) {
       const auth = req.headers.authorization;
       // Also support ?token= query param for upload endpoint (like WebSocket does)
       const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
@@ -120,6 +135,40 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     }
 
     try {
+      // Route: POST /api/call — initiate outbound phone call
+      if (method === 'POST' && url === '/api/call') {
+        if (!twilioHandler) {
+          jsonResponse(res, 400, { error: 'Twilio is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER.' });
+          return;
+        }
+
+        const body = await parseJsonBody(req);
+        const phone = (body.phone as string) || '';
+        const message = body.message as string | undefined;
+        const botName = (body.botName as string) || 'default';
+        const chatId = (body.chatId as string) || `twilio-${phone}`;
+
+        if (!phone) {
+          jsonResponse(res, 400, { error: 'Missing required field: phone (E.164 format, e.g. +1234567890)' });
+          return;
+        }
+
+        const bot = registry.get(botName);
+        if (!bot) {
+          jsonResponse(res, 404, { error: `Bot not found: ${botName}` });
+          return;
+        }
+
+        try {
+          const result = await twilioHandler.initiateCall({ phone, message, botName, chatId });
+          jsonResponse(res, 200, result);
+        } catch (err: any) {
+          logger.error({ err, phone, botName }, 'Failed to initiate outbound call');
+          jsonResponse(res, 500, { error: `Failed to initiate call: ${err.message}` });
+        }
+        return;
+      }
+
       // Route: POST /api/voice (Whisper STT + Agent + optional TTS)
       // Must be before other routes because it reads raw audio body, not JSON.
       if (method === 'POST' && (url === '/api/voice' || url.startsWith('/api/voice?'))) {

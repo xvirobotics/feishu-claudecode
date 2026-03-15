@@ -65,6 +65,16 @@ export interface AppConfig {
   };
   /** Peer MetaBot instances for cross-instance bot discovery and task delegation. */
   peers: PeerConfig[];
+  /** Twilio phone call integration (Jarvis-style hands-free voice). */
+  twilio?: {
+    accountSid: string;
+    authToken: string;
+    phoneNumber: string;
+    defaultBotName: string;
+    callbackNumber?: string;
+    /** Base URL for Twilio webhooks (must be publicly accessible). */
+    baseUrl: string;
+  };
 }
 
 function required(name: string): string {
@@ -326,6 +336,19 @@ export function loadAppConfig(): AppConfig {
     }
   }
 
+  // Parse Twilio config
+  let twilio: AppConfig['twilio'];
+  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+    twilio = {
+      accountSid: process.env.TWILIO_ACCOUNT_SID,
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+      phoneNumber: process.env.TWILIO_PHONE_NUMBER,
+      defaultBotName: process.env.TWILIO_DEFAULT_BOT || 'default',
+      callbackNumber: process.env.TWILIO_CALLBACK_NUMBER || undefined,
+      baseUrl: (process.env.TWILIO_BASE_URL || `http://localhost:${apiPort}`).replace(/\/+$/, ''),
+    };
+  }
+
   return {
     feishuBots,
     telegramBots,
@@ -348,5 +371,6 @@ export function loadAppConfig(): AppConfig {
       readerToken: memoryReaderToken,
     },
     peers,
+    twilio,
   };
 }

@@ -136,6 +136,47 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
   metrics|m)
     curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/metrics"
     ;;
+  # --- Phone Call ---
+  call|c)
+    phone="${1:-}"
+    shift 2>/dev/null || true
+
+    # If no phone, use TWILIO_CALLBACK_NUMBER from .env
+    if [[ -z "$phone" ]]; then
+      phone=$(sed -n 's/^TWILIO_CALLBACK_NUMBER=//p' "$METABOT_ENV" 2>/dev/null || true)
+      if [[ -z "$phone" ]]; then
+        echo "Usage: mb call <phone> [message]"
+        echo "       mb call <phone> -b <botName>"
+        echo "       mb call <phone> --chat <chatId>"
+        echo "       mb call                  (uses TWILIO_CALLBACK_NUMBER)"
+        exit 1
+      fi
+    fi
+
+    # Parse optional flags
+    _bot=""
+    _chat=""
+    _msg=""
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        -b|--bot)   _bot="$2"; shift 2 ;;
+        --chat)     _chat="$2"; shift 2 ;;
+        *)          _msg="${_msg:+$_msg }$1"; shift ;;
+      esac
+    done
+
+    python3 -c "
+import json, sys
+p = {'phone': sys.argv[1]}
+if sys.argv[2]: p['message'] = sys.argv[2]
+if sys.argv[3]: p['botName'] = sys.argv[3]
+if sys.argv[4]: p['chatId'] = sys.argv[4]
+print(json.dumps(p))
+" "$phone" "$_msg" "$_bot" "$_chat" | \
+    curl -s -X POST "$METABOT_URL/api/call" \
+      -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+      -d @- | _json
+    ;;
   # --- Health ---
   health|h)
     curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health" | _json
@@ -175,13 +216,14 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
     echo "==> Updating skills..."
     SKILLS_DIR="$HOME/.claude/skills"
     if [[ -d "$SKILLS_DIR" ]]; then
-      for skill in metaskill metamemory metabot feishu-doc; do
+      for skill in metaskill metamemory metabot feishu-doc phone-call; do
         case "$skill" in
-          metaskill)  src="$METABOT_SRC/src/skills/metaskill" ;;
-          metamemory) src="$METABOT_SRC/src/memory/skill" ;;
-          metabot)    src="$METABOT_SRC/src/skills/metabot" ;;
-          feishu-doc) src="$METABOT_SRC/src/skills/feishu-doc" ;;
-          *)          src="" ;;
+          metaskill)   src="$METABOT_SRC/src/skills/metaskill" ;;
+          metamemory)  src="$METABOT_SRC/src/memory/skill" ;;
+          metabot)     src="$METABOT_SRC/src/skills/metabot" ;;
+          feishu-doc)  src="$METABOT_SRC/src/skills/feishu-doc" ;;
+          phone-call)  src="$METABOT_SRC/src/skills/phone-call" ;;
+          *)           src="" ;;
         esac
         if [[ -n "$src" && -d "$src" && -d "$SKILLS_DIR/$skill" ]]; then
           cp -r "$src/." "$SKILLS_DIR/$skill/"
@@ -196,7 +238,7 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
           if(b[0])console.log(b[0].defaultWorkingDirectory);
         " 2>/dev/null || true)
         if [[ -n "${work_dir:-}" && -d "$work_dir/.claude/skills" ]]; then
-          for skill in metaskill metamemory metabot feishu-doc; do
+          for skill in metaskill metamemory metabot feishu-doc phone-call; do
             if [[ -d "$SKILLS_DIR/$skill" && -d "$work_dir/.claude/skills/$skill" ]]; then
               cp -r "$SKILLS_DIR/$skill/." "$work_dir/.claude/skills/$skill/"
             fi
@@ -248,6 +290,12 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
     echo "    mb schedule pause <id>           - Pause a recurring task"
     echo "    mb schedule resume <id>          - Resume a paused task"
     echo "    mb schedule cancel <id>          - Cancel a scheduled task"
+    echo ""
+    echo "  Phone Call:"
+    echo "    mb call <phone> [message]        - Initiate outbound phone call"
+    echo "    mb call <phone> -b <bot>         - Specify which bot to use"
+    echo "    mb call <phone> --chat <chatId>  - Reuse existing session context"
+    echo "    mb call                          - Call TWILIO_CALLBACK_NUMBER"
     echo ""
     echo "  Monitoring:"
     echo "    mb stats                         - Cost & usage stats (per-bot, per-user)"

@@ -47,7 +47,7 @@ function readRawBody(req: http.IncomingMessage): Promise<Buffer> {
 // Detect audio format from content-type or buffer magic bytes
 // ---------------------------------------------------------------------------
 
-function detectAudioExt(contentType: string | undefined, buf: Buffer): string {
+export function detectAudioExt(contentType: string | undefined, buf: Buffer): string {
   if (contentType?.includes('m4a') || contentType?.includes('mp4')) return 'm4a';
   if (contentType?.includes('wav')) return 'wav';
   if (contentType?.includes('webm')) return 'webm';
@@ -74,7 +74,7 @@ function extToFormat(ext: string): string {
 // Doubao (Volcengine) STT — Flash Recognition (synchronous)
 // ---------------------------------------------------------------------------
 
-async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger): Promise<string> {
+export async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger): Promise<string> {
   const appKey = process.env.VOLCENGINE_TTS_APPID;
   const accessKey = process.env.VOLCENGINE_TTS_ACCESS_KEY;
   if (!appKey || !accessKey) {
@@ -118,7 +118,7 @@ async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger
 // Whisper STT
 // ---------------------------------------------------------------------------
 
-async function whisperTranscribe(audioBuffer: Buffer, ext: string, language: string, logger: Logger): Promise<string> {
+export async function whisperTranscribe(audioBuffer: Buffer, ext: string, language: string, logger: Logger): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw Object.assign(new Error('OPENAI_API_KEY not configured'), { statusCode: 500 });
 
@@ -144,7 +144,7 @@ async function whisperTranscribe(audioBuffer: Buffer, ext: string, language: str
 // OpenAI TTS
 // ---------------------------------------------------------------------------
 
-async function openaiTTS(text: string, voice: string): Promise<Buffer> {
+export async function openaiTTS(text: string, voice: string): Promise<Buffer> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw Object.assign(new Error('OPENAI_API_KEY not configured'), { statusCode: 500 });
 
@@ -162,7 +162,7 @@ async function openaiTTS(text: string, voice: string): Promise<Buffer> {
 // ElevenLabs TTS
 // ---------------------------------------------------------------------------
 
-async function elevenlabsTTS(text: string, voiceId: string): Promise<Buffer> {
+export async function elevenlabsTTS(text: string, voiceId: string): Promise<Buffer> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) throw Object.assign(new Error('ELEVENLABS_API_KEY not configured'), { statusCode: 500 });
 
@@ -191,7 +191,7 @@ async function elevenlabsTTS(text: string, voiceId: string): Promise<Buffer> {
 // Doubao (Volcengine) TTS — V3 HTTP Chunked API
 // ---------------------------------------------------------------------------
 
-async function doubaoTTS(text: string, speaker: string): Promise<Buffer> {
+export async function doubaoTTS(text: string, speaker: string): Promise<Buffer> {
   const appId = process.env.VOLCENGINE_TTS_APPID;
   const accessKey = process.env.VOLCENGINE_TTS_ACCESS_KEY;
   const resourceId = process.env.VOLCENGINE_TTS_RESOURCE_ID || 'volc.service_type.10029';
@@ -256,21 +256,21 @@ async function doubaoTTS(text: string, speaker: string): Promise<Buffer> {
 // Resolve defaults: prefer Doubao when keys are configured, fall back to OpenAI
 // ---------------------------------------------------------------------------
 
-function resolveSTTProvider(explicit: string): string {
+export function resolveSTTProvider(explicit: string): string {
   if (explicit) return explicit;
   // Default to doubao if Volcengine keys exist, otherwise whisper
   if (process.env.VOLCENGINE_TTS_APPID && process.env.VOLCENGINE_TTS_ACCESS_KEY) return 'doubao';
   return 'whisper';
 }
 
-function resolveTTSProvider(explicit: string): string {
+export function resolveTTSProvider(explicit: string): string {
   if (explicit) return explicit;
   // Default to doubao if Volcengine keys exist, otherwise none (no TTS)
   if (process.env.VOLCENGINE_TTS_APPID && process.env.VOLCENGINE_TTS_ACCESS_KEY) return 'doubao';
   return '';
 }
 
-function resolveTTSVoice(explicit: string, ttsProvider: string, text?: string): string {
+export function resolveTTSVoice(explicit: string, ttsProvider: string, text?: string): string {
   if (explicit) return explicit;
 
   // Auto-detect language from response text to pick the right voice

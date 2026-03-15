@@ -69,6 +69,10 @@ export interface ExecutorOptions {
   apiContext?: ApiContext;
   /** Override maxTurns for this execution. */
   maxTurns?: number;
+  /** Override model for this execution (e.g. faster model for voice calls). */
+  model?: string;
+  /** Override allowed tools for this execution (empty array = no tools). */
+  allowedTools?: string[];
 }
 
 export type SDKMessage = {
@@ -213,6 +217,12 @@ export class ClaudeExecutor {
     const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController, outputsDir, apiContext);
     if (options.maxTurns !== undefined) {
       queryOptions.maxTurns = options.maxTurns;
+    }
+    if (options.model) {
+      queryOptions.model = options.model;
+    }
+    if (options.allowedTools !== undefined) {
+      queryOptions.allowedTools = options.allowedTools;
     }
 
     const stream = query({
