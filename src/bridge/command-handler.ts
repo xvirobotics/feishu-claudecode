@@ -44,6 +44,7 @@ export class CommandHandler {
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
           '`/memory` - Memory document commands',
+          '`/effort [low|medium|high|max]` - View or switch effort level',
           '`/help` - Show this help message',
           '',
           '**Usage:**',
@@ -86,7 +87,25 @@ export class CommandHandler {
           `**Working Directory:** \`${session.workingDirectory}\``,
           `**Session:** ${session.sessionId ? `\`${session.sessionId.slice(0, 8)}...\`` : '_None_'}`,
           `**Running:** ${isRunning ? 'Yes ⏳' : 'No'}`,
+          `**Model:** \`${this.config.claude.model || 'default'}\``,
+          `**Effort:** ${this.config.claude.effort || 'max'}`,
         ].join('\n'));
+        return true;
+      }
+
+      case '/effort': {
+        const VALID_LEVELS = ['low', 'medium', 'high', 'max'] as const;
+        const arg = text.slice('/effort'.length).trim().toLowerCase();
+        if (!arg) {
+          const current = this.config.claude.effort || 'max';
+          await this.sender.sendTextNotice(chatId, '⚡ Effort Level', `Current: **${current}**\n\nUsage: \`/effort low|medium|high|max\``, 'blue');
+        } else if (VALID_LEVELS.includes(arg as any)) {
+          const prev = this.config.claude.effort || 'max';
+          this.config.claude.effort = arg as typeof VALID_LEVELS[number];
+          await this.sender.sendTextNotice(chatId, '✅ Effort Level Changed', `**${prev}** → **${arg}**`, 'green');
+        } else {
+          await this.sender.sendTextNotice(chatId, '❌ Invalid Effort Level', `\`${arg}\` is not valid. Use: \`low\`, \`medium\`, \`high\`, or \`max\``, 'red');
+        }
         return true;
       }
 

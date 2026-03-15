@@ -76,6 +76,14 @@ describe('StreamProcessor', () => {
     expect(state.durationMs).toBe(1200);
   });
 
+  it('passes config through to CardState', () => {
+    const p = new StreamProcessor('hi', { model: 'claude-opus-4-6', thinking: 'adaptive', effort: 'max' });
+    const state = p.processMessage(msg({ type: 'system', session_id: 'sess-1' }));
+    expect(state.model).toBe('claude-opus-4-6');
+    expect(state.thinking).toBe('adaptive');
+    expect(state.effort).toBe('max');
+  });
+
   it('processes error result message', () => {
     const p = new StreamProcessor('hi');
     const state = p.processMessage(msg({

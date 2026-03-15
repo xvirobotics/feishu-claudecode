@@ -172,6 +172,15 @@ export class ClaudeExecutor {
       queryOptions.model = this.config.claude.model;
     }
 
+    // Enable adaptive thinking with configurable effort level
+    if (this.config.claude.thinking) {
+      queryOptions.thinking = this.config.claude.thinking;
+    }
+
+    if (this.config.claude.effort) {
+      queryOptions.effort = this.config.claude.effort;
+    }
+
     if (sessionId) {
       queryOptions.resume = sessionId;
     }
@@ -221,9 +230,16 @@ export class ClaudeExecutor {
       }
     }
 
+    const answeredToolUseIds = new Set<string>();
+
     return {
       stream: wrapStream(),
       sendAnswer: (toolUseId: string, sid: string, answerText: string) => {
+        if (answeredToolUseIds.has(toolUseId)) {
+          logger.warn({ toolUseId }, 'Duplicate tool_result suppressed');
+          return;
+        }
+        answeredToolUseIds.add(toolUseId);
         logger.info({ toolUseId }, 'Sending answer to Claude');
         const answerMessage: SDKUserMessage = {
           type: 'user',

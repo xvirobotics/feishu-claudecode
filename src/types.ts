@@ -27,6 +27,9 @@ export interface CardState {
   durationMs?: number;
   errorMessage?: string;
   pendingQuestion?: PendingQuestion;
+  model?: string;
+  thinking?: string;
+  effort?: string;
 }
 
 export interface IncomingMessage {
