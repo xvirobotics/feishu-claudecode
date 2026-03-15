@@ -5,14 +5,14 @@ import * as url from 'node:url';
 import type { Logger } from '../utils/logger.js';
 
 /** Skills installed for all platforms. */
-const COMMON_SKILLS = ['metaskill', 'metamemory', 'metabot'];
+const COMMON_SKILLS = ['metaskill', 'metamemory', 'metabot', 'phone-call'];
 
 /** Skills only installed for Feishu bots. */
 const FEISHU_SKILLS = ['feishu-doc'];
 
 export interface InstallSkillsOptions {
   /** Bot platform — feishu-only skills are skipped for other platforms. */
-  platform?: 'feishu' | 'telegram';
+  platform?: 'feishu' | 'telegram' | 'web';
 }
 
 export function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): void {

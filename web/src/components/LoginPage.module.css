@@ -1,0 +1,188 @@
+/* ============================================================
+   LoginPage V2 — "Void"
+   Floating card in dark space with gradient accents.
+   ============================================================ */
+
+.page {
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--void);
+  position: relative;
+  overflow: hidden;
+}
+
+/* Floating ambient light */
+.page::before {
+  content: '';
+  position: absolute;
+  top: 15%;
+  left: 25%;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, transparent 55%);
+  pointer-events: none;
+  animation: v2-float 30s ease-in-out infinite;
+}
+
+.page::after {
+  content: '';
+  position: absolute;
+  bottom: 10%;
+  right: 15%;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.04) 0%, transparent 55%);
+  pointer-events: none;
+  animation: v2-float 25s ease-in-out infinite reverse;
+}
+
+.card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 20px;
+  padding: 52px 44px;
+  background: var(--surface-0);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-2xl);
+  box-shadow: var(--shadow-xl), var(--shadow-glow);
+  animation: v2-scaleIn 500ms var(--ease-out);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.logoIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--gradient-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -1px;
+  box-shadow: var(--shadow-accent);
+}
+
+.logoText {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  color: var(--text-0);
+}
+
+.subtitle {
+  text-align: center;
+  color: var(--text-1);
+  font-size: 14.5px;
+  margin-bottom: 40px;
+  line-height: 1.65;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.inputGroup {
+  position: relative;
+}
+
+.inputLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 10px;
+}
+
+.input {
+  width: 100%;
+  padding: 14px 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  color: var(--text-0);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  transition: border-color var(--duration-base), box-shadow var(--duration-base);
+}
+
+.input::placeholder { color: var(--text-3); }
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+.submitBtn {
+  width: 100%;
+  padding: 14px 24px;
+  background: var(--gradient-accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  border-radius: var(--r-md);
+  transition: transform var(--duration-fast), box-shadow var(--duration-fast);
+  margin-top: 4px;
+  box-shadow: var(--shadow-accent);
+  letter-spacing: -0.2px;
+}
+
+.submitBtn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-accent-lg);
+}
+
+.submitBtn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submitBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.error {
+  padding: 12px 16px;
+  background: var(--red-soft);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--r-md);
+  color: var(--red);
+  font-size: 13px;
+  animation: v2-fadeIn 200ms var(--ease-out);
+}
+
+.footer {
+  text-align: center;
+  margin-top: 32px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.footer a {
+  color: var(--text-1);
+  transition: color var(--duration-fast);
+}
+
+.footer a:hover { color: var(--accent-text); }
+
+@media (max-width: 480px) {
+  .card { padding: 40px 28px; margin: 0 16px; }
+}

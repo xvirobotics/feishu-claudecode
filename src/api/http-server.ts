@@ -1,16 +1,32 @@
-import * as fs from 'node:fs';
 import * as http from 'node:http';
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
 import type { BotRegistry } from './bot-registry.js';
 import type { TaskScheduler } from '../scheduler/task-scheduler.js';
 import type { DocSync } from '../sync/doc-sync.js';
-import { addBot, removeBot, getBotEntry } from './bots-config-writer.js';
-import { installSkillsToWorkDir } from './skills-installer.js';
-import { metrics } from '../utils/metrics.js';
-import { FeishuDocReader } from '../feishu/doc-reader.js';
 import type { PeerManager } from './peer-manager.js';
-import { handleVoiceRequest } from './voice-handler.js';
+import type { TwilioHandler } from '../twilio/twilio-handler.js';
+import type { PushService } from './push-service.js';
+import type { DeviceStore } from './device-store.js';
+import { AsyncTaskStore } from './async-task-store.js';
+import { setupWebSocketServer, serveStaticFiles, type WebSocketHandle } from '../web/ws-server.js';
+import { IntentRouter } from './intent-router.js';
+import { CircuitBreaker } from './circuit-breaker.js';
+import { BudgetManager } from './budget-manager.js';
+import { TeamManager } from './team-manager.js';
+import { VoiceMeetingService } from './voice-meeting.js';
+import { VoiceIdentityStore } from './voice-identity.js';
+import { metrics } from '../utils/metrics.js';
+import {
+  jsonResponse,
+  handleVoiceRoutes,
+  handleFileRoutes,
+  handleTeamRoutes,
+  handleTaskRoutes,
+  handleBotRoutes,
+  handleSyncRoutes,
+} from './routes/index.js';
+import type { RouteContext } from './routes/index.js';
 
 interface ApiServerOptions {
   port: number;
@@ -22,80 +38,82 @@ interface ApiServerOptions {
   docSync?: DocSync;
   feishuServiceClient?: lark.Client;
   peerManager?: PeerManager;
-}
-
-interface JsonBody {
-  [key: string]: unknown;
+  memoryServerUrl?: string;
+  memoryAuthToken?: string;
+  twilioHandler?: TwilioHandler;
+  pushService?: PushService;
+  deviceStore?: DeviceStore;
+  circuitBreaker?: CircuitBreaker;
+  budgetManager?: BudgetManager;
+  teamManager?: TeamManager;
 }
 
 const startTime = Date.now();
-
-function jsonResponse(res: http.ServerResponse, status: number, body: unknown): void {
-  const json = JSON.stringify(body);
-  res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(json);
-}
-
-const MAX_BODY_SIZE = 1 * 1024 * 1024; // 1 MB
-
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalSize = 0;
-    req.on('data', (chunk: Buffer) => {
-      totalSize += chunk.length;
-      if (totalSize > MAX_BODY_SIZE) {
-        req.destroy();
-        reject(new PayloadTooLargeError());
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString()));
-    req.on('error', reject);
-  });
-}
-
-class PayloadTooLargeError extends Error {
-  statusCode = 413;
-  constructor() { super('Request body too large (max 1 MB)'); }
-}
-
-async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
-  const raw = await readBody(req);
-  try {
-    return JSON.parse(raw) as JsonBody;
-  } catch {
-    throw Object.assign(new Error('Invalid JSON in request body'), { statusCode: 400 });
-  }
-}
+// Expose start time for metrics route
+(globalThis as any).__metabot_start_time = startTime;
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, twilioHandler, pushService, deviceStore } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
+
+  // Initialize shared services
+  const asyncTaskStore = new AsyncTaskStore();
+  const intentRouter = new IntentRouter(logger);
+  const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker(logger);
+  const budgetManager = options.budgetManager ?? new BudgetManager(logger);
+  const teamManager = options.teamManager ?? new TeamManager(logger);
+  const meetingService = new VoiceMeetingService(registry, logger);
+  const voiceIdentityStore = new VoiceIdentityStore(logger);
+
+  const ws: { handle?: WebSocketHandle } = {};
+
+  // Build route context (shared across all route handlers)
+  const ctx: RouteContext = {
+    registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient,
+    peerManager, memoryServerUrl, memoryAuthToken, twilioHandler, pushService,
+    deviceStore, asyncTaskStore, intentRouter, circuitBreaker, budgetManager,
+    teamManager, meetingService, voiceIdentityStore, ws,
+  };
+
+  // Route handlers in priority order
+  const routeHandlers = [
+    handleVoiceRoutes,
+    handleFileRoutes,
+    handleTeamRoutes,
+    handleTaskRoutes,
+    handleBotRoutes,
+    handleSyncRoutes,
+  ];
 
   const server = http.createServer(async (req, res) => {
     const method = req.method || 'GET';
     const url = req.url || '/';
 
-    // Auth check if secret is configured
-    if (secret) {
+    // Twilio webhook routes (exempt from Bearer auth — Twilio uses signature validation)
+    if (twilioHandler && url.startsWith('/twilio/')) {
+      try {
+        const handled = await twilioHandler.handleRequest(req, res, url.split('?')[0], method);
+        if (handled) return;
+      } catch (err: any) {
+        logger.error({ err, url }, 'Twilio handler error');
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal server error');
+        return;
+      }
+    }
+
+    // Auth check (exempt /web/, /memory/, /api/files/, /twilio/)
+    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/') && !url.startsWith('/twilio/')) {
       const auth = req.headers.authorization;
-      if (auth !== `Bearer ${secret}`) {
+      const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
+      if (auth !== `Bearer ${secret}` && urlToken !== secret) {
         jsonResponse(res, 401, { error: 'Unauthorized' });
         return;
       }
     }
 
     try {
-      // Route: POST /api/voice (Whisper STT + Agent + optional TTS)
-      // Must be before other routes because it reads raw audio body, not JSON.
-      if (method === 'POST' && (url === '/api/voice' || url.startsWith('/api/voice?'))) {
-        await handleVoiceRequest(req, res, registry, logger);
-        return;
-      }
-
-      // Route: GET /api/health
+      // GET /api/health — always handled here (lightweight)
       if (method === 'GET' && url === '/api/health') {
         const peerStatuses = peerManager?.getPeerStatuses() ?? [];
         jsonResponse(res, 200, {
@@ -111,602 +129,13 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         return;
       }
 
-      // Route: GET /api/bots
-      if (method === 'GET' && url === '/api/bots') {
-        const localBots = registry.list();
-        const peerBots = peerManager?.getPeerBots() ?? [];
-        jsonResponse(res, 200, { bots: [...localBots, ...peerBots] });
-        return;
+      // Dispatch to route handlers
+      for (const handler of routeHandlers) {
+        if (await handler(ctx, req, res, method, url)) return;
       }
 
-      // Route: GET /api/peers
-      if (method === 'GET' && url === '/api/peers') {
-        jsonResponse(res, 200, { peers: peerManager?.getPeerStatuses() ?? [] });
-        return;
-      }
-
-      // Route: POST /api/talk (primary) + POST /api/tasks (deprecated alias)
-      if (method === 'POST' && (url === '/api/talk' || url === '/api/tasks')) {
-        const body = await parseJsonBody(req);
-        const rawBotName = body.botName as string;
-        const chatId = body.chatId as string;
-        const prompt = body.prompt as string;
-        const sendCards = body.sendCards as boolean | undefined;
-
-        if (!rawBotName || !chatId || !prompt) {
-          jsonResponse(res, 400, { error: 'Missing required fields: botName, chatId, prompt' });
-          return;
-        }
-
-        // Parse qualified name: "peerName/botName" or just "botName"
-        let targetPeerName: string | undefined;
-        let botName: string;
-        if (rawBotName.includes('/')) {
-          const parts = rawBotName.split('/');
-          targetPeerName = parts[0];
-          botName = parts.slice(1).join('/');
-        } else {
-          botName = rawBotName;
-        }
-
-        // If targeting a specific peer, skip local lookup
-        if (targetPeerName) {
-          if (!peerManager) {
-            jsonResponse(res, 404, { error: `No peers configured, cannot resolve: ${rawBotName}` });
-            return;
-          }
-          const peerMatch = peerManager.findBotOnPeer(targetPeerName, botName);
-          if (!peerMatch) {
-            jsonResponse(res, 404, { error: `Bot not found on peer "${targetPeerName}": ${botName}` });
-            return;
-          }
-          logger.info({ botName, peerName: targetPeerName, chatId, promptLength: prompt.length }, 'Forwarding talk to peer (qualified)');
-          try {
-            const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards });
-            const statusCode = (result as any).success === false ? 500 : 200;
-            jsonResponse(res, statusCode, result);
-          } catch (err: any) {
-            logger.error({ err, botName, peerName: targetPeerName }, 'Peer forwarding failed');
-            jsonResponse(res, 502, { error: `Peer forwarding failed: ${err.message}` });
-          }
-          return;
-        }
-
-        // Try local registry first
-        const bot = registry.get(botName);
-        if (bot) {
-          logger.info({ botName, chatId, promptLength: prompt.length }, 'API talk request');
-          const result = await bot.bridge.executeApiTask({
-            prompt,
-            chatId,
-            userId: 'api',
-            sendCards: sendCards ?? true,
-          });
-          jsonResponse(res, result.success ? 200 : 500, result);
-          return;
-        }
-
-        // Bot not found locally — check peers (unless this request is already forwarded)
-        const origin = req.headers['x-metabot-origin'];
-        if (!origin && peerManager) {
-          const peerMatch = peerManager.findBotPeer(botName);
-          if (peerMatch) {
-            logger.info({ botName, peerName: peerMatch.peer.name, peerUrl: peerMatch.peer.url, chatId, promptLength: prompt.length }, 'Forwarding talk to peer');
-            try {
-              const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards });
-              const statusCode = (result as any).success === false ? 500 : 200;
-              jsonResponse(res, statusCode, result);
-            } catch (err: any) {
-              logger.error({ err, botName, peerUrl: peerMatch.peer.url }, 'Peer forwarding failed');
-              jsonResponse(res, 502, { error: `Peer forwarding failed: ${err.message}` });
-            }
-            return;
-          }
-        }
-
-        jsonResponse(res, 404, { error: `Bot not found: ${botName}` });
-        return;
-      }
-
-      // Route: POST /api/schedule
-      if (method === 'POST' && url === '/api/schedule') {
-        const body = await parseJsonBody(req);
-        const botName = body.botName as string;
-        const chatId = body.chatId as string;
-        const prompt = body.prompt as string;
-        const cronExpr = body.cronExpr as string | undefined;
-        const delaySeconds = body.delaySeconds as number | undefined;
-        const sendCards = body.sendCards as boolean | undefined;
-        const label = body.label as string | undefined;
-        const timezone = body.timezone as string | undefined;
-
-        if (!botName || !chatId || !prompt) {
-          jsonResponse(res, 400, { error: 'Missing required fields: botName, chatId, prompt' });
-          return;
-        }
-
-        const bot = registry.get(botName);
-        if (!bot) {
-          jsonResponse(res, 404, { error: `Bot not found: ${botName}` });
-          return;
-        }
-
-        if (cronExpr) {
-          // Recurring task
-          const recurring = scheduler.scheduleRecurring({
-            botName, chatId, prompt, cronExpr, timezone, sendCards, label,
-          });
-          jsonResponse(res, 201, {
-            id: recurring.id,
-            type: 'recurring',
-            botName: recurring.botName,
-            chatId: recurring.chatId,
-            prompt: recurring.prompt,
-            cronExpr: recurring.cronExpr,
-            timezone: recurring.timezone,
-            nextExecuteAt: new Date(recurring.nextExecuteAt).toISOString(),
-            sendCards: recurring.sendCards,
-            label: recurring.label,
-            status: recurring.status,
-          });
-        } else if (typeof delaySeconds === 'number' && delaySeconds > 0) {
-          // One-time task (existing behavior)
-          const task = scheduler.scheduleTask({
-            botName, chatId, prompt, delaySeconds, sendCards, label,
-          });
-          jsonResponse(res, 201, {
-            id: task.id,
-            type: 'one-time',
-            botName: task.botName,
-            chatId: task.chatId,
-            prompt: task.prompt,
-            executeAt: new Date(task.executeAt).toISOString(),
-            sendCards: task.sendCards,
-            label: task.label,
-            status: task.status,
-          });
-        } else {
-          jsonResponse(res, 400, { error: 'Provide either cronExpr (recurring) or delaySeconds (one-time, positive number)' });
-        }
-        return;
-      }
-
-      // Route: GET /api/schedule
-      if (method === 'GET' && url === '/api/schedule') {
-        const tasks = scheduler.listTasks().map((t) => ({
-          id: t.id,
-          type: 'one-time',
-          botName: t.botName,
-          chatId: t.chatId,
-          prompt: t.prompt,
-          executeAt: new Date(t.executeAt).toISOString(),
-          sendCards: t.sendCards,
-          label: t.label,
-          status: t.status,
-          createdAt: new Date(t.createdAt).toISOString(),
-        }));
-        const recurringTasks = scheduler.listRecurringTasks().map((r) => ({
-          id: r.id,
-          type: 'recurring',
-          botName: r.botName,
-          chatId: r.chatId,
-          prompt: r.prompt,
-          cronExpr: r.cronExpr,
-          timezone: r.timezone,
-          nextExecuteAt: new Date(r.nextExecuteAt).toISOString(),
-          lastExecutedAt: r.lastExecutedAt ? new Date(r.lastExecutedAt).toISOString() : null,
-          sendCards: r.sendCards,
-          label: r.label,
-          status: r.status,
-          createdAt: new Date(r.createdAt).toISOString(),
-        }));
-        jsonResponse(res, 200, { tasks, recurringTasks });
-        return;
-      }
-
-      // Route: POST /api/schedule/:id/pause
-      if (method === 'POST' && /^\/api\/schedule\/[^/]+\/pause$/.test(url)) {
-        const id = url.split('/')[3];
-        const paused = scheduler.pauseRecurring(id);
-        if (paused) {
-          jsonResponse(res, 200, { id, status: 'paused' });
-        } else {
-          jsonResponse(res, 404, { error: `Recurring task not found or not pausable: ${id}` });
-        }
-        return;
-      }
-
-      // Route: POST /api/schedule/:id/resume
-      if (method === 'POST' && /^\/api\/schedule\/[^/]+\/resume$/.test(url)) {
-        const id = url.split('/')[3];
-        const resumed = scheduler.resumeRecurring(id);
-        if (resumed) {
-          const recurring = scheduler.getRecurringTask(id);
-          jsonResponse(res, 200, {
-            id,
-            status: 'active',
-            nextExecuteAt: recurring ? new Date(recurring.nextExecuteAt).toISOString() : null,
-          });
-        } else {
-          jsonResponse(res, 404, { error: `Recurring task not found or not resumable: ${id}` });
-        }
-        return;
-      }
-
-      // Route: PATCH /api/schedule/:id
-      if (method === 'PATCH' && url.startsWith('/api/schedule/')) {
-        const id = url.slice('/api/schedule/'.length);
-        if (!id) {
-          jsonResponse(res, 400, { error: 'Missing task ID' });
-          return;
-        }
-
-        const body = await parseJsonBody(req);
-
-        // Try one-time task first
-        const updated = scheduler.updateTask(id, {
-          prompt: body.prompt as string | undefined,
-          delaySeconds: body.delaySeconds as number | undefined,
-          label: body.label as string | undefined,
-          sendCards: body.sendCards as boolean | undefined,
-        });
-
-        if (updated) {
-          jsonResponse(res, 200, {
-            id: updated.id,
-            type: 'one-time',
-            botName: updated.botName,
-            chatId: updated.chatId,
-            prompt: updated.prompt,
-            executeAt: new Date(updated.executeAt).toISOString(),
-            sendCards: updated.sendCards,
-            label: updated.label,
-            status: updated.status,
-          });
-          return;
-        }
-
-        // Try recurring task
-        const updatedRecurring = scheduler.updateRecurring(id, {
-          prompt: body.prompt as string | undefined,
-          cronExpr: body.cronExpr as string | undefined,
-          timezone: body.timezone as string | undefined,
-          label: body.label as string | undefined,
-          sendCards: body.sendCards as boolean | undefined,
-        });
-
-        if (updatedRecurring) {
-          jsonResponse(res, 200, {
-            id: updatedRecurring.id,
-            type: 'recurring',
-            botName: updatedRecurring.botName,
-            chatId: updatedRecurring.chatId,
-            prompt: updatedRecurring.prompt,
-            cronExpr: updatedRecurring.cronExpr,
-            timezone: updatedRecurring.timezone,
-            nextExecuteAt: new Date(updatedRecurring.nextExecuteAt).toISOString(),
-            sendCards: updatedRecurring.sendCards,
-            label: updatedRecurring.label,
-            status: updatedRecurring.status,
-          });
-          return;
-        }
-
-        jsonResponse(res, 404, { error: `Task not found or not updatable: ${id}` });
-        return;
-      }
-
-      // Route: DELETE /api/schedule/:id
-      if (method === 'DELETE' && url.startsWith('/api/schedule/')) {
-        const id = url.slice('/api/schedule/'.length);
-        if (!id) {
-          jsonResponse(res, 400, { error: 'Missing task ID' });
-          return;
-        }
-
-        // Try one-time task first
-        const cancelled = scheduler.cancelTask(id);
-        if (cancelled) {
-          jsonResponse(res, 200, { id, type: 'one-time', status: 'cancelled' });
-          return;
-        }
-
-        // Try recurring task
-        const cancelledRecurring = scheduler.cancelRecurring(id);
-        if (cancelledRecurring) {
-          jsonResponse(res, 200, { id, type: 'recurring', status: 'cancelled' });
-          return;
-        }
-
-        jsonResponse(res, 404, { error: `Task not found or not cancellable: ${id}` });
-        return;
-      }
-
-      // Route: POST /api/bots — create a new bot
-      if (method === 'POST' && url === '/api/bots') {
-        if (!botsConfigPath) {
-          jsonResponse(res, 400, { error: 'Bot CRUD requires BOTS_CONFIG to be set' });
-          return;
-        }
-        const body = await parseJsonBody(req);
-        const platform = body.platform as string;
-        const name = body.name as string;
-
-        if (!platform || !name) {
-          jsonResponse(res, 400, { error: 'Missing required fields: platform, name' });
-          return;
-        }
-        if (platform !== 'feishu' && platform !== 'telegram') {
-          jsonResponse(res, 400, { error: 'platform must be "feishu" or "telegram"' });
-          return;
-        }
-
-        let entry: Record<string, unknown>;
-        if (platform === 'feishu') {
-          const appId = body.feishuAppId as string;
-          const appSecret = body.feishuAppSecret as string;
-          const workDir = body.defaultWorkingDirectory as string;
-          if (!appId || !appSecret || !workDir) {
-            jsonResponse(res, 400, { error: 'Feishu bot requires: feishuAppId, feishuAppSecret, defaultWorkingDirectory' });
-            return;
-          }
-          entry = {
-            name,
-            ...(body.description ? { description: body.description } : {}),
-            feishuAppId: appId,
-            feishuAppSecret: appSecret,
-            defaultWorkingDirectory: workDir,
-            ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
-            ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
-            ...(body.model ? { model: body.model } : {}),
-          };
-        } else {
-          const token = body.telegramBotToken as string;
-          const workDir = body.defaultWorkingDirectory as string;
-          if (!token || !workDir) {
-            jsonResponse(res, 400, { error: 'Telegram bot requires: telegramBotToken, defaultWorkingDirectory' });
-            return;
-          }
-          entry = {
-            name,
-            ...(body.description ? { description: body.description } : {}),
-            telegramBotToken: token,
-            defaultWorkingDirectory: workDir,
-            ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
-            ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
-            ...(body.model ? { model: body.model } : {}),
-          };
-        }
-
-        try {
-          // Ensure working directory exists
-          const workDir = (body.defaultWorkingDirectory as string);
-          fs.mkdirSync(workDir, { recursive: true });
-
-          addBot(botsConfigPath, platform, entry as any);
-          logger.info({ name, platform }, 'Bot added to config');
-
-          // Optionally install skills
-          if (body.installSkills) {
-            installSkillsToWorkDir(workDir, logger, { platform: platform as 'feishu' | 'telegram' });
-          }
-
-          jsonResponse(res, 201, {
-            name,
-            platform,
-            workingDirectory: workDir,
-            message: 'Bot added. PM2 will restart to activate it.',
-          });
-        } catch (err: any) {
-          if (err.message?.includes('already exists')) {
-            jsonResponse(res, 409, { error: err.message });
-          } else {
-            throw err;
-          }
-        }
-        return;
-      }
-
-      // Route: GET /api/bots/:name — get bot details
-      if (method === 'GET' && url.startsWith('/api/bots/')) {
-        const name = decodeURIComponent(url.slice('/api/bots/'.length));
-        if (!name) {
-          jsonResponse(res, 400, { error: 'Missing bot name' });
-          return;
-        }
-
-        // Check running registry first
-        const running = registry.get(name);
-        const runningInfo = running
-          ? { running: true, workingDirectory: running.config.claude.defaultWorkingDirectory }
-          : { running: false };
-
-        // Check config file if available
-        if (botsConfigPath) {
-          const found = getBotEntry(botsConfigPath, name);
-          if (found) {
-            jsonResponse(res, 200, {
-              name,
-              platform: found.platform,
-              ...runningInfo,
-              config: found.entry,
-            });
-            return;
-          }
-        }
-
-        if (running) {
-          jsonResponse(res, 200, {
-            name,
-            platform: running.platform,
-            ...runningInfo,
-          });
-          return;
-        }
-
-        jsonResponse(res, 404, { error: `Bot not found: ${name}` });
-        return;
-      }
-
-      // Route: DELETE /api/bots/:name — remove a bot
-      if (method === 'DELETE' && url.startsWith('/api/bots/')) {
-        const name = decodeURIComponent(url.slice('/api/bots/'.length));
-        if (!name) {
-          jsonResponse(res, 400, { error: 'Missing bot name' });
-          return;
-        }
-        if (!botsConfigPath) {
-          jsonResponse(res, 400, { error: 'Bot CRUD requires BOTS_CONFIG to be set' });
-          return;
-        }
-
-        try {
-          const removed = removeBot(botsConfigPath, name);
-          if (!removed) {
-            jsonResponse(res, 404, { error: `Bot not found: ${name}` });
-            return;
-          }
-          registry.deregister(name);
-          logger.info({ name }, 'Bot removed from config');
-          jsonResponse(res, 200, { name, removed: true, message: 'Bot removed. PM2 will restart to deactivate it.' });
-        } catch (err: any) {
-          if (err.message?.includes('Cannot remove the last bot')) {
-            jsonResponse(res, 400, { error: err.message });
-          } else {
-            throw err;
-          }
-        }
-        return;
-      }
-
-      // Route: GET /api/stats — cost and usage aggregation
-      if (method === 'GET' && url === '/api/stats') {
-        const stats: Record<string, unknown> = {};
-        for (const bot of registry.list()) {
-          const registered = registry.get(bot.name);
-          if (registered?.bridge?.costTracker) {
-            stats[bot.name] = registered.bridge.costTracker.getStats();
-          }
-        }
-        jsonResponse(res, 200, stats);
-        return;
-      }
-
-      // Route: GET /api/metrics — Prometheus exposition format
-      if (method === 'GET' && url === '/api/metrics') {
-        metrics.setGauge('metabot_uptime_seconds', Math.floor((Date.now() - startTime) / 1000));
-        const body = metrics.serialize();
-        res.writeHead(200, { 'Content-Type': 'text/plain; version=0.0.4' });
-        res.end(body);
-        return;
-      }
-
-      // Route: POST /api/sync — trigger wiki sync
-      if (method === 'POST' && url === '/api/sync') {
-        if (!docSync) {
-          jsonResponse(res, 400, { error: 'Wiki sync is not configured' });
-          return;
-        }
-        if (docSync.isSyncing()) {
-          jsonResponse(res, 409, { error: 'Sync already in progress' });
-          return;
-        }
-        // Run sync in background, return immediately
-        const syncPromise = docSync.syncAll();
-        syncPromise.then((result) => {
-          logger.info({ result }, 'API-triggered wiki sync complete');
-        }).catch((err) => {
-          logger.error({ err }, 'API-triggered wiki sync failed');
-        });
-        jsonResponse(res, 202, { status: 'sync_started' });
-        return;
-      }
-
-      // Route: GET /api/sync — get sync status
-      if (method === 'GET' && url === '/api/sync') {
-        if (!docSync) {
-          jsonResponse(res, 400, { error: 'Wiki sync is not configured' });
-          return;
-        }
-        const stats = docSync.getStats();
-        jsonResponse(res, 200, {
-          syncing: docSync.isSyncing(),
-          wikiSpaceId: stats.wikiSpaceId,
-          documentCount: stats.documentCount,
-          folderCount: stats.folderCount,
-        });
-        return;
-      }
-
-      // Route: POST /api/sync/document — sync a single document by ID
-      if (method === 'POST' && url === '/api/sync/document') {
-        if (!docSync) {
-          jsonResponse(res, 400, { error: 'Wiki sync is not configured' });
-          return;
-        }
-        const body = await parseJsonBody(req);
-        const docId = body.docId as string;
-        if (!docId) {
-          jsonResponse(res, 400, { error: 'Missing required field: docId' });
-          return;
-        }
-        const result = await docSync.syncDocument(docId);
-        jsonResponse(res, result.success ? 200 : 500, result);
-        return;
-      }
-
-      // Route: GET /api/feishu/document — read a Feishu document
-      if (method === 'GET' && url.startsWith('/api/feishu/document')) {
-        const queryStr = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
-        const params = new URLSearchParams(queryStr);
-        const docUrl = params.get('url');
-        const docId = params.get('docId');
-        const botName = params.get('botName');
-
-        if (!docUrl && !docId) {
-          jsonResponse(res, 400, { error: 'Provide either url or docId query parameter' });
-          return;
-        }
-
-        // Find a Feishu client to use: specific bot > service client > first bot fallback
-        let clientForDoc: lark.Client | undefined;
-        if (botName) {
-          const bot = registry.getByPlatform(botName, 'feishu');
-          clientForDoc = bot?.feishuClient;
-          if (!clientForDoc) {
-            jsonResponse(res, 404, { error: `Feishu bot not found: ${botName}` });
-            return;
-          }
-        } else {
-          clientForDoc = feishuServiceClient;
-          if (!clientForDoc) {
-            const feishuBots = registry.listByPlatform('feishu');
-            clientForDoc = feishuBots[0]?.feishuClient;
-          }
-        }
-        if (!clientForDoc) {
-          jsonResponse(res, 400, { error: 'No Feishu service app or bots configured' });
-          return;
-        }
-
-        const reader = new FeishuDocReader(clientForDoc, logger);
-        let result;
-
-        if (docUrl) {
-          result = await reader.readByUrl(docUrl);
-        } else if (docId) {
-          // Try as document ID first
-          result = await reader.readDocument(docId);
-        }
-
-        if (!result) {
-          jsonResponse(res, 404, { error: 'Document not found or unreadable' });
-          return;
-        }
-
-        jsonResponse(res, 200, result);
-        return;
-      }
+      // Static file serving for Web UI
+      if (serveStaticFiles(req, res, url)) return;
 
       // 404 fallback
       jsonResponse(res, 404, { error: 'Not found' });
@@ -718,6 +147,9 @@ export function startApiServer(options: ApiServerOptions): http.Server {
       jsonResponse(res, statusCode, { error: err.message || 'Internal server error' });
     }
   });
+
+  // Set up WebSocket server for Web UI streaming
+  ws.handle = setupWebSocketServer(server, registry, logger, secret, peerManager, pushService);
 
   server.listen(port, host, () => {
     logger.info({ host, port }, 'API server started');

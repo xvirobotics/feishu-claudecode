@@ -56,6 +56,8 @@ function customSpawn(options: SpawnOptions): SpawnedProcess {
 export interface ApiContext {
   botName: string;
   chatId: string;
+  /** Group chat member names — enables inter-bot communication prompt. */
+  groupMembers?: string[];
 }
 
 export interface ExecutorOptions {
@@ -65,6 +67,12 @@ export interface ExecutorOptions {
   abortController: AbortController;
   outputsDir?: string;
   apiContext?: ApiContext;
+  /** Override maxTurns for this execution. */
+  maxTurns?: number;
+  /** Override model for this execution (e.g. faster model for voice calls). */
+  model?: string;
+  /** Override allowed tools for this execution (empty array = no tools). */
+  allowedTools?: string[];
 }
 
 export type SDKMessage = {
@@ -150,6 +158,14 @@ export class ClaudeExecutor {
       appendSections.push(
         `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
       );
+
+      // Group chat — tell the bot who else is in the group
+      if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {
+        const others = apiContext.groupMembers.filter((m) => m !== apiContext.botName);
+        appendSections.push(
+          `## Group Chat\nYou are in a group chat with these bots: ${others.join(', ')}.\nUse \`mb talk <botName> <chatId> "message"\` to communicate with other bots in the group.`
+        );
+      }
     }
 
     if (appendSections.length > 0) {
@@ -199,6 +215,15 @@ export class ClaudeExecutor {
     inputQueue.enqueue(initialMessage);
 
     const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController, outputsDir, apiContext);
+    if (options.maxTurns !== undefined) {
+      queryOptions.maxTurns = options.maxTurns;
+    }
+    if (options.model) {
+      queryOptions.model = options.model;
+    }
+    if (options.allowedTools !== undefined) {
+      queryOptions.allowedTools = options.allowedTools;
+    }
 
     const stream = query({
       prompt: inputQueue,

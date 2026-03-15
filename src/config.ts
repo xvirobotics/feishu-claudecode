@@ -7,6 +7,11 @@ import * as path from 'node:path';
 export interface BotConfigBase {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
+  ttsVoice?: string;
   claude: {
     defaultWorkingDirectory: string;
     maxTurns: number | undefined;
@@ -41,6 +46,7 @@ export interface PeerConfig {
 export interface AppConfig {
   feishuBots: BotConfig[];
   telegramBots: TelegramBotConfig[];
+  webBots: BotConfigBase[];
   /** Dedicated Feishu service app for wiki sync & doc reader (independent of chat bots). */
   feishuService?: {
     appId: string;
@@ -64,6 +70,16 @@ export interface AppConfig {
   };
   /** Peer MetaBot instances for cross-instance bot discovery and task delegation. */
   peers: PeerConfig[];
+  /** Twilio phone call integration (Jarvis-style hands-free voice). */
+  twilio?: {
+    accountSid: string;
+    authToken: string;
+    phoneNumber: string;
+    defaultBotName: string;
+    callbackNumber?: string;
+    /** Base URL for Twilio webhooks (must be publicly accessible). */
+    baseUrl: string;
+  };
 }
 
 function required(name: string): string {
@@ -79,6 +95,11 @@ function required(name: string): string {
 export interface FeishuBotJsonEntry {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
+  ttsVoice?: string;
   feishuAppId: string;
   feishuAppSecret: string;
   defaultWorkingDirectory: string;
@@ -93,6 +114,11 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
+    ...(entry.icon ? { icon: entry.icon } : {}),
+    ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
+    ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
+    ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     feishu: {
       appId: entry.feishuAppId,
       appSecret: entry.feishuAppSecret,
@@ -106,6 +132,11 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
 export interface TelegramBotJsonEntry {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
+  ttsVoice?: string;
   telegramBotToken: string;
   defaultWorkingDirectory: string;
   maxTurns?: number;
@@ -119,9 +150,45 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
+    ...(entry.icon ? { icon: entry.icon } : {}),
+    ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
+    ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
+    ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     telegram: {
       botToken: entry.telegramBotToken,
     },
+    claude: buildClaudeConfig(entry),
+  };
+}
+
+// --- Web bot JSON entry (used in bots.json — no IM credentials needed) ---
+
+export interface WebBotJsonEntry {
+  name: string;
+  description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
+  ttsVoice?: string;
+  defaultWorkingDirectory: string;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  model?: string;
+  outputsBaseDir?: string;
+  downloadsDir?: string;
+}
+
+export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
+  return {
+    name: entry.name,
+    ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
+    ...(entry.icon ? { icon: entry.icon } : {}),
+    ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
+    ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
+    ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
@@ -141,7 +208,7 @@ function buildClaudeConfig(entry: {
     maxTurns: entry.maxTurns ?? (process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined),
     maxBudgetUsd: entry.maxBudgetUsd ?? (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
     model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-opus-4-6',
-    outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), 'metabot-outputs'),
+    outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
     downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), 'metabot-downloads'),
   };
 }
@@ -160,7 +227,7 @@ function feishuBotFromEnv(): BotConfig {
       maxTurns: process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined,
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
-      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), 'metabot-outputs'),
+      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), 'metabot-downloads'),
     },
   };
@@ -177,7 +244,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
       maxTurns: process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined,
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
-      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), 'metabot-outputs'),
+      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), 'metabot-downloads'),
     },
   };
@@ -194,6 +261,7 @@ export interface PeerJsonEntry {
 export interface BotsJsonNewFormat {
   feishuBots?: FeishuBotJsonEntry[];
   telegramBots?: TelegramBotJsonEntry[];
+  webBots?: WebBotJsonEntry[];
   peers?: PeerJsonEntry[];
 }
 
@@ -202,6 +270,7 @@ export function loadAppConfig(): AppConfig {
 
   let feishuBots: BotConfig[] = [];
   let telegramBots: TelegramBotConfig[] = [];
+  let webBots: BotConfigBase[] = [];
   let parsedConfig: unknown;
 
   if (botsConfigPath) {
@@ -217,7 +286,7 @@ export function loadAppConfig(): AppConfig {
       }
       feishuBots = (parsed as FeishuBotJsonEntry[]).map(feishuBotFromJson);
     } else if (parsed && typeof parsed === 'object') {
-      // New format: { feishuBots: [...], telegramBots: [...] }
+      // New format: { feishuBots: [...], telegramBots: [...], webBots: [...] }
       const cfg = parsed as BotsJsonNewFormat;
       if (cfg.feishuBots) {
         feishuBots = cfg.feishuBots.map(feishuBotFromJson);
@@ -225,7 +294,10 @@ export function loadAppConfig(): AppConfig {
       if (cfg.telegramBots) {
         telegramBots = cfg.telegramBots.map(telegramBotFromJson);
       }
-      if (feishuBots.length === 0 && telegramBots.length === 0) {
+      if (cfg.webBots) {
+        webBots = cfg.webBots.map(webBotFromJson);
+      }
+      if (feishuBots.length === 0 && telegramBots.length === 0 && webBots.length === 0) {
         throw new Error(`BOTS_CONFIG file must define at least one bot: ${resolved}`);
       }
     } else {
@@ -299,9 +371,23 @@ export function loadAppConfig(): AppConfig {
     }
   }
 
+  // Parse Twilio config
+  let twilio: AppConfig['twilio'];
+  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+    twilio = {
+      accountSid: process.env.TWILIO_ACCOUNT_SID,
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+      phoneNumber: process.env.TWILIO_PHONE_NUMBER,
+      defaultBotName: process.env.TWILIO_DEFAULT_BOT || 'default',
+      callbackNumber: process.env.TWILIO_CALLBACK_NUMBER || undefined,
+      baseUrl: (process.env.TWILIO_BASE_URL || `http://localhost:${apiPort}`).replace(/\/+$/, ''),
+    };
+  }
+
   return {
     feishuBots,
     telegramBots,
+    webBots,
     feishuService,
     log: {
       level: process.env.LOG_LEVEL || 'info',
@@ -320,5 +406,6 @@ export function loadAppConfig(): AppConfig {
       readerToken: memoryReaderToken,
     },
     peers,
+    twilio,
   };
 }
