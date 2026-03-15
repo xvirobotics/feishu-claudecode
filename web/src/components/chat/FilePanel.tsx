@@ -1,15 +1,11 @@
-/* ---- Right-side File Panel with preview ---- */
+/* ---- Right-side File Panel with preview + Mobile overlay ---- */
 
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import type { FileAttachment, ChatMessage } from '../../types';
 import { FileAttachmentCard } from './FileAttachmentCard';
 import { FilePreviewContent } from './FilePreviewContent';
 import { IconChevronLeft, IconDownload, IconX, IconFileSidebar } from './icons';
 import styles from '../ChatView.module.css';
-
-interface FilePanelProps {
-  messages: ChatMessage[];
-}
 
 export function useFilePanel(messages: ChatMessage[]) {
   const [filePanelOpen, setFilePanelOpen] = useState(false);
@@ -142,5 +138,65 @@ export function FilePanelContent({
         )}
       </div>
     </>
+  );
+}
+
+/* ---- Mobile File Overlay (fullscreen preview) ---- */
+
+export function MobileFileOverlay({
+  file,
+  allFiles,
+  onClose,
+  onSelectFile,
+}: {
+  file: FileAttachment | null;
+  allFiles: FileAttachment[];
+  onClose: () => void;
+  onSelectFile: (f: FileAttachment | null) => void;
+}) {
+  // Lock body scroll when overlay is open
+  useEffect(() => {
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, []);
+
+  return (
+    <div className={styles.mobileFileOverlay}>
+      {file ? (
+        /* ── Single file preview ── */
+        <>
+          <div className={styles.mobileFileHeader}>
+            <button className={styles.panelBackBtn} onClick={() => onSelectFile(null)} title="Back to files">
+              <IconChevronLeft />
+            </button>
+            <span className={styles.previewTitle}>{file.name}</span>
+            <a href={file.url} download={file.name} className={styles.panelHeaderIcon} title="Download">
+              <IconDownload />
+            </a>
+            <button className={styles.panelHeaderIcon} onClick={onClose}>
+              <IconX />
+            </button>
+          </div>
+          <div className={styles.mobileFileBody}>
+            <FilePreviewContent file={file} />
+          </div>
+        </>
+      ) : (
+        /* ── File list ── */
+        <>
+          <div className={styles.mobileFileHeader}>
+            <span style={{ flex: 1, fontWeight: 600 }}>Files ({allFiles.length})</span>
+            <button className={styles.panelHeaderIcon} onClick={onClose}>
+              <IconX />
+            </button>
+          </div>
+          <div className={styles.mobileFileList}>
+            {allFiles.map((f, i) => (
+              <FileAttachmentCard key={i} file={f} onPreview={onSelectFile} />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

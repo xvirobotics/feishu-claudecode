@@ -6,7 +6,7 @@
      AssistantMessage, FilePreviewContent, EmptyState, etc.
    ============================================================ */
 
-import { useRef, useCallback, useMemo } from 'react';
+import { useRef, useCallback, useMemo, useState, useEffect } from 'react';
 import { useStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type { CardState, FileAttachment } from '../types';
@@ -19,12 +19,25 @@ import {
   useFilePanel,
   FilePanelToggle,
   FilePanelContent,
+  MobileFileOverlay,
   EmptyState,
   generateId,
   fileCategory,
   formatFileSize,
 } from './chat';
 import styles from './ChatView.module.css';
+
+/* ── Mobile detection hook ── */
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= breakpoint);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', handler);
+    return () => mq.removeEventListener('change', handler);
+  }, [breakpoint]);
+  return isMobile;
+}
 
 export function ChatView() {
   const activeSessionId = useStore((s) => s.activeSessionId);
@@ -37,7 +50,10 @@ export function ChatView() {
 
   const { send } = useWebSocket();
 
+  const isMobile = useIsMobile();
   const autoScrollRef = useRef(true);
+  const [mobileFileOverlayOpen, setMobileFileOverlayOpen] = useState(false);
+  const [mobilePreviewFile, setMobilePreviewFile] = useState<FileAttachment | null>(null);
 
   const session = activeSessionId ? sessions.get(activeSessionId) : undefined;
   const messages = session?.messages || [];
@@ -96,6 +112,26 @@ export function ChatView() {
     allFiles,
     handleResizeStart,
   } = useFilePanel(messages);
+
+  // On mobile, route file preview to the mobile overlay instead of the side panel
+  const handlePreview = useCallback((file: FileAttachment) => {
+    if (isMobile) {
+      setMobilePreviewFile(file);
+      setMobileFileOverlayOpen(true);
+    } else {
+      openPreview(file);
+    }
+  }, [isMobile, openPreview]);
+
+  const handleFilePanelToggle = useCallback(() => {
+    if (isMobile) {
+      setMobileFileOverlayOpen(!mobileFileOverlayOpen);
+      setMobilePreviewFile(null);
+    } else {
+      setFilePanelOpen(!filePanelOpen);
+      if (filePanelOpen) setPreviewFile(null);
+    }
+  }, [isMobile, mobileFileOverlayOpen, filePanelOpen, setFilePanelOpen, setPreviewFile]);
 
   // ── Upload files to server ──
   const uploadFiles = useCallback(async (files: PendingFile[], sessionId: string): Promise<FileAttachment[]> => {
@@ -238,7 +274,7 @@ export function ChatView() {
           <MessageList
             messages={messages}
             onAnswer={handleAnswer}
-            onPreview={openPreview}
+            onPreview={handlePreview}
             autoScrollRef={autoScrollRef}
           />
         ) : (
@@ -270,13 +306,13 @@ export function ChatView() {
         {/* File panel toggle button */}
         <FilePanelToggle
           count={allFiles.length}
-          isOpen={filePanelOpen}
-          onClick={() => { setFilePanelOpen(!filePanelOpen); if (filePanelOpen) setPreviewFile(null); }}
+          isOpen={isMobile ? mobileFileOverlayOpen : filePanelOpen}
+          onClick={handleFilePanelToggle}
         />
       </div>
 
-      {/* Right side panel */}
-      {filePanelOpen && allFiles.length > 0 && (
+      {/* Right side panel (desktop) */}
+      {!isMobile && filePanelOpen && allFiles.length > 0 && (
         <FilePanelContent
           allFiles={allFiles}
           previewFile={previewFile}
@@ -285,6 +321,16 @@ export function ChatView() {
           handleResizeStart={handleResizeStart}
           openPreview={openPreview}
           onClose={() => setFilePanelOpen(false)}
+        />
+      )}
+
+      {/* Mobile file overlay (fullscreen) */}
+      {isMobile && mobileFileOverlayOpen && allFiles.length > 0 && (
+        <MobileFileOverlay
+          file={mobilePreviewFile}
+          allFiles={allFiles}
+          onClose={() => { setMobileFileOverlayOpen(false); setMobilePreviewFile(null); }}
+          onSelectFile={(f) => setMobilePreviewFile(f)}
         />
       )}
     </div>

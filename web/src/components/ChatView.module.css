@@ -1378,6 +1378,48 @@
   animation: fadeIn 150ms var(--ease-out);
 }
 
+/* ═══ Mobile File Overlay (fullscreen) ═══ */
+.mobileFileOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+  animation: fadeIn 150ms var(--ease-out);
+}
+
+.mobileFileHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--surface-1);
+  flex-shrink: 0;
+}
+
+.mobileFileBody {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobileFileList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* ═══ Responsive ═══ */
 @media (max-width: 768px) {
   .chatLayout { flex-direction: column; }
@@ -1407,22 +1449,46 @@
   .callHangup { width: 48px; height: 48px; }
   .callContent { gap: 28px; }
   .callBotName { font-size: 20px; }
+  /* Desktop-only side panel hidden on mobile (mobile uses fullscreen overlay instead) */
   .filePanel { display: none; }
   .resizeHandle { display: none; }
-  .filePanelToggle { display: none; }
+  /* File panel toggle: position in the mobile header bar */
+  .filePanelToggle {
+    position: fixed;
+    top: calc(env(safe-area-inset-top, 0px) + 10px);
+    right: 36px;
+    z-index: 100;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+  }
+  .filePanelBadge {
+    top: -2px;
+    right: -2px;
+    min-width: 14px;
+    height: 14px;
+    font-size: 9px;
+  }
+  /* File attachment sizing for mobile */
   .attachImg { max-width: 180px; max-height: 150px; }
   .attachCard { max-width: 200px; }
+  .attachCardFile { min-width: 0; max-width: 100%; }
+  .attachCardAudio { min-width: 0; max-width: 100%; }
+  .attachName { max-width: 180px; }
   .codeBlockBody pre { font-size: 12px; padding: 12px 14px; }
   .toolCallItem { font-size: 11px; }
   .sendBtn { width: 36px; height: 36px; }
   .attachBtn { width: 32px; height: 32px; }
   .sttBtn { width: 32px; height: 32px; }
   .callBtn { width: 34px; height: 34px; }
-  /* Hide call button on very small screens */
   .filePreviews { padding: 6px 10px 0; gap: 6px; }
   .filePreview { padding: 4px 8px; max-width: 160px; }
   .systemBubble { font-size: 11px; max-width: 90%; }
   .dropOverlay { font-size: 13px; }
+  /* Mobile file overlay adjustments */
+  .mobileFileOverlay .previewImage { max-height: 70vh; }
+  .mobileFileOverlay .previewIframe { height: calc(100vh - 60px); }
 }
 
 /* Extra small screens */
