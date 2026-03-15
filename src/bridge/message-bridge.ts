@@ -476,6 +476,9 @@ export class MessageBridge {
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
+      // Send completion notification for long-running tasks (>10s) so user gets a Feishu push
+      await this.sendCompletionNotice(chatId, lastState, durationMs);
+
       // Send any output files produced by Claude
       await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
     } catch (err: any) {
@@ -518,6 +521,7 @@ export class MessageBridge {
           metrics.incCounter('metabot_tasks_total');
           metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
+          await this.sendCompletionNotice(chatId, lastState, durationMs);
           await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
           return; // skip the normal error handling below
         } catch (retryErr: any) {
@@ -888,6 +892,30 @@ export class MessageBridge {
       await this.sender.sendTextNotice(chatId, '📋 Plan', planContent, 'green');
     } catch (err) {
       this.logger.warn({ err, planPath, chatId }, 'Failed to read plan file for display');
+    }
+  }
+
+  /**
+   * Send a short text message when a task completes (for long-running tasks).
+   * Card updates don't trigger Feishu mobile push notifications, but new messages do.
+   * Only sends for tasks that took longer than 10 seconds.
+   */
+  private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
+    // Only notify for tasks that took a while — quick tasks don't need it
+    if (durationMs < 10_000) return;
+
+    const statusEmoji = state.status === 'complete' ? '✅' : '❌';
+    const durationStr = durationMs >= 60_000
+      ? `${(durationMs / 60_000).toFixed(1)}min`
+      : `${(durationMs / 1000).toFixed(0)}s`;
+    const costStr = state.costUsd ? ` · $${state.costUsd.toFixed(2)}` : '';
+    const statusWord = state.status === 'complete' ? 'Task completed' : 'Task failed';
+    const message = `${statusEmoji} ${statusWord} (${durationStr}${costStr})`;
+
+    try {
+      await this.sender.sendText(chatId, message);
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'Failed to send completion notice');
     }
   }
 
