@@ -9,4 +9,4 @@ nohup.out
 data/
 src/skills/gpu-cluster/
 .claude/
-.worktrees/
+.worktrees/*.skill
