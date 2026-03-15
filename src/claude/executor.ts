@@ -76,9 +76,12 @@ export type SDKMessage = {
     content?: Array<{
       type: string;
       text?: string;
+      thinking?: string;
       name?: string;
       id?: string;
       input?: unknown;
+      content?: string | unknown;
+      tool_use_id?: string;
     }>;
   };
   // Result fields
@@ -96,6 +99,7 @@ export type SDKMessage = {
     delta?: {
       type: string;
       text?: string;
+      thinking?: string;
     };
     content_block?: {
       type: string;
@@ -105,6 +109,18 @@ export type SDKMessage = {
     };
   };
   parent_tool_use_id?: string | null;
+  // Tool use summary fields
+  summary?: string;
+  tool_use_id?: string;
+  tool_name?: string;
+  elapsed_time_seconds?: number;
+  // Task notification fields
+  task_id?: string;
+  description?: string;
+  prompt?: string;
+  status?: string;
+  usage?: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+  last_tool_name?: string;
 };
 
 export interface ExecutionHandle {

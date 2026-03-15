@@ -1,5 +1,7 @@
 import type { SDKMessage } from './executor.js';
-import type { CardState, ToolCall, PendingQuestion } from '../feishu/card-builder.js';
+import type { CardState, ToolCall, PendingQuestion, SubagentTask } from '../types.js';
+// Re-export types for backwards compatibility with existing imports
+export type { CardState, ToolCall, PendingQuestion } from '../types.js';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.tiff']);
 
@@ -16,19 +18,36 @@ export interface DetectedTool {
   name: string;
 }
 
+export interface StreamProcessorConfig {
+  startTime?: number;
+}
+
 export class StreamProcessor {
   private responseText = '';
+  private thinkingText = '';
   private toolCalls: ToolCall[] = [];
+  private toolSummaries: string[] = [];
+  private subagentTasks: Map<string, SubagentTask> = new Map();
+  private subagentCurrentTools: Map<string, string | null> = new Map();
   private currentToolName: string | null = null;
+  private currentToolInput: unknown = undefined;
   private sessionId: string | undefined;
   private costUsd: number | undefined;
   private durationMs: number | undefined;
+  private numTurns: number | undefined;
   private _imagePaths: Set<string> = new Set();
   private _pendingQuestion: PendingQuestion | null = null;
   private _sdkHandledTools: DetectedTool[] = [];
   private _planFilePath: string | null = null;
+  private _config: StreamProcessorConfig;
 
-  constructor(private userPrompt: string) {}
+  constructor(
+    private userPrompt: string,
+    config?: StreamProcessorConfig,
+    private workingDirectory?: string,
+  ) {
+    this._config = config || {};
+  }
 
   processMessage(message: SDKMessage): CardState {
     // Capture session_id from any message
@@ -38,11 +57,15 @@ export class StreamProcessor {
 
     switch (message.type) {
       case 'system':
-        // Init message, session captured above
+        this.processSystemMessage(message);
         break;
 
       case 'assistant':
         this.processAssistantMessage(message);
+        break;
+
+      case 'user':
+        this.processUserMessage(message);
         break;
 
       case 'result':
@@ -53,8 +76,26 @@ export class StreamProcessor {
         break;
 
       case 'task_notification':
+        this.processSystemMessage(message);
+        break;
+
       case 'tool_use_summary':
-        // SDK 0.2 message types — no action needed for card display
+        if (message.summary) {
+          this.toolSummaries.push(message.summary);
+        }
+        break;
+
+      case 'tool_progress':
+        // Update elapsed time on running tool
+        if (message.tool_name && message.elapsed_time_seconds !== undefined) {
+          const tool = [...this.toolCalls].reverse().find(
+            (t) => t.name === message.tool_name && t.status === 'running',
+          );
+          if (tool) {
+            const elapsed = Math.round(message.elapsed_time_seconds);
+            tool.detail = `${formatToolDetail(tool.name, undefined)} (${elapsed}s)`;
+          }
+        }
         break;
     }
 
@@ -72,32 +113,141 @@ export class StreamProcessor {
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestion || undefined,
+      thinkingText: this.thinkingText || undefined,
+      toolSummaries: this.toolSummaries.length > 0 ? [...this.toolSummaries] : undefined,
+      subagentTasks: this.subagentTasks.size > 0 ? [...this.subagentTasks.values()] : undefined,
+      startTime: this._config.startTime,
+      sessionId: this.sessionId,
+      workingDirectory: this.workingDirectory,
     };
   }
 
   private processAssistantMessage(message: SDKMessage): void {
     if (!message.message?.content) return;
 
-    for (const block of message.message.content) {
-      if (block.type === 'text' && block.text) {
-        // Only accumulate text from top-level assistant messages (not subagent)
-        if (message.parent_tool_use_id === null || message.parent_tool_use_id === undefined) {
-          // Full message text replaces accumulated stream text
-          this.responseText = block.text;
+    const isSubagent = message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined;
+
+    if (isSubagent) {
+      const task = this.getOrCreateSubagentTask(message.parent_tool_use_id!);
+      for (const block of message.message.content) {
+        if (block.type === 'thinking' && block.thinking) {
+          task.thinkingText = block.thinking;
+        } else if (block.type === 'tool_use' && block.name) {
+          if (!task.toolCalls) task.toolCalls = [];
+          this.completeSubagentTool(message.parent_tool_use_id!);
+          const detail = formatToolDetail(block.name, block.input);
+          const inputStr = formatToolInput(block.name, block.input);
+          task.toolCalls.push({ name: block.name, detail, status: 'running', input: inputStr || undefined });
+          this.subagentCurrentTools.set(message.parent_tool_use_id!, block.name);
+        } else if (block.type === 'tool_result') {
+          const output = extractToolOutput(block.content);
+          this.completeSubagentTool(message.parent_tool_use_id!, output);
         }
+      }
+      return;
+    }
+
+    for (const block of message.message.content) {
+      if (block.type === 'thinking' && block.thinking) {
+        this.thinkingText = block.thinking;
+      } else if (block.type === 'text' && block.text) {
+        // Full message text replaces accumulated stream text
+        this.responseText = block.text;
       } else if (block.type === 'tool_use' && block.name) {
         this.addToolCall(block.name, block.input);
-        // Detect interactive tools at top level
-        if (message.parent_tool_use_id === null || message.parent_tool_use_id === undefined) {
-          if (block.name === 'AskUserQuestion' && block.id && block.input) {
-            this.extractPendingQuestion(block.id, block.input);
-          } else if (SDK_HANDLED_TOOLS.has(block.name) && block.id) {
-            this._sdkHandledTools.push({ toolUseId: block.id, name: block.name });
-          }
+        if (block.name === 'AskUserQuestion' && block.id && block.input) {
+          this.extractPendingQuestion(block.id, block.input);
+        } else if (SDK_HANDLED_TOOLS.has(block.name) && block.id) {
+          this._sdkHandledTools.push({ toolUseId: block.id, name: block.name });
         }
       } else if (block.type === 'tool_result') {
-        this.completeCurrentTool();
+        const output = extractToolOutput(block.content);
+        this.completeCurrentTool(output);
       }
+    }
+  }
+
+  private processUserMessage(message: SDKMessage): void {
+    if (!message.message?.content) return;
+
+    const isSubagent = message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined;
+
+    for (const block of message.message.content) {
+      if (block.type === 'tool_result') {
+        const output = extractToolOutput(block.content);
+        if (isSubagent) {
+          this.completeSubagentTool(message.parent_tool_use_id!, output);
+        } else {
+          this.completeCurrentTool(output);
+        }
+      }
+    }
+  }
+
+  private processSystemMessage(message: SDKMessage): void {
+    // Handle task lifecycle messages (subagent tracking)
+    switch (message.subtype) {
+      case 'task_started':
+        if (message.task_id) {
+          const existing = this.subagentTasks.get(message.task_id);
+          if (existing) {
+            // Merge: update description but preserve any tool calls already captured
+            existing.description = message.description || message.prompt || existing.description;
+          } else {
+            this.subagentTasks.set(message.task_id, {
+              taskId: message.task_id,
+              description: message.description || message.prompt || 'Subagent task',
+              status: 'running',
+              toolCalls: [],
+            });
+          }
+        }
+        break;
+
+      case 'task_progress':
+        if (message.task_id) {
+          const task = this.subagentTasks.get(message.task_id);
+          if (task) {
+            if (message.summary) task.summary = message.summary;
+            if (message.usage) task.usage = message.usage;
+            // last_tool_name is the SDK's way of reporting subagent tool usage
+            if (message.last_tool_name) {
+              if (!task.toolCalls) task.toolCalls = [];
+              const last = task.toolCalls[task.toolCalls.length - 1];
+              // Avoid duplicating consecutive identical tool names
+              if (!last || last.name !== message.last_tool_name || last.status === 'done') {
+                if (last && last.status === 'running') last.status = 'done';
+                task.toolCalls.push({ name: message.last_tool_name, detail: '', status: 'running' });
+              }
+            }
+          }
+        }
+        break;
+
+      default:
+        // task_notification comes as message.type === 'task_notification'
+        if (message.type === 'task_notification' && message.task_id) {
+          const task = this.subagentTasks.get(message.task_id);
+          if (task) {
+            task.status = message.status === 'completed' ? 'completed' : 'failed';
+            if (message.summary) task.summary = message.summary;
+            if (message.usage) task.usage = message.usage;
+            if (message.last_tool_name) {
+              if (!task.toolCalls) task.toolCalls = [];
+              const last = task.toolCalls[task.toolCalls.length - 1];
+              if (!last || last.name !== message.last_tool_name) {
+                task.toolCalls.push({ name: message.last_tool_name, detail: '', status: 'done' });
+              }
+            }
+            // Mark all running tools as done when task completes
+            if (task.toolCalls) {
+              for (const t of task.toolCalls) {
+                if (t.status === 'running') t.status = 'done';
+              }
+            }
+          }
+        }
+        break;
     }
   }
 
@@ -105,8 +255,26 @@ export class StreamProcessor {
     const event = message.event;
     if (!event) return;
 
-    // Only process top-level stream events
+    // Handle subagent stream events
     if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
+      const taskId = message.parent_tool_use_id;
+      const task = this.getOrCreateSubagentTask(taskId);
+      if (!task.toolCalls) task.toolCalls = [];
+
+      if (event.type === 'content_block_start') {
+        const block = event.content_block;
+        if (block?.type === 'tool_use' && block.name) {
+          this.completeSubagentTool(taskId);
+          const detail = formatToolDetail(block.name, undefined);
+          task.toolCalls.push({ name: block.name, detail, status: 'running' });
+          this.subagentCurrentTools.set(taskId, block.name);
+        }
+      } else if (event.type === 'content_block_delta') {
+        const delta = event.delta;
+        if (delta?.type === 'thinking_delta' && delta.thinking) {
+          task.thinkingText = (task.thinkingText || '') + delta.thinking;
+        }
+      }
       return;
     }
 
@@ -122,6 +290,8 @@ export class StreamProcessor {
       const delta = event.delta;
       if (delta?.type === 'text_delta' && delta.text) {
         this.responseText += delta.text;
+      } else if (delta?.type === 'thinking_delta' && delta.thinking) {
+        this.thinkingText += delta.thinking;
       }
     } else if (event.type === 'content_block_stop') {
       // Tool may be complete
@@ -132,6 +302,7 @@ export class StreamProcessor {
   private processResultMessage(message: SDKMessage): CardState {
     this.costUsd = message.total_cost_usd;
     this.durationMs = message.duration_ms;
+    this.numTurns = message.num_turns;
 
     // Mark all tools as done
     for (const tool of this.toolCalls) {
@@ -153,6 +324,13 @@ export class StreamProcessor {
       errorMessage: isError
         ? (message.errors?.join('; ') || `Ended with: ${message.subtype}`)
         : isApiError ? resultText : undefined,
+      thinkingText: this.thinkingText || undefined,
+      toolSummaries: this.toolSummaries.length > 0 ? [...this.toolSummaries] : undefined,
+      subagentTasks: this.subagentTasks.size > 0 ? [...this.subagentTasks.values()] : undefined,
+      startTime: this._config.startTime,
+      sessionId: this.sessionId,
+      workingDirectory: this.workingDirectory,
+      numTurns: this.numTurns,
     };
   }
 
@@ -161,8 +339,10 @@ export class StreamProcessor {
     this.completeCurrentTool();
 
     this.currentToolName = name;
+    this.currentToolInput = input;
     const detail = formatToolDetail(name, input);
-    this.toolCalls.push({ name, detail, status: 'running' });
+    const inputStr = formatToolInput(name, input);
+    this.toolCalls.push({ name, detail, status: 'running', input: inputStr || undefined });
 
     // Track image file paths and plan file paths from Write tool
     if (name === 'Write' && input && typeof input === 'object') {
@@ -176,16 +356,40 @@ export class StreamProcessor {
     }
   }
 
-  private completeCurrentTool(): void {
+  private completeCurrentTool(output?: string): void {
     if (this.currentToolName) {
       const tool = this.toolCalls.find(
         (t) => t.name === this.currentToolName && t.status === 'running',
       );
       if (tool) {
         tool.status = 'done';
+        if (output) tool.output = output;
       }
       this.currentToolName = null;
+      this.currentToolInput = undefined;
     }
+  }
+
+  private getOrCreateSubagentTask(taskId: string): SubagentTask {
+    let task = this.subagentTasks.get(taskId);
+    if (!task) {
+      task = { taskId, description: 'Subagent task', status: 'running', toolCalls: [] };
+      this.subagentTasks.set(taskId, task);
+    }
+    return task;
+  }
+
+  private completeSubagentTool(taskId: string, output?: string): void {
+    const currentName = this.subagentCurrentTools.get(taskId);
+    if (!currentName) return;
+    const task = this.subagentTasks.get(taskId);
+    if (!task?.toolCalls) return;
+    const tool = [...task.toolCalls].reverse().find(t => t.name === currentName && t.status === 'running');
+    if (tool) {
+      tool.status = 'done';
+      if (output) tool.output = output;
+    }
+    this.subagentCurrentTools.set(taskId, null);
   }
 
   private extractPendingQuestion(toolUseId: string, input: unknown): void {
@@ -244,6 +448,12 @@ export class StreamProcessor {
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestion || undefined,
+      thinkingText: this.thinkingText || undefined,
+      toolSummaries: this.toolSummaries.length > 0 ? [...this.toolSummaries] : undefined,
+      subagentTasks: this.subagentTasks.size > 0 ? [...this.subagentTasks.values()] : undefined,
+      startTime: this._config.startTime,
+      sessionId: this.sessionId,
+      workingDirectory: this.workingDirectory,
     };
   }
 
@@ -306,6 +516,36 @@ function formatToolDetail(name: string, input: unknown): string {
     }
     default:
       return '';
+  }
+}
+
+/** Extract key fields from tool input for display */
+function formatToolInput(name: string, input: unknown): string {
+  if (!input || typeof input !== 'object') return '';
+  const inp = input as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const key of ['file_path', 'command', 'pattern', 'query', 'url', 'prompt', 'description']) {
+    if (inp[key] && typeof inp[key] === 'string') {
+      parts.push(`${key}: ${truncate(inp[key] as string, 200)}`);
+    }
+  }
+  return parts.join('\n');
+}
+
+/** Extract tool output from various content formats */
+function extractToolOutput(content: unknown): string {
+  if (!content) return '';
+  if (typeof content === 'string') return truncate(content, 500);
+  if (Array.isArray(content)) {
+    const texts = content
+      .filter((c: any) => c.type === 'text' && c.text)
+      .map((c: any) => c.text);
+    return truncate(texts.join('\n'), 500);
+  }
+  try {
+    return truncate(JSON.stringify(content), 500);
+  } catch {
+    return '';
   }
 }
 

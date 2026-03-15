@@ -38,6 +38,14 @@ function renderCardHtml(state: CardState): string {
   parts.push(`${emoji} <b>${escapeHtml(label)}</b>`);
   parts.push('');
 
+  // Thinking content
+  if (state.thinkingText?.trim()) {
+    const thinkingPreview = state.thinkingText.length > 500
+      ? state.thinkingText.slice(0, 500) + '...'
+      : state.thinkingText;
+    parts.push(`<blockquote expandable>\u{1F4AD} ${escapeHtml(thinkingPreview)}</blockquote>`);
+  }
+
   // Tool calls
   if (state.toolCalls.length > 0) {
     for (const t of state.toolCalls) {
@@ -80,11 +88,17 @@ function renderCardHtml(state: CardState): string {
   if (state.status === 'complete' || state.status === 'error') {
     const statParts: string[] = [];
     if (state.durationMs !== undefined) {
-      statParts.push(`Duration: ${(state.durationMs / 1000).toFixed(1)}s`);
+      statParts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+    }
+    if (state.numTurns !== undefined) {
+      statParts.push(`${state.numTurns} turns`);
+    }
+    if (state.costUsd !== undefined) {
+      statParts.push(`$${state.costUsd.toFixed(4)}`);
     }
     if (statParts.length > 0) {
       parts.push('');
-      parts.push(`<i>${escapeHtml(statParts.join(' | '))}</i>`);
+      parts.push(`<i>${escapeHtml(statParts.join(' \xB7 '))}</i>`);
     }
   }
 
