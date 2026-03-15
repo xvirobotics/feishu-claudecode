@@ -58,6 +58,11 @@ export class CommandHandler {
           '**Sync Commands:**',
           '`/sync` - Sync MetaMemory to Feishu Wiki',
           '`/sync status` - Show sync status',
+          '',
+          '**Contributing:**',
+          '`/report-bug <description>` - Report a bug (creates GitHub issue)',
+          '`/request-feature <idea>` - Request a feature (creates GitHub issue)',
+          '`/fix-issue <number|list>` - Pick and fix a GitHub issue (creates PR)',
         ].join('\n'));
         return true;
 

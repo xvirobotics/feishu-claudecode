@@ -305,6 +305,9 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `/help` | Show help |
 | `/metaskill ...` | Generate agent teams, agents, or skills |
 | `/metabot` | Agent bus, scheduling, and bot management API docs (loaded on demand) |
+| `/report-bug <desc>` | Report a bug — interviews you and creates a GitHub issue |
+| `/request-feature <idea>` | Request a feature — refines your idea and creates a GitHub issue |
+| `/fix-issue <number\|list>` | Pick and fix a GitHub issue — branches, commits, and creates a PR |
 | `/anything` | Any unrecognized command is forwarded to Claude Code as a skill |
 
 ## API Reference
@@ -387,6 +390,29 @@ API_SECRET=your-secret                    # shared auth token
 ```
 
 This allows multiple machines to share the same MetaBot and MetaMemory instance — local bots can delegate tasks to a remote agent bus, and any machine can read/write shared memory.
+
+## Contributing
+
+MetaBot ships with Claude Code skills that streamline the contribution workflow. Use them from the terminal or directly from Feishu/Telegram chat.
+
+| Command | Description |
+|---------|-------------|
+| `/report-bug` | Interviews you about a bug, drafts a GitHub issue with environment info, and creates it after your approval. |
+| `/request-feature` | Helps refine your feature idea, checks for existing similar functionality, and creates a well-structured feature request issue. |
+| `/fix-issue [number]` | Picks an open issue, claims it, creates a branch, implements the fix, runs CI, and submits a PR — all guided step by step. |
+
+**From the terminal:**
+
+```bash
+claude "/report-bug card builder crashes on empty content"
+claude "/request-feature support Slack as an IM platform"
+claude "/fix-issue 42"
+claude "/fix-issue list"
+```
+
+**From Feishu/Telegram:** Send the same commands as chat messages (e.g. `/report-bug ...`). The bot forwards them to Claude Code, which runs the skill and responds with interactive cards.
+
+For full contribution guidelines (code style, branching, PR checklist), see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Development
 

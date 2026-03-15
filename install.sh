@@ -554,6 +554,14 @@ mkdir -p "$SKILLS_DIR/metabot"
 cp "$METABOT_HOME/src/skills/metabot/SKILL.md" "$SKILLS_DIR/metabot/SKILL.md"
 success "metabot skill installed → $SKILLS_DIR/metabot"
 
+# Install contribution workflow skills (bundled in src/skills/)
+for CONTRIB_SKILL in report-bug request-feature fix-issue; do
+  info "Installing $CONTRIB_SKILL skill..."
+  mkdir -p "$SKILLS_DIR/$CONTRIB_SKILL"
+  cp "$METABOT_HOME/src/skills/$CONTRIB_SKILL/SKILL.md" "$SKILLS_DIR/$CONTRIB_SKILL/SKILL.md"
+  success "$CONTRIB_SKILL skill installed → $SKILLS_DIR/$CONTRIB_SKILL"
+done
+
 # Install feishu-doc skill (bundled in src/skills/feishu-doc/) — only when Feishu is configured
 HAS_FEISHU=false
 if [[ "$SKIP_CONFIG" == "false" && "$SETUP_FEISHU" == "true" ]]; then
