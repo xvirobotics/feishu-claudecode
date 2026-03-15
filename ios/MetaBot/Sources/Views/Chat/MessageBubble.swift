@@ -4,6 +4,7 @@ import MarkdownUI
 struct MessageBubble: View {
     let message: ChatMessage
     let serverURL: String
+    var onFilePreview: ((FileAttachment) -> Void)?
 
     var body: some View {
         switch message.type {
@@ -26,6 +27,7 @@ struct MessageBubble: View {
                 if let attachments = message.attachments, !attachments.isEmpty {
                     ForEach(attachments) { file in
                         FileCardView(file: file, serverURL: serverURL)
+                            .onTapGesture { onFilePreview?(file) }
                     }
                 }
                 // Text
@@ -42,6 +44,18 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 2)
+        .contextMenu {
+            if !message.text.isEmpty {
+                Button {
+                    UIPasteboard.general.string = message.text
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                ShareLink(item: message.text) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+            }
+        }
     }
 
     // MARK: - Assistant Bubble
@@ -91,6 +105,7 @@ struct MessageBubble: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(attachments) { file in
                         FileCardView(file: file, serverURL: serverURL, compact: true)
+                            .onTapGesture { onFilePreview?(file) }
                     }
                 }
                 .padding(.top, 8)
@@ -98,6 +113,18 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
+        .contextMenu {
+            if !message.text.isEmpty {
+                Button {
+                    UIPasteboard.general.string = message.text
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                ShareLink(item: message.text) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+            }
+        }
     }
 
     @ViewBuilder

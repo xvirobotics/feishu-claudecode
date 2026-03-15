@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ChatView: View {
     @Environment(AppState.self) private var appState
+    @State private var previewFile: FileAttachment?
+    @State private var showPhoneCall = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,6 +18,27 @@ struct ChatView: View {
             InputBar()
         }
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showPhoneCall = true
+                } label: {
+                    Image(systemName: "phone.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color.accentColor)
+                }
+            }
+        }
+        .sheet(item: $previewFile) { file in
+            FilePreviewSheet(file: file, serverURL: appState.serverURL)
+        }
+        .fullScreenCover(isPresented: $showPhoneCall) {
+            if let botName = appState.activeBotName {
+                let chatId = appState.activeSessionId ?? "call_\(UUID().uuidString.prefix(8))"
+                PhoneCallView(botName: botName, chatId: chatId)
+                    .environment(appState)
+            }
+        }
     }
 
     private func messageList(_ messages: [ChatMessage]) -> some View {
@@ -23,8 +46,14 @@ struct ChatView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(messages) { msg in
-                        MessageBubble(message: msg, serverURL: appState.serverURL)
-                            .id(msg.id)
+                        MessageBubble(
+                            message: msg,
+                            serverURL: appState.serverURL,
+                            onFilePreview: { file in
+                                previewFile = file
+                            }
+                        )
+                        .id(msg.id)
                     }
                 }
                 .padding(.vertical, 8)
