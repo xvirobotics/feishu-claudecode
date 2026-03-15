@@ -19,6 +19,9 @@ final class AppState {
         didSet { UserDefaults.standard.set(activeBotName, forKey: "metabot:activeBotName") }
     }
 
+    // Groups
+    var groups: [ChatGroup] = []
+
     // Sessions
     var sessions: [String: ChatSession] = [:] {
         didSet { debounceSave() }
@@ -68,6 +71,7 @@ final class AppState {
         messageListenerTask = nil
         webSocket.disconnect()
         bots = []
+        groups = []
     }
 
     private func startListening() {
@@ -91,6 +95,8 @@ final class AppState {
             if activeBotName == nil, let first = bots.first {
                 activeBotName = first.name
             }
+            // Request groups list on connect
+            webSocket.send(.listGroups)
 
         case .botsUpdated(let bots):
             self.bots = bots
@@ -124,6 +130,15 @@ final class AppState {
                 addMessage(chatId: chatId, message: msg)
             }
 
+        case .groupCreated(let group):
+            groups.append(group)
+
+        case .groupDeleted(let groupId):
+            groups.removeAll { $0.id == groupId }
+
+        case .groupsList(let groups):
+            self.groups = groups
+
         case .pong, .unknown:
             break
         }
@@ -131,14 +146,14 @@ final class AppState {
 
     // MARK: - Session Management
 
-    func createSession(botName: String? = nil) -> String {
+    func createSession(botName: String? = nil, groupId: String? = nil) -> String {
         let id = "ios_\(UUID().uuidString.prefix(8))"
         let bot = botName ?? activeBotName ?? "default"
         let session = ChatSession(
             id: id, botName: bot, title: "", messages: [],
             createdAt: Date().timeIntervalSince1970 * 1000,
             updatedAt: Date().timeIntervalSince1970 * 1000,
-            groupId: nil
+            groupId: groupId
         )
         sessions[id] = session
         activeSessionId = id
@@ -150,7 +165,6 @@ final class AppState {
     func deleteSession(_ id: String) {
         sessions.removeValue(forKey: id)
         if activeSessionId == id {
-            // Select most recent remaining session
             activeSessionId = sessions.values
                 .sorted(by: { $0.updatedAt > $1.updatedAt })
                 .first?.id
@@ -166,7 +180,6 @@ final class AppState {
     }
 
     func getOrCreateSession(botName: String) -> String {
-        // Find existing session for this bot
         if let existing = sessions.values.first(where: {
             $0.botName == botName && $0.messages.isEmpty
         }) {
@@ -183,13 +196,26 @@ final class AppState {
         activeSessionId = nil
     }
 
+    // MARK: - Group Management
+
+    func createGroup(name: String, members: [String]) {
+        webSocket.send(.createGroup(name: name, members: members))
+    }
+
+    func deleteGroup(_ groupId: String) {
+        webSocket.send(.deleteGroup(groupId: groupId))
+    }
+
+    func createGroupSession(group: ChatGroup) -> String {
+        return createSession(botName: group.name, groupId: group.id)
+    }
+
     // MARK: - Message Management
 
     func addMessage(chatId: String, message: ChatMessage) {
         guard sessions[chatId] != nil else { return }
         sessions[chatId]?.messages.append(message)
         sessions[chatId]?.updatedAt = Date().timeIntervalSince1970 * 1000
-        // Update title from first user message
         if message.type == .user, sessions[chatId]?.title.isEmpty == true {
             sessions[chatId]?.title = String(message.text.prefix(60))
         }
@@ -248,20 +274,29 @@ final class AppState {
         )
         addMessage(chatId: sessionId, message: assistantMsg)
 
-        // Send via WebSocket
-        webSocket.send(.chat(
-            botName: botName,
-            chatId: sessionId,
-            text: text,
-            messageId: assistantMsgId
-        ))
+        // Check if this is a group chat
+        let session = sessions[sessionId]
+        if let groupId = session?.groupId {
+            webSocket.send(.groupChat(
+                groupId: groupId,
+                chatId: sessionId,
+                text: text,
+                messageId: assistantMsgId
+            ))
+        } else {
+            webSocket.send(.chat(
+                botName: botName,
+                chatId: sessionId,
+                text: text,
+                messageId: assistantMsgId
+            ))
+        }
     }
 
     func stopTask() {
         guard let chatId = activeSessionId else { return }
         webSocket.send(.stop(chatId: chatId))
 
-        // Optimistically mark as error
         if let session = sessions[chatId],
            let last = session.messages.last,
            last.type == .assistant,
@@ -289,7 +324,6 @@ final class AppState {
 
     // MARK: - Persistence
 
-    /// Debounce session persistence to avoid heavy JSON serialization on every streaming update
     private func debounceSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in

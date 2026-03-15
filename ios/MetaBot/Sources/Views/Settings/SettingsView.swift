@@ -42,6 +42,18 @@ struct SettingsView: View {
                     }
                 }
 
+                // Appearance
+                Section("Appearance") {
+                    Picker("Theme", selection: Binding(
+                        get: { appState.colorScheme },
+                        set: { appState.colorScheme = $0 }
+                    )) {
+                        Text("System").tag(Optional<ColorScheme>.none)
+                        Text("Light").tag(Optional<ColorScheme>.some(.light))
+                        Text("Dark").tag(Optional<ColorScheme>.some(.dark))
+                    }
+                }
+
                 // Agents
                 Section("Agents (\(appState.bots.count))") {
                     if appState.bots.isEmpty {
@@ -59,6 +71,26 @@ struct SettingsView: View {
                                             .font(.caption)
                                             .foregroundStyle(.secondary)
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Groups
+                if !appState.groups.isEmpty {
+                    Section("Groups (\(appState.groups.count))") {
+                        ForEach(appState.groups) { group in
+                            HStack(spacing: 12) {
+                                Image(systemName: "person.3.fill")
+                                    .foregroundStyle(Color.accentColor)
+                                    .frame(width: 32, height: 32)
+                                VStack(alignment: .leading) {
+                                    Text(group.name)
+                                        .font(.subheadline.bold())
+                                    Text(group.members.joined(separator: ", "))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
                             }
                         }

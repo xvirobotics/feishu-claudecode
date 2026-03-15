@@ -60,6 +60,9 @@ enum ServerMessage {
     case error(chatId: String, messageId: String?, error: String)
     case file(chatId: String, url: String, name: String, mimeType: String, size: Int?)
     case notice(text: String?, chatId: String?, title: String?, content: String?)
+    case groupCreated(group: ChatGroup)
+    case groupDeleted(groupId: String)
+    case groupsList(groups: [ChatGroup])
     case pong
     case unknown(type: String)
 }
@@ -106,6 +109,15 @@ extension ServerMessage: Decodable {
             let title = try container.decodeIfPresent(String.self, forKey: .key("title"))
             let content = try container.decodeIfPresent(String.self, forKey: .key("content"))
             self = .notice(text: text, chatId: chatId, title: title, content: content)
+        case "group_created":
+            let group = try container.decode(ChatGroup.self, forKey: .key("group"))
+            self = .groupCreated(group: group)
+        case "group_deleted":
+            let groupId = try container.decode(String.self, forKey: .key("groupId"))
+            self = .groupDeleted(groupId: groupId)
+        case "groups_list":
+            let groups = try container.decode([ChatGroup].self, forKey: .key("groups"))
+            self = .groupsList(groups: groups)
         case "pong":
             self = .pong
         default:

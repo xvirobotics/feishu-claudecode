@@ -44,28 +44,43 @@ ios/MetaBot/
     ├── Models/                # Data types (mirroring Web types.ts)
     │   ├── BotInfo.swift
     │   ├── CardState.swift
+    │   ├── ChatGroup.swift
     │   ├── ChatMessage.swift
     │   ├── FileAttachment.swift
     │   └── WebSocketMessages.swift
-    ├── Services/              # Network + Auth
-    │   ├── AuthService.swift      # Keychain token management
-    │   ├── FileService.swift      # File upload/download
-    │   └── WebSocketService.swift # WebSocket with reconnect + heartbeat
+    ├── Services/              # Network + Auth + Voice
+    │   ├── AuthService.swift       # Keychain token management
+    │   ├── FileService.swift       # File upload/download
+    │   ├── VoiceAPIService.swift   # POST /api/voice (STT + Agent + TTS)
+    │   ├── VoiceService.swift      # SFSpeechRecognizer + AVAudioEngine recording
+    │   └── WebSocketService.swift  # WebSocket with reconnect + heartbeat
     ├── ViewModels/
     │   └── AppState.swift     # @Observable global state
     ├── Views/
     │   ├── LoginView.swift
     │   ├── MainTabView.swift  # iPad split view + iPhone tabs
-    │   ├── BotList/           # Agent cards
-    │   ├── Chat/              # Chat UI (messages, input, tools, markdown)
+    │   ├── BotList/           # Agent + group cards
+    │   │   ├── BotCard.swift
+    │   │   ├── BotListView.swift
+    │   │   └── GroupCreateDialog.swift
+    │   ├── Chat/              # Chat UI (messages, input, tools, markdown, voice, files)
+    │   │   ├── ChatView.swift
+    │   │   ├── EmptyStateView.swift
+    │   │   ├── FilePickerView.swift
+    │   │   ├── FilePreviewSheet.swift
+    │   │   ├── InputBar.swift
+    │   │   ├── MessageBubble.swift
+    │   │   ├── PhoneCallView.swift
+    │   │   └── ToolCallView.swift
     │   ├── Memory/            # MetaMemory browser
     │   └── Settings/
     └── Utilities/
         └── GradientAvatar.swift
 ```
 
-## Features (Phase 1 - MVP)
+## Features
 
+### Phase 1 — Core Chat (MVP)
 - Token-based login (stored in Keychain)
 - Bot list with gradient avatars and status
 - Real-time streaming chat via WebSocket
@@ -74,16 +89,31 @@ ios/MetaBot/
 - Pending question UI
 - Session management (create, switch, delete)
 - Auto-scroll with manual override
-- iPad split view layout
+- iPad three-column split view layout
 - iPhone tab-based navigation
-- Dark/light theme support
 - MetaMemory document browser
 - Settings (connection, agents, data management)
+
+### Phase 2 — Files, Voice, Groups, Polish
+- **File upload** — PhotosPicker for images, document picker for any file type
+- **File preview** — Fullscreen sheet with zoomable images, PDF rendering, text preview
+- **Voice input** — Real-time speech recognition (SFSpeechRecognizer) with mic button
+- **Phone call mode** — Full-screen voice conversation overlay with VAD (voice activity detection), auto-cycling record → process → play → record
+- **Group chat** — Create bot groups, multi-agent conversations with @mention routing
+- **Dark/light/system theme** — Picker in Settings
+- **Message context menu** — Long-press to copy or share message text
+- **Haptic feedback** — UIImpactFeedbackGenerator on key interactions
 
 ## Server Connection
 
 The app connects to your MetaBot server via:
 - **WebSocket**: `wss://<server>/ws?token=<token>` for real-time chat
-- **HTTP**: `<server>/api/*` for file upload, status checks
+- **HTTP**: `<server>/api/*` for file upload, voice API, status checks
 
 Enter your server URL and API token on the login screen.
+
+## Permissions Required
+
+- **Microphone** — Voice input and phone call mode
+- **Speech Recognition** — Real-time transcription
+- **Photo Library** — Image selection for file upload

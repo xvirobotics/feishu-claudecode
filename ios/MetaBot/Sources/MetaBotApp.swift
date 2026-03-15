@@ -25,6 +25,7 @@ struct MetaBotApp: App {
                 }
             }
             .environment(appState)
+            .preferredColorScheme(appState.colorScheme)
             .tint(Color(red: 0.063, green: 0.725, blue: 0.506)) // #10b981 emerald
         }
     }
