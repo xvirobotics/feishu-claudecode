@@ -1,4 +1,5 @@
 import AVFoundation
+import MediaPlayer
 import SwiftUI
 
 /// Phone call status phases
@@ -22,7 +23,8 @@ enum CallPhase {
     }
 }
 
-/// Full-screen phone call overlay for voice conversation
+/// Full-screen phone call overlay for voice conversation.
+/// Supports background audio — conversation continues when screen is locked.
 struct PhoneCallView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
@@ -40,6 +42,7 @@ struct PhoneCallView: View {
     @State private var conversationLog: [(role: String, text: String)] = []
     @State private var silenceTimer: Task<Void, Never>?
     @State private var lastSpeechTime = Date()
+    @State private var interruptionObserver: Any?
 
     // VAD settings
     private let silenceThreshold: Float = 0.01
@@ -221,10 +224,29 @@ struct PhoneCallView: View {
             }
 
             await MainActor.run {
+                // Prevent auto-lock during call
+                UIApplication.shared.isIdleTimerDisabled = true
+
+                // Enter call mode (persistent audio session for background)
+                do {
+                    try voiceService.enterCallMode()
+                } catch {
+                    errorMessage = "Failed to start audio: \(error.localizedDescription)"
+                    return
+                }
+
+                // Set up audio interruption handling
+                setupInterruptionHandling()
+
+                // Set up Now Playing info for lock screen
+                setupNowPlaying()
+
                 // Start call timer on main runloop so it fires reliably
                 callTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
                     callDuration += 1
+                    updateNowPlayingTime()
                 }
+
                 startListening()
             }
         }
@@ -237,7 +259,8 @@ struct PhoneCallView: View {
         }
 
         do {
-            try voiceService.startRecording()
+            // In call mode, skip local STT (use server-side STT for background compatibility)
+            try voiceService.startRecording(useLocalSTT: false)
             callPhase = .listening
             errorMessage = nil
 
@@ -274,9 +297,10 @@ struct PhoneCallView: View {
     private func processRecording() {
         silenceTimer?.cancel()
 
-        guard let audioURL = voiceService.stopRecording(),
+        // Use pauseRecording (keeps engine alive for background mode)
+        guard let audioURL = voiceService.pauseRecording(),
               let audioData = try? Data(contentsOf: audioURL) else {
-            startListening() // Restart if no data
+            startListening()
             return
         }
 
@@ -287,12 +311,10 @@ struct PhoneCallView: View {
             return
         }
 
-        let transcript = voiceService.transcribedText
-        if !transcript.isEmpty {
-            conversationLog.append((role: "user", text: transcript))
-        }
-
         callPhase = .thinking
+
+        // Keep audio engine alive during thinking phase
+        voiceService.startSilentKeepAlive()
 
         Task {
             do {
@@ -304,6 +326,7 @@ struct PhoneCallView: View {
                     chatId: chatId,
                     voiceMode: true,
                     tts: "doubao",
+                    stt: "doubao",
                     language: "zh"
                 )
 
@@ -317,7 +340,7 @@ struct PhoneCallView: View {
                     await playAudio(data: audio)
                 } else {
                     // No audio — go back to listening
-                    startListening()
+                    await MainActor.run { startListening() }
                 }
             } catch {
                 await MainActor.run {
@@ -326,9 +349,7 @@ struct PhoneCallView: View {
                 }
                 // Retry after delay
                 try? await Task.sleep(for: .seconds(2))
-                await MainActor.run {
-                    startListening()
-                }
+                await MainActor.run { startListening() }
             }
         }
     }
@@ -336,12 +357,8 @@ struct PhoneCallView: View {
     private func playAudio(data: Data) async {
         await MainActor.run { callPhase = .playing }
 
-        // Use AVAudioSession for playback
+        // Audio session already active from call mode — just play
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
-            try session.setActive(true)
-
             let player = try AVAudioPlayer(data: data)
             await MainActor.run { audioPlayer = player }
             player.play()
@@ -354,10 +371,8 @@ struct PhoneCallView: View {
             print("[Call] Playback error: \(error)")
         }
 
-        // Auto-cycle back to listening
-        await MainActor.run {
-            startListening()
-        }
+        // Auto-cycle back to listening (no gap!)
+        await MainActor.run { startListening() }
     }
 
     private func endCall() {
@@ -371,9 +386,84 @@ struct PhoneCallView: View {
         callTimer = nil
         audioPlayer?.stop()
         audioPlayer = nil
-        _ = voiceService.stopRecording()
+
+        // Exit call mode (fully releases audio session)
+        voiceService.exitCallMode()
         voiceService.cleanupRecording()
 
-        try? AVAudioSession.sharedInstance().setActive(false)
+        // Re-enable auto-lock
+        UIApplication.shared.isIdleTimerDisabled = false
+
+        // Clear Now Playing
+        clearNowPlaying()
+
+        // Remove interruption observer
+        if let observer = interruptionObserver {
+            NotificationCenter.default.removeObserver(observer)
+            interruptionObserver = nil
+        }
+    }
+
+    // MARK: - Audio Interruption Handling
+
+    private func setupInterruptionHandling() {
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { notification in
+            guard let info = notification.userInfo,
+                  let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+
+            switch type {
+            case .began:
+                // Phone call or Siri interrupted — pause gracefully
+                silenceTimer?.cancel()
+                callPhase = .idle
+            case .ended:
+                // Interruption ended — resume if possible
+                if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
+                    let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                    if options.contains(.shouldResume) {
+                        try? voiceService.enterCallMode()
+                        startListening()
+                    }
+                }
+            @unknown default:
+                break
+            }
+        }
+    }
+
+    // MARK: - Now Playing (Lock Screen Controls)
+
+    private func setupNowPlaying() {
+        let center = MPNowPlayingInfoCenter.default()
+        center.nowPlayingInfo = [
+            MPMediaItemPropertyTitle: "MetaBot Call",
+            MPMediaItemPropertyArtist: botName,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: 0,
+            MPNowPlayingInfoPropertyPlaybackRate: 1.0,
+        ]
+
+        // Handle remote command: pause = end call
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.pauseCommand.addTarget { [self] _ in
+            endCall()
+            return .success
+        }
+        commandCenter.playCommand.isEnabled = false
+    }
+
+    private func updateNowPlayingTime() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo?[MPNowPlayingInfoPropertyElapsedPlaybackTime] = callDuration
+    }
+
+    private func clearNowPlaying() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.pauseCommand.removeTarget(nil)
     }
 }

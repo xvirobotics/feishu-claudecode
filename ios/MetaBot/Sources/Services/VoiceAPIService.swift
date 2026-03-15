@@ -21,6 +21,7 @@ struct VoiceAPIService {
         chatId: String,
         voiceMode: Bool = true,
         tts: String = "doubao",
+        stt: String = "doubao",
         language: String = "zh"
     ) async throws -> VoiceResponse {
         var components = URLComponents(string: "\(serverURL)/api/voice")!
@@ -29,6 +30,7 @@ struct VoiceAPIService {
             URLQueryItem(name: "chatId", value: chatId),
             URLQueryItem(name: "voiceMode", value: voiceMode ? "true" : "false"),
             URLQueryItem(name: "tts", value: tts),
+            URLQueryItem(name: "stt", value: stt),
             URLQueryItem(name: "language", value: language),
         ]
 

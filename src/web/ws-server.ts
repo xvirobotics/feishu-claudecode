@@ -9,6 +9,7 @@ import type { CardState, PendingQuestion } from '../types.js';
 import type { PeerManager } from '../api/peer-manager.js';
 import { ChatSubscriptionManager } from './chat-subscriptions.js';
 import { GroupManager, type ChatGroup } from './group-manager.js';
+import type { PushService } from '../api/push-service.js';
 
 // ─── Client → Server messages ──────────────────────────────────────────────
 
@@ -75,6 +76,7 @@ export function setupWebSocketServer(
   logger: Logger,
   secret?: string,
   peerManager?: PeerManager,
+  pushService?: PushService,
 ): WebSocketHandle {
   const wsLogger = logger.child({ module: 'ws' });
 
@@ -164,7 +166,7 @@ export function setupWebSocketServer(
         case 'chat':
           chatBotMap.set(msg.chatId, msg.botName);
           subscriptions.subscribe(msg.chatId, ws);
-          handleChat(ws, msg, registry, peerManager, pendingAnswers, wsLogger).catch((err) => {
+          handleChat(ws, msg, registry, peerManager, pendingAnswers, wsLogger, pushService).catch((err) => {
             wsLogger.error({ err, chatId: msg.chatId }, 'WS chat handler error');
             sendMessage(ws, { type: 'error', chatId: msg.chatId, messageId: msg.messageId, error: err.message || 'Internal error' });
           });
@@ -276,6 +278,7 @@ async function handleChat(
   peerManager: PeerManager | undefined,
   pendingAnswers: Map<string, { resolve: (answer: string) => void; reject: (err: Error) => void }>,
   logger: Logger,
+  pushService?: PushService,
 ): Promise<void> {
   const { botName, chatId, text, messageId: clientMessageId } = msg;
 
@@ -315,6 +318,12 @@ async function handleChat(
         const msgId = clientMessageId || bridgeMessageId;
         if (final) {
           sendMessage(ws, { type: 'complete', chatId, messageId: msgId, state });
+          // Send push notification if configured (non-blocking)
+          if (pushService?.isConfigured()) {
+            pushService.notifyTaskComplete(chatId, state, botName).catch((err: unknown) => {
+              logger.warn({ err, chatId }, 'Push notification failed');
+            });
+          }
         } else {
           sendMessage(ws, { type: 'state', chatId, messageId: msgId, state });
         }

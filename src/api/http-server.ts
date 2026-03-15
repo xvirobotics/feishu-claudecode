@@ -18,6 +18,8 @@ import type { PeerManager } from './peer-manager.js';
 import { handleVoiceRequest } from './voice-handler.js';
 import { setupWebSocketServer, serveStaticFiles, type WebSocketHandle } from '../web/ws-server.js';
 import type { TwilioHandler } from '../twilio/twilio-handler.js';
+import type { PushService } from './push-service.js';
+import type { DeviceStore } from './device-store.js';
 
 interface ApiServerOptions {
   port: number;
@@ -32,6 +34,8 @@ interface ApiServerOptions {
   memoryServerUrl?: string;
   memoryAuthToken?: string;
   twilioHandler?: TwilioHandler;
+  pushService?: PushService;
+  deviceStore?: DeviceStore;
 }
 
 interface JsonBody {
@@ -100,7 +104,7 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, twilioHandler } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, twilioHandler, pushService, deviceStore } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   // Will be set after WebSocket server is initialized
@@ -347,6 +351,41 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           scheduledTasks: scheduler.taskCount(),
           recurringTasks: scheduler.recurringTaskCount(),
         });
+        return;
+      }
+
+      // Route: POST /api/devices/register — register device for push notifications
+      if (method === 'POST' && url === '/api/devices/register') {
+        if (!deviceStore) {
+          jsonResponse(res, 400, { error: 'Push notifications not configured. Set APNS_KEY_PATH, APNS_KEY_ID, APNS_TEAM_ID.' });
+          return;
+        }
+        const body = await parseJsonBody(req);
+        const deviceToken = body.deviceToken as string;
+        const chatId = body.chatId as string;
+        if (!deviceToken || !chatId) {
+          jsonResponse(res, 400, { error: 'Missing required fields: deviceToken, chatId' });
+          return;
+        }
+        deviceStore.register(chatId, deviceToken);
+        jsonResponse(res, 200, { registered: true });
+        return;
+      }
+
+      // Route: DELETE /api/devices/register — unregister device from push notifications
+      if (method === 'DELETE' && url === '/api/devices/register') {
+        if (!deviceStore) {
+          jsonResponse(res, 400, { error: 'Push notifications not configured.' });
+          return;
+        }
+        const body = await parseJsonBody(req);
+        const deviceToken = body.deviceToken as string;
+        if (!deviceToken) {
+          jsonResponse(res, 400, { error: 'Missing required field: deviceToken' });
+          return;
+        }
+        deviceStore.unregister(deviceToken);
+        jsonResponse(res, 200, { unregistered: true });
         return;
       }
 
@@ -1045,7 +1084,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   });
 
   // Set up WebSocket server for Web UI streaming
-  ws.handle = setupWebSocketServer(server, registry, logger, secret, peerManager);
+  ws.handle = setupWebSocketServer(server, registry, logger, secret, peerManager, pushService);
 
   server.listen(port, host, () => {
     logger.info({ host, port }, 'API server started');
