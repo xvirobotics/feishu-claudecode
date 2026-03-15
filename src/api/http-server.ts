@@ -26,6 +26,8 @@ import { getTeamStatus } from './team-status.js';
 import { CircuitBreaker } from './circuit-breaker.js';
 import { BudgetManager } from './budget-manager.js';
 import { TeamManager } from './team-manager.js';
+import { VoiceMeetingService } from './voice-meeting.js';
+import { VoiceIdentityStore } from './voice-identity.js';
 
 interface ApiServerOptions {
   port: number;
@@ -120,6 +122,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   const circuitBreaker = options.circuitBreaker ?? new CircuitBreaker(logger);
   const budgetManager = options.budgetManager ?? new BudgetManager(logger);
   const teamManager = options.teamManager ?? new TeamManager(logger);
+  const meetingService = new VoiceMeetingService(registry, logger);
+  const voiceIdentityStore = new VoiceIdentityStore(logger);
 
   // Will be set after WebSocket server is initialized
   const ws: { handle?: WebSocketHandle } = {};
@@ -1211,6 +1215,92 @@ export function startApiServer(options: ApiServerOptions): http.Server {
       if (method === 'DELETE' && url.match(/^\/api\/teams\/[^/]+$/)) {
         const id = decodeURIComponent(url.split('/')[3]);
         const deleted = teamManager.delete(id);
+        jsonResponse(res, deleted ? 200 : 404, { deleted });
+        return;
+      }
+
+      // Route: POST /api/meetings
+      if (method === 'POST' && url === '/api/meetings') {
+        const body = await parseJsonBody(req);
+        const title = (body.title as string) || 'Team Meeting';
+        const chatId = (body.chatId as string) || 'meeting-default';
+        const participants = body.participants as Array<{ botName: string; prompt: string }>;
+
+        if (!participants || !Array.isArray(participants) || participants.length === 0) {
+          jsonResponse(res, 400, { error: 'Missing required field: participants (array of {botName, prompt})' });
+          return;
+        }
+
+        // Start meeting asynchronously
+        const meetingPromise = meetingService.startMeeting({
+          title,
+          chatId,
+          initiatedBy: 'api',
+          participants,
+        });
+
+        // If client wants async, return immediately
+        if (body.async === true) {
+          meetingPromise.catch((err) => logger.error({ err }, 'Meeting failed'));
+          const tempId = `meeting-${Date.now()}`;
+          jsonResponse(res, 202, { message: 'Meeting started', meetingId: tempId });
+          return;
+        }
+
+        // Otherwise wait for completion
+        const meeting = await meetingPromise;
+        jsonResponse(res, 200, meeting);
+        return;
+      }
+
+      // Route: GET /api/meetings
+      if (method === 'GET' && url === '/api/meetings') {
+        jsonResponse(res, 200, { meetings: meetingService.listMeetings() });
+        return;
+      }
+
+      // Route: GET /api/meetings/:id
+      if (method === 'GET' && url.match(/^\/api\/meetings\/[^/]+$/)) {
+        const id = decodeURIComponent(url.split('/')[3]);
+        const meeting = meetingService.getMeeting(id);
+        if (!meeting) {
+          jsonResponse(res, 404, { error: 'Meeting not found' });
+          return;
+        }
+        jsonResponse(res, 200, meeting);
+        return;
+      }
+
+      // Route: GET /api/voice-identities
+      if (method === 'GET' && url === '/api/voice-identities') {
+        jsonResponse(res, 200, { identities: voiceIdentityStore.list() });
+        return;
+      }
+
+      // Route: POST /api/voice-identities
+      if (method === 'POST' && url === '/api/voice-identities') {
+        const body = await parseJsonBody(req);
+        const id = (body.id as string) || `voice-${Date.now()}`;
+        const name = body.name as string;
+        if (!name) {
+          jsonResponse(res, 400, { error: 'Missing required field: name' });
+          return;
+        }
+        const identity = voiceIdentityStore.register({
+          id,
+          name,
+          phone: body.phone as string | undefined,
+          defaultBotTeam: body.defaultBotTeam as string[] | undefined,
+          permissions: body.permissions as string[] | undefined,
+        });
+        jsonResponse(res, 201, identity);
+        return;
+      }
+
+      // Route: DELETE /api/voice-identities/:id
+      if (method === 'DELETE' && url.match(/^\/api\/voice-identities\/[^/]+$/)) {
+        const id = decodeURIComponent(url.split('/')[3]);
+        const deleted = voiceIdentityStore.delete(id);
         jsonResponse(res, deleted ? 200 : 404, { deleted });
         return;
       }

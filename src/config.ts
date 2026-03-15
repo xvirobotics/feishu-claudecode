@@ -11,6 +11,7 @@ export interface BotConfigBase {
   icon?: string;
   maxConcurrentTasks?: number;
   budgetLimitDaily?: number;
+  ttsVoice?: string;
   claude: {
     defaultWorkingDirectory: string;
     maxTurns: number | undefined;
@@ -98,6 +99,7 @@ export interface FeishuBotJsonEntry {
   icon?: string;
   maxConcurrentTasks?: number;
   budgetLimitDaily?: number;
+  ttsVoice?: string;
   feishuAppId: string;
   feishuAppSecret: string;
   defaultWorkingDirectory: string;
@@ -116,6 +118,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.icon ? { icon: entry.icon } : {}),
     ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
+    ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     feishu: {
       appId: entry.feishuAppId,
       appSecret: entry.feishuAppSecret,
@@ -133,6 +136,7 @@ export interface TelegramBotJsonEntry {
   icon?: string;
   maxConcurrentTasks?: number;
   budgetLimitDaily?: number;
+  ttsVoice?: string;
   telegramBotToken: string;
   defaultWorkingDirectory: string;
   maxTurns?: number;
@@ -150,6 +154,7 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
     ...(entry.icon ? { icon: entry.icon } : {}),
     ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
+    ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     telegram: {
       botToken: entry.telegramBotToken,
     },
@@ -166,6 +171,7 @@ export interface WebBotJsonEntry {
   icon?: string;
   maxConcurrentTasks?: number;
   budgetLimitDaily?: number;
+  ttsVoice?: string;
   defaultWorkingDirectory: string;
   maxTurns?: number;
   maxBudgetUsd?: number;
@@ -182,6 +188,7 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
     ...(entry.icon ? { icon: entry.icon } : {}),
     ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
+    ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     claude: buildClaudeConfig(entry),
   };
 }

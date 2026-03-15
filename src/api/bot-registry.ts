@@ -21,6 +21,7 @@ export interface BotInfo {
   icon?: string;
   platform: string;
   workingDirectory: string;
+  ttsVoice?: string;
   /** Set when the bot comes from a peer instance. */
   peerUrl?: string;
   /** Human-readable peer identifier. */
@@ -82,6 +83,7 @@ export class BotRegistry {
       ...(b.config.icon ? { icon: b.config.icon } : {}),
       platform: b.platform,
       workingDirectory: b.config.claude.defaultWorkingDirectory,
+      ...(b.config.ttsVoice ? { ttsVoice: b.config.ttsVoice } : {}),
     }));
   }
 }

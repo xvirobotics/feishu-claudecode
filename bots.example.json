@@ -7,6 +7,7 @@
       "icon": "🎨",
       "maxConcurrentTasks": 3,
       "budgetLimitDaily": 5.0,
+      "ttsVoice": "zh_male_rap_mars_bigtts",
       "feishuAppId": "cli_xxx",
       "feishuAppSecret": "secret1",
       "defaultWorkingDirectory": "/home/user/project-alpha"
