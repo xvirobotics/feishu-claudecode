@@ -715,6 +715,21 @@
   border-radius: 10px;
 }
 
+.callSubtitle {
+  max-width: 280px;
+  min-height: 24px;
+  margin-top: 8px;
+  padding: 6px 14px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border-radius: 12px;
+  text-align: center;
+  opacity: 0.9;
+  transition: opacity 0.3s;
+}
+
 .callCenterBtn {
   width: 88px;
   height: 88px;

@@ -1,7 +1,7 @@
 export { MessageList } from './MessageList';
 export { InputBar, type PendingFile } from './InputBar';
 export { CallOverlayUI, useCallMode } from './CallOverlay';
-export { RtcCallOverlayUI, useRtcCallMode } from './RtcCallOverlay';
+export { RtcCallOverlayUI, useRtcCallMode, type IncomingVoiceCall } from './RtcCallOverlay';
 export { useFilePanel, FilePanelToggle, FilePanelContent, MobileFileOverlay } from './FilePanel';
 export { EmptyState } from './EmptyState';
 export { AssistantMessageView } from './AssistantMessage';

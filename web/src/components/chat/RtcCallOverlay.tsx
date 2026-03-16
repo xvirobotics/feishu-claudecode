@@ -24,6 +24,25 @@ interface RtcSessionInfo {
   aiUserId: string;
 }
 
+interface TranscriptEntry {
+  speaker: 'user' | 'ai';
+  text: string;
+  timestamp: number;
+}
+
+/** Incoming call info pushed from server via WebSocket */
+export interface IncomingVoiceCall {
+  sessionId: string;
+  roomId: string;
+  token: string;
+  appId: string;
+  userId: string;
+  aiUserId: string;
+  chatId: string;
+  botName: string;
+  prompt?: string;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RtcEngine = any;
 
@@ -37,7 +56,46 @@ async function loadRtcSdk() {
   return rtcModule;
 }
 
-export function useRtcCallMode({ activeBotName, token }: RtcCallOverlayProps) {
+/* ---- TLV Binary Parser for RTC AIGC subtitle messages ---- */
+
+interface SubtitleData {
+  type: string;
+  data: Array<{
+    text: string;
+    userId: string;
+    sequence: number;
+    definite: boolean;
+    paragraph: boolean;
+    roundId?: number;
+    language?: string;
+  }>;
+}
+
+function parseTlv(buffer: ArrayBuffer): { magic: string; payload: string } | null {
+  if (buffer.byteLength < 8) return null;
+  const view = new DataView(buffer);
+  const magic = String.fromCharCode(
+    view.getUint8(0), view.getUint8(1), view.getUint8(2), view.getUint8(3),
+  );
+  const length = view.getUint32(4, false); // big-endian
+  if (buffer.byteLength < 8 + length) return null;
+  const payload = new TextDecoder().decode(new Uint8Array(buffer, 8, length));
+  return { magic, payload };
+}
+
+function parseSubtitle(buffer: ArrayBuffer): SubtitleData | null {
+  const tlv = parseTlv(buffer);
+  if (!tlv || tlv.magic !== 'subv') return null;
+  try {
+    return JSON.parse(tlv.payload);
+  } catch {
+    return null;
+  }
+}
+
+/* ---- Hook ---- */
+
+export function useRtcCallMode({ activeBotName, activeSessionId, token }: RtcCallOverlayProps) {
   const [callActive, setCallActive] = useState(false);
   const [callPhase, setCallPhase] = useState<RtcCallPhase>('connecting');
   const [callStartTime, setCallStartTime] = useState(0);
@@ -45,10 +103,12 @@ export function useRtcCallMode({ activeBotName, token }: RtcCallOverlayProps) {
   const [callStatusText, setCallStatusText] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [subtitleText, setSubtitleText] = useState('');
 
   const engineRef = useRef<RtcEngine>(null);
   const sessionInfoRef = useRef<RtcSessionInfo | null>(null);
   const callActiveRef = useRef(false);
+  const transcriptRef = useRef<TranscriptEntry[]>([]);
 
   // Call duration timer
   useEffect(() => {
@@ -84,7 +144,121 @@ export function useRtcCallMode({ activeBotName, token }: RtcCallOverlayProps) {
     }
   }
 
-  /** Start an RTC call */
+  /** Submit collected transcript to server */
+  async function submitTranscript(info: RtcSessionInfo) {
+    const transcript = transcriptRef.current;
+    if (transcript.length === 0) return;
+    try {
+      await fetch('/api/rtc/transcript', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          sessionId: info.sessionId,
+          transcript,
+        }),
+      });
+    } catch (err) {
+      console.error('Failed to submit transcript:', err);
+    }
+  }
+
+  /** Set up TLV subtitle listener on the RTC engine */
+  function setupSubtitleListener(engine: RtcEngine, aiUserId: string, VERTC: any) {
+    engine.on(VERTC.events.onRoomBinaryMessageReceived, (event: { userId: string; message: ArrayBuffer }) => {
+      const subtitle = parseSubtitle(event.message);
+      if (!subtitle || subtitle.type !== 'subtitle') return;
+
+      for (const entry of subtitle.data) {
+        // Show live subtitle
+        if (entry.text) {
+          setSubtitleText(entry.text);
+        }
+        // Only collect complete sentences into transcript
+        if (entry.paragraph && entry.definite && entry.text.trim()) {
+          transcriptRef.current.push({
+            speaker: entry.userId === aiUserId ? 'ai' : 'user',
+            text: entry.text.trim(),
+            timestamp: Date.now(),
+          });
+        }
+      }
+    });
+  }
+
+  /** Join an existing RTC room (for incoming calls from agent) */
+  const joinCall = useCallback(async (incoming: IncomingVoiceCall) => {
+    callActiveRef.current = true;
+    setCallActive(true);
+    setCallPhase('connecting');
+    setCallStatusText('Joining call...');
+    setErrorMessage('');
+    setIsMuted(false);
+    setSubtitleText('');
+    transcriptRef.current = [];
+
+    try {
+      const sdk = await loadRtcSdk();
+      const VERTC = sdk.default;
+
+      const info: RtcSessionInfo = {
+        sessionId: incoming.sessionId,
+        roomId: incoming.roomId,
+        taskId: '',
+        token: incoming.token,
+        appId: incoming.appId,
+        userId: incoming.userId,
+        aiUserId: incoming.aiUserId,
+      };
+      sessionInfoRef.current = info;
+
+      const engine = VERTC.createEngine(info.appId);
+      engineRef.current = engine;
+
+      engine.on(VERTC.events.onUserJoined, (e: any) => {
+        if (e.userInfo?.userId === info.aiUserId) setCallStatusText('AI connected');
+      });
+      engine.on(VERTC.events.onUserLeave, (e: any) => {
+        if (e.userInfo?.userId === info.aiUserId) setCallStatusText('AI disconnected');
+      });
+      engine.on(VERTC.events.onError, (e: any) => console.error('RTC error:', e));
+
+      // Set up subtitle/transcript collection
+      setupSubtitleListener(engine, info.aiUserId, VERTC);
+
+      await engine.joinRoom(
+        info.token, info.roomId,
+        {
+          userId: info.userId,
+          extraInfo: JSON.stringify({ call_scene: 'RTC-AIGC', user_name: info.userId, user_id: info.userId }),
+        },
+        {
+          isAutoPublish: true,
+          isAutoSubscribeAudio: true,
+          isAutoSubscribeVideo: false,
+          roomProfileType: VERTC.RoomProfileType?.chat ?? 0,
+        },
+      );
+      await engine.startAudioCapture();
+      // Explicitly publish audio as belt-and-suspenders (official demo does this)
+      await engine.publishStream(VERTC.MediaType?.AUDIO ?? 1);
+
+      setCallPhase('connected');
+      setCallStartTime(Date.now());
+      setCallElapsed('0:00');
+      setCallStatusText('Connected');
+    } catch (err: any) {
+      console.error('RTC join failed:', err);
+      setCallPhase('error');
+      setErrorMessage(err.message || 'Failed to join call');
+      setCallStatusText('Error');
+      await doCleanup();
+    }
+  }, [token]);
+
+  /** Start an RTC call (user-initiated) */
   const startCall = useCallback(async () => {
     callActiveRef.current = true;
     setCallActive(true);
@@ -92,16 +266,20 @@ export function useRtcCallMode({ activeBotName, token }: RtcCallOverlayProps) {
     setCallStatusText('Connecting...');
     setErrorMessage('');
     setIsMuted(false);
+    setSubtitleText('');
+    transcriptRef.current = [];
 
     try {
-      // 1. Load RTC SDK lazily
       const sdk = await loadRtcSdk();
       const VERTC = sdk.default;
 
-      // 2. Call server to create RTC room + AI agent
+      // Call server to create RTC room + AI agent
       const params: Record<string, string> = {};
       if (activeBotName) params.systemPrompt = `You are ${activeBotName}, a helpful AI assistant. Respond in the same language the user speaks. Be concise and conversational.`;
       params.welcomeMessage = '你好，有什么可以帮你的吗？';
+      // Pass chatId so transcript can be injected back into Claude session
+      if (activeSessionId) params.chatId = activeSessionId;
+      if (activeBotName) params.botName = activeBotName;
 
       const res = await fetch('/api/rtc/start', {
         method: 'POST',
@@ -120,35 +298,36 @@ export function useRtcCallMode({ activeBotName, token }: RtcCallOverlayProps) {
       const info: RtcSessionInfo = await res.json();
       sessionInfoRef.current = info;
 
-      // 3. Create RTC engine and join room
       const engine = VERTC.createEngine(info.appId);
       engineRef.current = engine;
 
-      // Listen for remote user events
       engine.on(VERTC.events.onUserJoined, (e: any) => {
-        if (e.userInfo?.userId === info.aiUserId) {
-          setCallStatusText('AI connected');
-        }
+        if (e.userInfo?.userId === info.aiUserId) setCallStatusText('AI connected');
       });
       engine.on(VERTC.events.onUserLeave, (e: any) => {
-        if (e.userInfo?.userId === info.aiUserId) {
-          setCallStatusText('AI disconnected');
-        }
+        if (e.userInfo?.userId === info.aiUserId) setCallStatusText('AI disconnected');
       });
-      engine.on(VERTC.events.onError, (e: any) => {
-        console.error('RTC error:', e);
-      });
+      engine.on(VERTC.events.onError, (e: any) => console.error('RTC error:', e));
 
-      // Join the room (audio only)
+      // Set up subtitle/transcript collection
+      setupSubtitleListener(engine, info.aiUserId, VERTC);
+
       await engine.joinRoom(
-        info.token,
-        info.roomId,
-        { userId: info.userId },
-        { isAutoPublish: true, isAutoSubscribeAudio: true, isAutoSubscribeVideo: false },
+        info.token, info.roomId,
+        {
+          userId: info.userId,
+          extraInfo: JSON.stringify({ call_scene: 'RTC-AIGC', user_name: info.userId, user_id: info.userId }),
+        },
+        {
+          isAutoPublish: true,
+          isAutoSubscribeAudio: true,
+          isAutoSubscribeVideo: false,
+          roomProfileType: VERTC.RoomProfileType?.chat ?? 0,
+        },
       );
-
-      // Start microphone capture
       await engine.startAudioCapture();
+      // Explicitly publish audio as belt-and-suspenders (official demo does this)
+      await engine.publishStream(VERTC.MediaType?.AUDIO ?? 1);
 
       setCallPhase('connected');
       setCallStartTime(Date.now());
@@ -161,7 +340,7 @@ export function useRtcCallMode({ activeBotName, token }: RtcCallOverlayProps) {
       setCallStatusText('Error');
       await doCleanup();
     }
-  }, [activeBotName, token]);
+  }, [activeBotName, activeSessionId, token]);
 
   /** End the RTC call */
   const endCall = useCallback(async () => {
@@ -169,12 +348,15 @@ export function useRtcCallMode({ activeBotName, token }: RtcCallOverlayProps) {
     setCallActive(false);
     setCallPhase('ended');
     setCallStatusText('');
+    setSubtitleText('');
+
+    const info = sessionInfoRef.current;
 
     await doCleanup();
 
-    // Tell server to stop the voice chat
-    const info = sessionInfoRef.current;
+    // Submit transcript + stop session
     if (info) {
+      await submitTranscript(info);
       try {
         await fetch('/api/rtc/stop', {
           method: 'POST',
@@ -187,27 +369,32 @@ export function useRtcCallMode({ activeBotName, token }: RtcCallOverlayProps) {
       } catch { /* ignore */ }
       sessionInfoRef.current = null;
     }
+    transcriptRef.current = [];
   }, [token]);
 
   /** Toggle mute */
-  const toggleMute = useCallback(() => {
+  const toggleMute = useCallback(async () => {
     const engine = engineRef.current;
     if (!engine) return;
-    if (isMuted) {
-      engine.publishStream(1); // MediaType.AUDIO = 1
-      setIsMuted(false);
-      setCallStatusText('Unmuted');
-    } else {
-      engine.unpublishStream(1);
-      setIsMuted(true);
-      setCallStatusText('Muted');
+    try {
+      if (isMuted) {
+        await engine.startAudioCapture();
+        setIsMuted(false);
+        setCallStatusText('Unmuted');
+      } else {
+        await engine.stopAudioCapture();
+        setIsMuted(true);
+        setCallStatusText('Muted');
+      }
+    } catch (err) {
+      console.error('Toggle mute failed:', err);
     }
   }, [isMuted]);
 
   return {
     callActive, callPhase, callElapsed, callStatusText,
-    isMuted, errorMessage,
-    startCall, endCall, toggleMute,
+    isMuted, errorMessage, subtitleText,
+    startCall, endCall, toggleMute, joinCall,
   };
 }
 
@@ -220,13 +407,14 @@ interface RtcCallOverlayUIProps {
   callStatusText: string;
   isMuted: boolean;
   errorMessage: string;
+  subtitleText?: string;
   onToggleMute: () => void;
   onHangup: () => void;
 }
 
 export function RtcCallOverlayUI({
   activeBotName, callElapsed, callPhase, callStatusText,
-  isMuted, errorMessage, onToggleMute, onHangup,
+  isMuted, errorMessage, subtitleText, onToggleMute, onHangup,
 }: RtcCallOverlayUIProps) {
   return (
     <div className={styles.callOverlay}>
@@ -248,6 +436,11 @@ export function RtcCallOverlayUI({
         >
           <IconMic />
         </button>
+
+        {/* Live subtitle display */}
+        {subtitleText && callPhase === 'connected' && (
+          <div className={styles.callSubtitle}>{subtitleText}</div>
+        )}
 
         <div className={styles.callStatus}>
           {errorMessage || callStatusText}

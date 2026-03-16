@@ -117,6 +117,7 @@ export type WSIncomingMessage =
   | { type: 'group_created'; group: ChatGroup }
   | { type: 'group_deleted'; groupId: string }
   | { type: 'groups_list'; groups: ChatGroup[] }
+  | { type: 'voice_call'; sessionId: string; roomId: string; token: string; appId: string; userId: string; aiUserId: string; chatId: string; botName: string; prompt?: string }
   | { type: 'pong' };
 
 export type WSOutgoingMessage =

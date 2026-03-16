@@ -144,6 +144,10 @@ export interface AppStore {
   teamStatus: TeamStatus | null;
   setTeamStatus: (status: TeamStatus) => void;
 
+  // Incoming voice call
+  incomingVoiceCall: { sessionId: string; roomId: string; token: string; appId: string; userId: string; aiUserId: string; chatId: string; botName: string; prompt?: string } | null;
+  setIncomingVoiceCall: (call: { sessionId: string; roomId: string; token: string; appId: string; userId: string; aiUserId: string; chatId: string; botName: string; prompt?: string } | null) => void;
+
   // Sidebar
   sidebarOpen: boolean;
   toggleSidebar: () => void;
@@ -391,6 +395,12 @@ export const useStore = create<AppStore>((set, get) => ({
   teamStatus: null,
   setTeamStatus(status: TeamStatus) {
     set({ teamStatus: status });
+  },
+
+  /* ---- Incoming voice call ---- */
+  incomingVoiceCall: null,
+  setIncomingVoiceCall(call) {
+    set({ incomingVoiceCall: call });
   },
 
   /* ---- Sidebar ---- */

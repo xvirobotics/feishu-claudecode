@@ -136,7 +136,54 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
   metrics|m)
     curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/metrics"
     ;;
-  # --- Phone Call ---
+  # --- RTC Voice Call ---
+  voice|v)
+    subcmd="${1:-help}"; shift 2>/dev/null || true
+    case "$subcmd" in
+      call|c)
+        bot="${1:-}" chat="${2:-}"; shift 2 2>/dev/null || true
+        prompt="$*"
+        if [[ -z "${bot:-}" || -z "${chat:-}" ]]; then
+          echo "Usage: mb voice call <botName> <chatId> [prompt]"
+          echo "  Initiates an RTC voice call. Notifies the web UI user,"
+          echo "  waits for the call to end, and returns the transcript."
+          echo ""
+          echo "  Example: mb voice call metabot oc_xxx 'Let me explain the results'"
+          exit 1
+        fi
+        echo "Starting voice call... (waiting for user to join and call to end)"
+        python3 -c "
+import json, sys
+p = {'botName': sys.argv[1], 'chatId': sys.argv[2]}
+if sys.argv[3]: p['prompt'] = sys.argv[3]
+print(json.dumps(p))
+" "$bot" "$chat" "${prompt:-}" | \
+        curl -s -X POST "$METABOT_URL/api/rtc/voice?wait=true" \
+          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+          --max-time 660 \
+          -d @- | _json
+        ;;
+      transcript|t)
+        if [[ -z "${1:-}" ]]; then echo "Usage: mb voice transcript <sessionId>"; exit 1; fi
+        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/transcript?sessionId=$1" | _json
+        ;;
+      list|ls)
+        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/sessions" | _json
+        ;;
+      config)
+        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/config" | _json
+        ;;
+      *)
+        echo "mb voice - RTC voice calls (real-time Doubao AI)"
+        echo ""
+        echo "  mb voice call <bot> <chatId> [prompt]  - Start voice call, wait for transcript"
+        echo "  mb voice transcript <sessionId>         - Get call transcript"
+        echo "  mb voice list                           - List active voice sessions"
+        echo "  mb voice config                         - Check RTC configuration"
+        ;;
+    esac
+    ;;
+  # --- Phone Call (legacy) ---
   call|c)
     phone="${1:-}"
     shift 2>/dev/null || true
@@ -366,11 +413,14 @@ print(json.dumps(body))
     echo "    mb schedule resume <id>          - Resume a paused task"
     echo "    mb schedule cancel <id>          - Cancel a scheduled task"
     echo ""
-    echo "  Phone Call:"
+    echo "  Voice Call (RTC):"
+    echo "    mb voice call <bot> <chatId> [prompt] - Start RTC voice call + wait for transcript"
+    echo "    mb voice transcript <sessionId>  - Get call transcript"
+    echo "    mb voice list                    - List active voice sessions"
+    echo "    mb voice config                  - Check RTC configuration"
+    echo ""
+    echo "  Phone Call (legacy):"
     echo "    mb call <phone> [message]        - Initiate outbound phone call"
-    echo "    mb call <phone> -b <bot>         - Specify which bot to use"
-    echo "    mb call <phone> --chat <chatId>  - Reuse existing session context"
-    echo "    mb call                          - Call TWILIO_CALLBACK_NUMBER"
     echo ""
     echo "  Monitoring:"
     echo "    mb stats                         - Cost & usage stats (per-bot, per-user)"

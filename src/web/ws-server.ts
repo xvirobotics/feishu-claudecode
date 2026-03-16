@@ -65,6 +65,10 @@ export interface WebSocketHandle {
   broadcastBotList: () => void;
   /** Chat subscription manager for pub/sub streaming. */
   subscriptions: ChatSubscriptionManager;
+  /** Broadcast a message to all connected clients. */
+  broadcastAll: (msg: Record<string, unknown>) => void;
+  /** Number of connected clients. */
+  clientCount: () => number;
 }
 
 /**
@@ -264,6 +268,17 @@ export function setupWebSocketServer(
           ws.send(msg);
         }
       }
+    },
+    broadcastAll(msg: Record<string, unknown>) {
+      const data = JSON.stringify(msg);
+      for (const ws of connectedClients) {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
+      }
+    },
+    clientCount() {
+      return connectedClients.size;
     },
     subscriptions,
   };

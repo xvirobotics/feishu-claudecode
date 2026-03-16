@@ -21,6 +21,7 @@ export function useWebSocket() {
   const addGroup = useStore((s) => s.addGroup);
   const removeGroup = useStore((s) => s.removeGroup);
   const setGroups = useStore((s) => s.setGroups);
+  const setIncomingVoiceCall = useStore((s) => s.setIncomingVoiceCall);
 
   const wsRef = useRef<WebSocket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -160,6 +161,20 @@ export function useWebSocket() {
             setGroups(msg.groups);
             break;
 
+          case 'voice_call':
+            setIncomingVoiceCall({
+              sessionId: msg.sessionId,
+              roomId: msg.roomId,
+              token: msg.token,
+              appId: msg.appId,
+              userId: msg.userId,
+              aiUserId: msg.aiUserId,
+              chatId: msg.chatId,
+              botName: msg.botName,
+              prompt: msg.prompt,
+            });
+            break;
+
           case 'pong':
             // heartbeat ack — nothing to do
             break;
@@ -189,7 +204,7 @@ export function useWebSocket() {
         if (mountedRef.current) connect();
       }, delay);
     };
-  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups]);
+  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall]);
 
   const send = useCallback(
     (msg: WSOutgoingMessage) => {

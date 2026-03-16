@@ -26,6 +26,7 @@ import {
   generateId,
   fileCategory,
   formatFileSize,
+  type IncomingVoiceCall,
 } from './chat';
 import styles from './ChatView.module.css';
 
@@ -114,6 +115,18 @@ export function ChatView() {
 
   // ── RTC Call mode ──
   const rtcCall = useRtcCallMode({ activeBotName, activeSessionId, token });
+
+  // ── Incoming voice call from agent ──
+  const incomingVoiceCall = useStore((s) => s.incomingVoiceCall);
+  const setIncomingVoiceCall = useStore((s) => s.setIncomingVoiceCall);
+
+  useEffect(() => {
+    if (incomingVoiceCall && !rtcCall.callActive) {
+      // Auto-join the incoming call
+      rtcCall.joinCall(incomingVoiceCall as IncomingVoiceCall);
+      setIncomingVoiceCall(null);
+    }
+  }, [incomingVoiceCall, rtcCall.callActive, rtcCall.joinCall, setIncomingVoiceCall]);
 
   // Select active call mode
   const callActive = rtcAvailable ? rtcCall.callActive : httpCall.callActive;
@@ -319,6 +332,7 @@ export function ChatView() {
             callStatusText={rtcCall.callStatusText}
             isMuted={rtcCall.isMuted}
             errorMessage={rtcCall.errorMessage}
+            subtitleText={rtcCall.subtitleText}
             onToggleMute={rtcCall.toggleMute}
             onHangup={endCall}
           />
