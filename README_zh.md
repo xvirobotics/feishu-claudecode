@@ -86,6 +86,12 @@ irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
 metabot update
 ```
 
+**完全卸载** — 移除 MetaBot、CLI 工具、技能和 PM2 进程：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/uninstall.sh | bash
+```
+
 > **Windows 说明：** PowerShell 安装器自动检测 `winget`/`choco`/`scoop` 来安装 Node.js。CLI 工具（`mm`、`mb`、`metabot`、`fd`）通过 `.cmd` 包装器安装，需要 [Git for Windows](https://git-scm.com)（提供 Git Bash）。
 
 <details>
