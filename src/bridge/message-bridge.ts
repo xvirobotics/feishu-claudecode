@@ -23,6 +23,7 @@ const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
 const MAX_QUEUE_SIZE = 5; // max queued messages per chat
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour idle → abort
 const FINAL_CARD_RETRIES = 3;
+const MAX_CONSECUTIVE_AUTO_ANSWERS = 3; // abort after this many unanswered permission prompts in a row
 const FINAL_CARD_BASE_DELAY_MS = 2000;
 const TASK_TIMEOUT_MESSAGE = 'Task timed out (24 hour limit)';
 const IDLE_TIMEOUT_MESSAGE = 'Task aborted: no activity for 1 hour';
@@ -37,6 +38,8 @@ interface RunningTask {
   processor: StreamProcessor;
   rateLimiter: RateLimiter;
   chatId: string;
+  consecutiveAutoAnswers: number;
+  abortReason?: string;
 }
 
 export interface ApiTaskOptions {
@@ -206,11 +209,13 @@ export class MessageBridge {
       answerText = trimmed;
     }
 
+    // Only answer the first question (the one whose options were displayed).
+    // If multiple questions arrived in one AskUserQuestion call, the user
+    // only saw and responded to the first; don't duplicate their answer
+    // across all question headers.
     const answers: Record<string, string> = {};
     if (firstQuestion) {
-      for (const q of pending.questions) {
-        answers[q.header] = answerText;
-      }
+      answers[firstQuestion.header] = answerText;
     }
     const answerJson = JSON.stringify({ answers });
 
@@ -220,6 +225,7 @@ export class MessageBridge {
     }
     task.pendingQuestion = null;
     task.processor.clearPendingQuestion();
+    task.consecutiveAutoAnswers = 0; // user responded — reset loop counter
 
     const sessionId = task.processor.getSessionId() || '';
     task.executionHandle.sendAnswer(pending.toolUseId, sessionId, answerJson);
@@ -317,6 +323,7 @@ export class MessageBridge {
       processor,
       rateLimiter,
       chatId,
+      consecutiveAutoAnswers: 0,
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
@@ -373,6 +380,16 @@ export class MessageBridge {
             this.logger.warn({ chatId }, 'Question timeout, auto-answering');
             const pending = runningTask.pendingQuestion;
             if (pending) {
+              runningTask.consecutiveAutoAnswers++;
+              if (runningTask.consecutiveAutoAnswers >= MAX_CONSECUTIVE_AUTO_ANSWERS) {
+                this.logger.warn({ chatId, count: runningTask.consecutiveAutoAnswers }, 'Permission loop detected, aborting task');
+                runningTask.pendingQuestion = null;
+                processor.clearPendingQuestion();
+                runningTask.abortReason = 'Permission request loop detected: Claude repeatedly asked for permission without user response. Please try again with a more specific instruction.';
+                executionHandle.finish();
+                abortController.abort();
+                return;
+              }
               runningTask.pendingQuestion = null;
               processor.clearPendingQuestion();
               const sid = processor.getSessionId() || '';
@@ -425,7 +442,7 @@ export class MessageBridge {
         } else if (idledOut) {
           lastState = { ...lastState, status: 'error', errorMessage: IDLE_TIMEOUT_MESSAGE };
         } else if (abortController.signal.aborted) {
-          lastState = { ...lastState, status: 'error', errorMessage: 'Task was stopped' };
+          lastState = { ...lastState, status: 'error', errorMessage: runningTask.abortReason || 'Task was stopped' };
         } else {
           this.logger.warn({ chatId }, 'Stream ended without result message, forcing complete state');
           lastState = {
@@ -630,6 +647,7 @@ export class MessageBridge {
       processor,
       rateLimiter,
       chatId,
+      consecutiveAutoAnswers: 0,
     };
     this.runningTasks.set(chatId, runningTask);
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
