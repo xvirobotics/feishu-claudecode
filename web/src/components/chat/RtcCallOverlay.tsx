@@ -12,6 +12,8 @@ interface RtcCallOverlayProps {
   activeBotName: string | null;
   activeSessionId: string | null;
   token: string | null;
+  /** Called with formatted transcript text when a call ends (for injecting into chat) */
+  onTranscript?: (text: string) => void;
 }
 
 interface RtcSessionInfo {
@@ -95,7 +97,7 @@ function parseSubtitle(buffer: ArrayBuffer): SubtitleData | null {
 
 /* ---- Hook ---- */
 
-export function useRtcCallMode({ activeBotName, activeSessionId, token }: RtcCallOverlayProps) {
+export function useRtcCallMode({ activeBotName, activeSessionId, token, onTranscript }: RtcCallOverlayProps) {
   const [callActive, setCallActive] = useState(false);
   const [callPhase, setCallPhase] = useState<RtcCallPhase>('connecting');
   const [callStartTime, setCallStartTime] = useState(0);
@@ -144,10 +146,23 @@ export function useRtcCallMode({ activeBotName, activeSessionId, token }: RtcCal
     }
   }
 
-  /** Submit collected transcript to server */
+  /** Submit collected transcript to server and notify parent for chat injection */
   async function submitTranscript(info: RtcSessionInfo) {
     const transcript = transcriptRef.current;
     if (transcript.length === 0) return;
+
+    // Format transcript text for chat display
+    const transcriptText = transcript
+      .map((e) => `[${e.speaker === 'ai' ? 'AI' : 'User'}]: ${e.text}`)
+      .join('\n');
+
+    // Notify parent to send as chat message (this triggers Claude processing via WebSocket)
+    if (onTranscript && transcriptText) {
+      const chatMsg = `[语音通话记录]\n\n${transcriptText}\n\n请根据以上语音对话内容，判断是否有需要执行的后续任务。如果对话中提到了具体的工作请求，请直接执行。如果只是闲聊，简单确认即可。`;
+      onTranscript(chatMsg);
+    }
+
+    // Also store on server (for API access / long-poll)
     try {
       await fetch('/api/rtc/transcript', {
         method: 'POST',
@@ -274,10 +289,9 @@ export function useRtcCallMode({ activeBotName, activeSessionId, token }: RtcCal
       const VERTC = sdk.default;
 
       // Call server to create RTC room + AI agent
+      // System prompt is built server-side from botName; only pass if custom
       const params: Record<string, string> = {};
-      if (activeBotName) params.systemPrompt = `You are ${activeBotName}, a helpful AI assistant. Respond in the same language the user speaks. Be concise and conversational.`;
       params.welcomeMessage = '你好，有什么可以帮你的吗？';
-      // Pass chatId so transcript can be injected back into Claude session
       if (activeSessionId) params.chatId = activeSessionId;
       if (activeBotName) params.botName = activeBotName;
 

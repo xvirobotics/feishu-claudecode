@@ -19,13 +19,24 @@ export async function handleRtcRoutes(
     }
     try {
       const body = await parseJsonBody(req);
+      const botName = body.botName as string | undefined;
+      const chatId = body.chatId as string | undefined;
+
+      // If botName provided but no systemPrompt, build a bot-specific prompt
+      let systemPrompt = body.systemPrompt as string | undefined;
+      if (!systemPrompt && botName) {
+        systemPrompt = `你是 ${botName}，一个智能 AI 助手。用用户说的语言回答。简洁、自然地对话。`;
+      }
+
       const result = await rtcService.startVoiceChat({
-        systemPrompt: body.systemPrompt as string | undefined,
+        systemPrompt,
         welcomeMessage: body.welcomeMessage as string | undefined,
         llmEndpointId: body.llmEndpointId as string | undefined,
         ttsVoice: body.ttsVoice as string | undefined,
         temperature: body.temperature as number | undefined,
         maxTokens: body.maxTokens as number | undefined,
+        chatId,
+        botName,
       });
       jsonResponse(res, 200, result);
     } catch (err: any) {
@@ -185,26 +196,8 @@ export async function handleRtcRoutes(
         timestamp: e.timestamp,
       })));
 
-      // If this session has a chatId+botName, inject transcript into Claude session
-      const session = rtcService.getSession(sessionId);
-      if (session?.chatId && session?.botName) {
-        const bot = ctx.registry.get(session.botName);
-        if (bot) {
-          const transcriptText = transcript
-            .map((e) => `[${e.speaker === 'ai' ? 'AI' : 'User'}]: ${e.text}`)
-            .join('\n');
-          const injectPrompt = `[Voice Call Transcript — ${new Date().toLocaleString('zh-CN')}]\n\n${transcriptText}\n\nPlease acknowledge this voice conversation and continue with any follow-up actions discussed.`;
-          // Fire-and-forget: inject into Claude session
-          bot.bridge.executeApiTask({
-            prompt: injectPrompt,
-            chatId: session.chatId,
-            userId: 'voice-call',
-            sendCards: true,
-          }).catch((err: any) => {
-            logger.error({ err, sessionId }, 'Failed to inject transcript into Claude session');
-          });
-        }
-      }
+      // Note: transcript injection into Claude session is handled client-side
+      // via WebSocket chat message (onTranscript callback in RtcCallOverlay)
 
       jsonResponse(res, 200, { success: true });
     } catch (err: any) {

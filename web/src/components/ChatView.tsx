@@ -114,7 +114,22 @@ export function ChatView() {
   });
 
   // ── RTC Call mode ──
-  const rtcCall = useRtcCallMode({ activeBotName, activeSessionId, token });
+  const handleRtcTranscript = useCallback((text: string) => {
+    let sessionId = activeSessionId;
+    if (!sessionId) sessionId = createSession(activeBotName || undefined);
+    const userMsgId = generateId();
+    const assistantMsgId = generateId();
+    addMessage(sessionId, { id: userMsgId, type: 'user', text, timestamp: Date.now() });
+    addMessage(sessionId, {
+      id: assistantMsgId, type: 'assistant', text: '',
+      state: { status: 'thinking', userPrompt: text, responseText: '', toolCalls: [] },
+      timestamp: Date.now(),
+    });
+    send({ type: 'chat', botName: activeBotName || '', chatId: sessionId, text, messageId: assistantMsgId });
+    autoScrollRef.current = true;
+  }, [activeSessionId, activeBotName, createSession, addMessage, send]);
+
+  const rtcCall = useRtcCallMode({ activeBotName, activeSessionId, token, onTranscript: handleRtcTranscript });
 
   // ── Incoming voice call from agent ──
   const incomingVoiceCall = useStore((s) => s.incomingVoiceCall);
