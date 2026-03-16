@@ -703,6 +703,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+.callRtcBadge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #fff;
+  background: linear-gradient(135deg, #10b981, #059669);
+  border-radius: 10px;
+}
+
 .callCenterBtn {
   width: 88px;
   height: 88px;

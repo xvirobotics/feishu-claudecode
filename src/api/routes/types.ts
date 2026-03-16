@@ -15,6 +15,7 @@ import type { BudgetManager } from '../budget-manager.js';
 import type { TeamManager } from '../team-manager.js';
 import type { VoiceMeetingService } from '../voice-meeting.js';
 import type { VoiceIdentityStore } from '../voice-identity.js';
+import type { RtcVoiceChatService } from '../rtc-voice-chat.js';
 import type { WebSocketHandle } from '../../web/ws-server.js';
 
 export interface RouteContext {
@@ -36,6 +37,7 @@ export interface RouteContext {
   teamManager: TeamManager;
   meetingService: VoiceMeetingService;
   voiceIdentityStore: VoiceIdentityStore;
+  rtcService?: RtcVoiceChatService;
   ws: { handle?: WebSocketHandle };
 }
 

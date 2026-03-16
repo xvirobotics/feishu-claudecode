@@ -8,6 +8,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@volcengine/rtc": "^4.68.1",
     "docx-preview": "^0.3.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

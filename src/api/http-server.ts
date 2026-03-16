@@ -16,6 +16,7 @@ import { BudgetManager } from './budget-manager.js';
 import { TeamManager } from './team-manager.js';
 import { VoiceMeetingService } from './voice-meeting.js';
 import { VoiceIdentityStore } from './voice-identity.js';
+import { RtcVoiceChatService } from './rtc-voice-chat.js';
 import { metrics } from '../utils/metrics.js';
 import {
   jsonResponse,
@@ -25,6 +26,7 @@ import {
   handleTaskRoutes,
   handleBotRoutes,
   handleSyncRoutes,
+  handleRtcRoutes,
 } from './routes/index.js';
 import type { RouteContext } from './routes/index.js';
 
@@ -63,6 +65,10 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   const teamManager = options.teamManager ?? new TeamManager(logger);
   const meetingService = new VoiceMeetingService(registry, logger);
   const voiceIdentityStore = new VoiceIdentityStore(logger);
+  const rtcService = new RtcVoiceChatService(logger);
+  if (rtcService.isConfigured()) {
+    logger.info('RTC voice chat service enabled');
+  }
 
   const ws: { handle?: WebSocketHandle } = {};
 
@@ -71,7 +77,9 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient,
     peerManager, memoryServerUrl, memoryAuthToken, pushService,
     deviceStore, asyncTaskStore, intentRouter, circuitBreaker, budgetManager,
-    teamManager, meetingService, voiceIdentityStore, ws,
+    teamManager, meetingService, voiceIdentityStore,
+    rtcService: rtcService.isConfigured() ? rtcService : undefined,
+    ws,
   };
 
   // Route handlers in priority order
@@ -82,6 +90,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     handleTaskRoutes,
     handleBotRoutes,
     handleSyncRoutes,
+    handleRtcRoutes,
   ];
 
   const server = http.createServer(async (req, res) => {

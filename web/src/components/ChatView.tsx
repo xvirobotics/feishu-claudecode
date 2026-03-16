@@ -16,6 +16,8 @@ import {
   type PendingFile,
   CallOverlayUI,
   useCallMode,
+  RtcCallOverlayUI,
+  useRtcCallMode,
   useFilePanel,
   FilePanelToggle,
   FilePanelContent,
@@ -93,15 +95,42 @@ export function ChatView() {
     return createSession(activeBotName || undefined);
   }, [activeSessionId, activeBotName, createSession]);
 
-  // ── Call mode ──
-  const {
-    callActive, callPhase, callElapsed, callStatusText,
-    startCall, endCall, handleCallTap,
-  } = useCallMode({
+  // ── RTC availability check ──
+  const [rtcAvailable, setRtcAvailable] = useState(false);
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/rtc/config', { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => setRtcAvailable(d.configured === true))
+      .catch(() => setRtcAvailable(false));
+  }, [token]);
+
+  // ── HTTP Call mode (fallback) ──
+  const httpCall = useCallMode({
     activeBotName, activeSessionId, token,
     onEnsureSession: ensureSession,
     autoScrollRef,
   });
+
+  // ── RTC Call mode ──
+  const rtcCall = useRtcCallMode({ activeBotName, activeSessionId, token });
+
+  // Select active call mode
+  const callActive = rtcAvailable ? rtcCall.callActive : httpCall.callActive;
+  const startCall = useCallback(async () => {
+    if (rtcAvailable) {
+      rtcCall.startCall();
+    } else {
+      httpCall.startCall();
+    }
+  }, [rtcAvailable, rtcCall, httpCall]);
+  const endCall = useCallback(() => {
+    if (rtcAvailable) {
+      rtcCall.endCall();
+    } else {
+      httpCall.endCall();
+    }
+  }, [rtcAvailable, rtcCall, httpCall]);
 
   // ── File panel ──
   const {
@@ -282,16 +311,27 @@ export function ChatView() {
         )}
 
         {/* Call overlay */}
-        {callActive && (
-          <CallOverlayUI
+        {callActive && (rtcAvailable ? (
+          <RtcCallOverlayUI
             activeBotName={activeBotName}
-            callElapsed={callElapsed}
-            callPhase={callPhase}
-            callStatusText={callStatusText}
-            onTap={handleCallTap}
+            callElapsed={rtcCall.callElapsed}
+            callPhase={rtcCall.callPhase}
+            callStatusText={rtcCall.callStatusText}
+            isMuted={rtcCall.isMuted}
+            errorMessage={rtcCall.errorMessage}
+            onToggleMute={rtcCall.toggleMute}
             onHangup={endCall}
           />
-        )}
+        ) : (
+          <CallOverlayUI
+            activeBotName={activeBotName}
+            callElapsed={httpCall.callElapsed}
+            callPhase={httpCall.callPhase}
+            callStatusText={httpCall.callStatusText}
+            onTap={httpCall.handleCallTap}
+            onHangup={endCall}
+          />
+        ))}
 
         {/* Input area */}
         <InputBar
