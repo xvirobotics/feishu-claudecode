@@ -85,6 +85,12 @@ The installer walks you through: working directory → Claude auth → IM creden
 metabot update
 ```
 
+**Uninstall** — completely remove MetaBot, CLI tools, skills, and PM2 processes:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/uninstall.sh | bash
+```
+
 > **Windows notes:** The PowerShell installer auto-detects `winget`/`choco`/`scoop` for Node.js installation. CLI tools (`mm`, `mb`, `metabot`, `fd`) are installed with `.cmd` wrappers and require [Git for Windows](https://git-scm.com) (provides Git Bash).
 
 <details>
