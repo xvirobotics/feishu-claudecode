@@ -87,16 +87,16 @@ function IconPanelLeft() {
    ═══════════════════════════════════════════════════════════════ */
 
 const GRADIENT_PAIRS = [
-  ['#10b981', '#34d399'],
-  ['#14b8a6', '#2dd4bf'],
-  ['#06b6d4', '#22d3ee'],
-  ['#0ea5e9', '#38bdf8'],
-  ['#84cc16', '#a3e635'],
-  ['#22c55e', '#4ade80'],
-  ['#f59e0b', '#fbbf24'],
-  ['#059669', '#10b981'],
-  ['#0d9488', '#14b8a6'],
-  ['#65a30d', '#84cc16'],
+  ['#00d68f', '#00b876'],
+  ['#00c9a7', '#00a88a'],
+  ['#00b4d8', '#0096c7'],
+  ['#22c55e', '#16a34a'],
+  ['#14b8a6', '#0d9488'],
+  ['#00d68f', '#059669'],
+  ['#10b981', '#00d68f'],
+  ['#06b6d4', '#0891b2'],
+  ['#00c9a7', '#14b8a6'],
+  ['#22c55e', '#00d68f'],
 ];
 
 function hash(str: string): number {
@@ -130,7 +130,7 @@ function GradientAvatar({ name, size = 44 }: { name: string; size?: number }) {
         fill={pair[0]}
         fontSize={size * 0.38}
         fontWeight="600"
-        fontFamily="Inter, -apple-system, sans-serif"
+        fontFamily="Space Grotesk, -apple-system, sans-serif"
       >
         {initial}
       </text>
@@ -615,10 +615,6 @@ export function Layout({ children }: LayoutProps) {
 
   return (
     <div className={s.shell}>
-      {/* Ambient orbs */}
-      <div className={s.orb1} />
-      <div className={s.orb2} />
-
       {/* Hamburger for collapsed sidebar */}
       {!sidebarOpen && (
         <button className={s.hamburger} onClick={toggleSidebar}>

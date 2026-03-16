@@ -1,10 +1,10 @@
 /* ============================================================
-   ChatView V2 — "Void"
+   ChatView — "NEXUS"
 
-   User messages: gradient accent pills floating right.
-   Assistant messages: clean text with a luminous left edge.
-   Input: floating glass card, centered, with accent glow.
-   Code blocks: dark glass with inner glow.
+   User messages: clean accent pills, sharp corners.
+   Assistant messages: minimal, generous spacing.
+   Input: terminal-inspired, clean lines.
+   Code blocks: dark with sharp edges.
    ============================================================ */
 
 /* ═══ Animations ═══ */
@@ -20,8 +20,8 @@
 }
 @keyframes callFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes callPulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.3); }
-  50% { box-shadow: 0 0 0 20px rgba(16, 185, 129, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 214, 143, 0.3); }
+  50% { box-shadow: 0 0 0 20px rgba(0, 214, 143, 0); }
 }
 @keyframes callSpin { to { transform: rotate(360deg); } }
 
@@ -81,19 +81,18 @@
   padding: 10px 0;
 }
 
-/* ── User bubble — gradient pill with glow ── */
+/* ── User bubble — solid accent, geometric ── */
 .userBubble {
   max-width: 80%;
-  padding: 12px 20px;
-  background: var(--gradient-accent-vivid);
+  padding: 11px 18px;
+  background: var(--accent);
   color: #fff;
-  border-radius: 22px 22px 6px 22px;
+  border-radius: 16px 16px 4px 16px;
   font-size: 14px;
   line-height: 1.55;
   word-break: break-word;
   white-space: pre-line;
   font-weight: 450;
-  box-shadow: var(--shadow-accent);
   letter-spacing: -0.1px;
 }
 
@@ -108,11 +107,10 @@
   text-align: center;
 }
 
-/* ── Assistant message — luminous left edge ── */
+/* ── Assistant message — clean, minimal ── */
 .assistantMessage {
   width: 100%;
-  padding: 6px 0 6px 16px;
-  border-left: 2px solid var(--accent-soft);
+  padding: 6px 0;
   position: relative;
 }
 
@@ -181,11 +179,13 @@
   gap: 6px;
   padding: 4px 0;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-2);
   user-select: none;
   transition: color var(--duration-fast);
+  font-family: var(--font-mono);
+  letter-spacing: 0.3px;
 }
 .toolCallsHeader:hover { color: var(--text-1); }
 
@@ -289,7 +289,7 @@
   color: var(--accent-text);
   text-decoration: underline;
   text-underline-offset: 3px;
-  text-decoration-color: rgba(16, 185, 129, 0.25);
+  text-decoration-color: rgba(0, 214, 143, 0.25);
   transition: text-decoration-color var(--duration-fast);
 }
 .responseContent a:hover { text-decoration-color: var(--accent-text); }
@@ -327,7 +327,6 @@
   overflow: hidden;
   border: 1px solid var(--glass-border);
   background: var(--code-bg);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.02);
 }
 
 .codeBlockHeader {
@@ -458,20 +457,19 @@
 .inputWrapper {
   max-width: 740px;
   margin: 0 auto;
-  padding: 12px 14px;
+  padding: 10px 14px;
   display: flex;
   align-items: flex-end;
   gap: 8px;
   background: var(--surface-1);
   border: 1px solid var(--glass-border);
-  border-radius: var(--r-xl);
+  border-radius: var(--r-lg);
   transition: border-color var(--duration-base), box-shadow var(--duration-base);
-  box-shadow: var(--shadow-sm), 0 0 0 0 transparent;
 }
 
 .inputWrapper:focus-within {
-  border-color: rgba(16, 185, 129, 0.25);
-  box-shadow: var(--shadow-sm), 0 0 0 3px rgba(16, 185, 129, 0.06);
+  border-color: rgba(0, 214, 143, 0.3);
+  box-shadow: 0 0 0 1px rgba(0, 214, 143, 0.1);
 }
 
 .textarea {
@@ -492,34 +490,31 @@
 .textarea::placeholder { color: var(--text-3); }
 
 .sendBtn {
-  width: 38px;
-  height: 38px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: var(--r-md);
-  background: var(--gradient-accent);
+  background: var(--accent);
   color: #fff;
-  transition: transform var(--duration-fast), box-shadow var(--duration-fast);
+  transition: transform var(--duration-fast), opacity var(--duration-fast);
   flex-shrink: 0;
   cursor: pointer;
   border: none;
-  box-shadow: var(--shadow-accent);
 }
 
 .sendBtn:hover:not(:disabled) {
-  transform: scale(1.06);
-  box-shadow: var(--shadow-accent-lg);
+  transform: scale(1.05);
 }
-.sendBtn:active:not(:disabled) { transform: scale(0.94); }
-.sendBtn:disabled { opacity: 0.2; cursor: not-allowed; box-shadow: none; }
+.sendBtn:active:not(:disabled) { transform: scale(0.95); }
+.sendBtn:disabled { opacity: 0.15; cursor: not-allowed; }
 
 .stopBtn {
-  background: var(--gradient-accent);
-  box-shadow: var(--shadow-accent);
+  background: var(--accent);
 }
 .stopBtn:hover:not(:disabled) {
-  box-shadow: var(--shadow-accent-lg);
+  opacity: 0.9;
 }
 
 /* Attach button */
@@ -711,8 +706,9 @@
   font-weight: 700;
   letter-spacing: 1px;
   color: #fff;
-  background: linear-gradient(135deg, #10b981, #059669);
-  border-radius: 10px;
+  background: var(--accent);
+  border-radius: 4px;
+  font-family: var(--font-mono);
 }
 
 .callSubtitle {
@@ -805,62 +801,62 @@
 }
 
 .emptyIcon {
-  width: 64px;
-  height: 64px;
-  border-radius: 18px;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
   background: var(--surface-1);
   border: 1px solid var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
 }
 
 .emptyIconInner {
-  width: 38px;
-  height: 38px;
-  border-radius: 11px;
-  background: var(--gradient-accent);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-weight: 800;
-  font-size: 18px;
-  box-shadow: var(--shadow-accent);
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: 0 0 16px rgba(0, 214, 143, 0.3);
 }
 
 .emptyTitle {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 600;
   color: var(--text-0);
-  margin-bottom: 10px;
-  letter-spacing: -0.4px;
+  margin-bottom: 8px;
+  letter-spacing: -0.3px;
 }
 
 .emptySubtitle {
-  font-size: 15px;
+  font-size: 14px;
   color: var(--text-1);
   text-align: center;
-  max-width: 400px;
-  line-height: 1.7;
-  margin-bottom: 40px;
+  max-width: 380px;
+  line-height: 1.65;
+  margin-bottom: 36px;
 }
 
 .emptyHints {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  max-width: 460px;
+  gap: 10px;
+  max-width: 440px;
   width: 100%;
 }
 
 .emptyHint {
-  padding: 16px 20px;
+  padding: 14px 18px;
   background: var(--surface-1);
   border: 1px solid var(--glass-border);
-  border-radius: var(--r-lg);
-  font-size: 13.5px;
+  border-radius: var(--r-md);
+  font-size: 13px;
   color: var(--text-1);
   cursor: pointer;
   transition: all 180ms var(--ease-out);
@@ -870,11 +866,10 @@
 }
 
 .emptyHint:hover {
-  background: var(--surface-2);
-  border-color: var(--glass-border-hover);
+  border-color: var(--accent);
   color: var(--text-0);
-  transform: translateY(-3px);
-  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  box-shadow: 0 0 12px rgba(0, 214, 143, 0.08);
 }
 
 /* ═══ User Bubble Wrap (text + attachments) ═══ */
@@ -1395,9 +1390,9 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  background: rgba(16, 185, 129, 0.08);
+  background: rgba(0, 214, 143, 0.06);
   border: 2px dashed var(--accent);
-  border-radius: var(--r-xl);
+  border-radius: var(--r-lg);
   color: var(--accent-text);
   font-size: 14px;
   font-weight: 500;
@@ -1450,13 +1445,13 @@
 /* ═══ Responsive ═══ */
 @media (max-width: 768px) {
   .chatLayout { flex-direction: column; }
-  .container { height: 100dvh; /* use dynamic viewport height for mobile keyboard */ }
+  .container { height: 100%; /* flex child of mobileMain, not full viewport */ }
   .messageListInner { padding: 16px 12px 8px; }
   .inputArea {
     padding: 0 8px;
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
-  .inputWrapper { padding: 8px 10px; border-radius: 16px; gap: 4px; }
+  .inputWrapper { padding: 8px 10px; border-radius: var(--r-lg); gap: 4px; }
   .inputHint {
     padding: 4px 12px calc(6px + env(safe-area-inset-bottom, 0px));
     font-size: 10px;
@@ -1464,7 +1459,7 @@
   .textarea { font-size: 16px; /* prevent iOS zoom on focus */ }
   .messageRowUser { padding-left: 40px; }
   .messageRowAssistant { padding: 12px 0 6px; }
-  .userBubble { max-width: 90%; font-size: 14px; padding: 10px 16px; border-radius: 18px 18px 4px 18px; }
+  .userBubble { max-width: 90%; font-size: 14px; padding: 10px 16px; border-radius: 14px 14px 4px 14px; }
   .assistantMessage { padding: 4px 0 4px 12px; }
   .responseContent { font-size: 14px; line-height: 1.7; }
   .emptyState { padding: 32px 16px; }

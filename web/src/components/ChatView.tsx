@@ -49,7 +49,10 @@ export function ChatView() {
   const createSession = useStore((s) => s.createSession);
   const connected = useStore((s) => s.connected);
   const activeBotName = useStore((s) => s.activeBotName);
+  const bots = useStore((s) => s.bots);
   const token = useStore((s) => s.token);
+
+  const activeBot = bots.find((b) => b.name === activeBotName);
 
   const { send } = useWebSocket();
 
@@ -335,7 +338,7 @@ export function ChatView() {
             autoScrollRef={autoScrollRef}
           />
         ) : (
-          <EmptyState onHintClick={handleHintClick} />
+          <EmptyState onHintClick={handleHintClick} botName={activeBotName} botDescription={activeBot?.description} />
         )}
 
         {/* Call overlay */}

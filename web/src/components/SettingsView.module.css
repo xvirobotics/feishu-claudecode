@@ -1,5 +1,5 @@
 /* ============================================================
-   SettingsView V2 — "Void"
+   SettingsView — "NEXUS"
    ============================================================ */
 
 .container {
@@ -29,13 +29,14 @@
 .section { margin-bottom: 36px; }
 
 .sectionTitle {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 500;
   color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
   margin-bottom: 14px;
   padding-left: 2px;
+  font-family: var(--font-mono);
 }
 
 /* Cards */
@@ -102,7 +103,7 @@
 .toggleOn {
   background: var(--accent);
   border-color: var(--accent);
-  box-shadow: 0 0 14px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 12px rgba(0, 214, 143, 0.25);
 }
 
 .toggleOn::after {

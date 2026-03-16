@@ -1,6 +1,6 @@
 /* ============================================================
-   LoginPage V2 — "Void"
-   Floating card in dark space with gradient accents.
+   LoginPage — "NEXUS"
+   Clean card on void background, no orbs.
    ============================================================ */
 
 .page {
@@ -14,42 +14,16 @@
   overflow: hidden;
 }
 
-/* Floating ambient light */
-.page::before {
-  content: '';
-  position: absolute;
-  top: 15%;
-  left: 25%;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, transparent 55%);
-  pointer-events: none;
-  animation: v2-float 30s ease-in-out infinite;
-}
-
-.page::after {
-  content: '';
-  position: absolute;
-  bottom: 10%;
-  right: 15%;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(52, 211, 153, 0.04) 0%, transparent 55%);
-  pointer-events: none;
-  animation: v2-float 25s ease-in-out infinite reverse;
-}
-
 .card {
   position: relative;
   z-index: 1;
   width: 100%;
-  max-width: 440px;
+  max-width: 420px;
   margin: 0 20px;
-  padding: 52px 44px;
+  padding: 48px 40px;
   background: var(--surface-0);
   border: 1px solid var(--glass-border);
-  border-radius: var(--r-2xl);
-  box-shadow: var(--shadow-xl), var(--shadow-glow);
+  border-radius: var(--r-xl);
   animation: v2-scaleIn 500ms var(--ease-out);
 }
 
@@ -57,29 +31,29 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 12px;
   margin-bottom: 14px;
 }
 
 .logoIcon {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  background: var(--gradient-accent);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24px;
-  font-weight: 800;
+  font-size: 20px;
+  font-weight: 700;
   color: #fff;
   letter-spacing: -1px;
-  box-shadow: var(--shadow-accent);
+  box-shadow: 0 0 16px rgba(0, 214, 143, 0.3);
 }
 
 .logoText {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.8px;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
   color: var(--text-0);
 }
 
@@ -103,12 +77,13 @@
 
 .inputLabel {
   display: block;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 500;
   color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
   margin-bottom: 10px;
+  font-family: var(--font-mono);
 }
 
 .input {
@@ -127,26 +102,25 @@
 
 .input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+  box-shadow: 0 0 0 1px rgba(0, 214, 143, 0.15);
 }
 
 .submitBtn {
   width: 100%;
-  padding: 14px 24px;
-  background: var(--gradient-accent);
+  padding: 13px 24px;
+  background: var(--accent);
   color: #fff;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 14px;
   border-radius: var(--r-md);
-  transition: transform var(--duration-fast), box-shadow var(--duration-fast);
+  transition: transform var(--duration-fast), opacity var(--duration-fast);
   margin-top: 4px;
-  box-shadow: var(--shadow-accent);
-  letter-spacing: -0.2px;
+  letter-spacing: -0.1px;
 }
 
 .submitBtn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-accent-lg);
+  transform: translateY(-1px);
+  opacity: 0.9;
 }
 
 .submitBtn:active:not(:disabled) {
@@ -154,9 +128,8 @@
 }
 
 .submitBtn:disabled {
-  opacity: 0.3;
+  opacity: 0.2;
   cursor: not-allowed;
-  box-shadow: none;
 }
 
 .error {

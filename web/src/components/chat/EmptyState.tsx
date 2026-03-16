@@ -4,18 +4,22 @@ import styles from '../ChatView.module.css';
 
 interface Props {
   onHintClick: (text: string) => void;
+  botName?: string | null;
+  botDescription?: string;
 }
 
-export function EmptyState({ onHintClick }: Props) {
+export function EmptyState({ onHintClick, botName, botDescription }: Props) {
+  const displayName = botName || 'MetaBot';
+  const initial = displayName.charAt(0).toUpperCase();
+  const description = botDescription || 'Your AI coding assistant. Ask me anything about code, architecture, debugging, or let me build something for you.';
+
   return (
     <div className={styles.emptyState}>
       <div className={styles.emptyIcon}>
-        <div className={styles.emptyIconInner}>M</div>
+        <div className={styles.emptyIconInner}>{initial}</div>
       </div>
-      <div className={styles.emptyTitle}>MetaBot</div>
-      <div className={styles.emptySubtitle}>
-        Your AI coding assistant. Ask me anything about code, architecture, debugging, or let me build something for you.
-      </div>
+      <div className={styles.emptyTitle}>{displayName}</div>
+      <div className={styles.emptySubtitle}>{description}</div>
       <div className={styles.emptyHints}>
         {[
           'Explain how this project works',

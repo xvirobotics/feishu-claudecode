@@ -1,5 +1,5 @@
 /* ============================================================
-   Layout V2 — "Void"
+   Layout — "NEXUS"
    Desktop: sidebar + main side-by-side
    Mobile: native stack navigation (list ↔ chat) + bottom tabs
    ============================================================ */
@@ -17,31 +17,6 @@
   overflow: hidden;
   background: var(--void);
   position: relative;
-}
-
-/* Ambient gradient orbs */
-.orb1 {
-  position: fixed;
-  top: -200px;
-  left: -100px;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, transparent 65%);
-  pointer-events: none;
-  z-index: 0;
-  animation: v2-float 30s ease-in-out infinite;
-}
-
-.orb2 {
-  position: fixed;
-  bottom: -150px;
-  right: -100px;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(52, 211, 153, 0.04) 0%, transparent 65%);
-  pointer-events: none;
-  z-index: 0;
-  animation: v2-float 25s ease-in-out infinite reverse;
 }
 
 /* ═══ Sidebar ═══ */
@@ -75,37 +50,37 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 22px 20px 12px;
+  padding: 20px 18px 12px;
   flex-shrink: 0;
 }
 
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
 }
 
 .logoMark {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: var(--gradient-accent);
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  background: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
-  font-weight: 800;
+  font-size: 13px;
+  font-weight: 700;
   color: #fff;
   letter-spacing: -0.5px;
-  box-shadow: var(--shadow-accent);
   flex-shrink: 0;
+  box-shadow: 0 0 12px rgba(0, 214, 143, 0.3);
 }
 
 .logoType {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--text-0);
-  letter-spacing: -0.6px;
+  letter-spacing: -0.3px;
 }
 
 .panelBtn {
@@ -135,11 +110,12 @@
 }
 
 .agentsLabel {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 500;
   color: var(--text-2);
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 2px;
+  font-family: var(--font-mono);
 }
 
 .connIndicator {
@@ -165,10 +141,12 @@
 }
 
 .connText {
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
   color: var(--text-2);
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
 }
 
 /* ═══ Agents List ═══ */
@@ -263,16 +241,17 @@
 }
 
 .platformBadge {
-  font-size: 9px;
+  font-size: 8px;
   font-weight: 600;
   color: var(--accent-text);
   background: var(--accent-softer);
   padding: 1px 5px;
-  border-radius: var(--r-xs);
-  letter-spacing: 0.5px;
+  border-radius: 3px;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
   flex-shrink: 0;
   margin-left: 4px;
+  font-family: var(--font-mono);
 }
 
 .botTime {
@@ -460,10 +439,12 @@
   gap: 4px;
   padding: 10px 8px;
   border-radius: var(--r-md);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 500;
   color: var(--text-2);
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
   transition: background var(--duration-fast), color var(--duration-fast);
 }
 
