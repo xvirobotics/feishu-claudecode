@@ -5,7 +5,7 @@ import type { BotRegistry } from '../bot-registry.js';
 import type { TaskScheduler } from '../../scheduler/task-scheduler.js';
 import type { DocSync } from '../../sync/doc-sync.js';
 import type { PeerManager } from '../peer-manager.js';
-import type { TwilioHandler } from '../../twilio/twilio-handler.js';
+
 import type { PushService } from '../push-service.js';
 import type { DeviceStore } from '../device-store.js';
 import type { AsyncTaskStore } from '../async-task-store.js';
@@ -27,7 +27,6 @@ export interface RouteContext {
   peerManager?: PeerManager;
   memoryServerUrl?: string;
   memoryAuthToken?: string;
-  twilioHandler?: TwilioHandler;
   pushService?: PushService;
   deviceStore?: DeviceStore;
   asyncTaskStore: AsyncTaskStore;

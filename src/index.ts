@@ -17,7 +17,7 @@ import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
-import { TwilioHandler } from './twilio/twilio-handler.js';
+
 import { DeviceStore } from './api/device-store.js';
 import { PushService } from './api/push-service.js';
 
@@ -228,13 +228,6 @@ async function main() {
     logger.info('Wiki sync service initialized (auto-sync enabled, /sync for manual trigger)');
   }
 
-  // Initialize Twilio phone call handler (Jarvis-style voice)
-  let twilioHandler: TwilioHandler | undefined;
-  if (appConfig.twilio) {
-    twilioHandler = new TwilioHandler(appConfig.twilio, registry, logger);
-    logger.info({ phone: appConfig.twilio.phoneNumber, defaultBot: appConfig.twilio.defaultBotName }, 'Twilio phone call handler initialized');
-  }
-
   // Initialize APNs push notification service
   let pushService: PushService | undefined;
   let deviceStore: DeviceStore | undefined;
@@ -269,7 +262,6 @@ async function main() {
     peerManager,
     memoryServerUrl: appConfig.memoryServerUrl,
     memoryAuthToken: appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
-    twilioHandler,
     pushService,
     deviceStore,
   });
@@ -282,9 +274,6 @@ async function main() {
       peerManager.destroy();
     }
     apiServer.close();
-    if (twilioHandler) {
-      twilioHandler.destroy();
-    }
     if (pushService) {
       pushService.destroy();
     }

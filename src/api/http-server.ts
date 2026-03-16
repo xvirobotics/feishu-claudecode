@@ -5,7 +5,7 @@ import type { BotRegistry } from './bot-registry.js';
 import type { TaskScheduler } from '../scheduler/task-scheduler.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import type { PeerManager } from './peer-manager.js';
-import type { TwilioHandler } from '../twilio/twilio-handler.js';
+
 import type { PushService } from './push-service.js';
 import type { DeviceStore } from './device-store.js';
 import { AsyncTaskStore } from './async-task-store.js';
@@ -40,7 +40,6 @@ interface ApiServerOptions {
   peerManager?: PeerManager;
   memoryServerUrl?: string;
   memoryAuthToken?: string;
-  twilioHandler?: TwilioHandler;
   pushService?: PushService;
   deviceStore?: DeviceStore;
   circuitBreaker?: CircuitBreaker;
@@ -53,7 +52,7 @@ const startTime = Date.now();
 (globalThis as any).__metabot_start_time = startTime;
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, twilioHandler, pushService, deviceStore } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, pushService, deviceStore } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   // Initialize shared services
@@ -70,7 +69,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   // Build route context (shared across all route handlers)
   const ctx: RouteContext = {
     registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient,
-    peerManager, memoryServerUrl, memoryAuthToken, twilioHandler, pushService,
+    peerManager, memoryServerUrl, memoryAuthToken, pushService,
     deviceStore, asyncTaskStore, intentRouter, circuitBreaker, budgetManager,
     teamManager, meetingService, voiceIdentityStore, ws,
   };
@@ -89,21 +88,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     const method = req.method || 'GET';
     const url = req.url || '/';
 
-    // Twilio webhook routes (exempt from Bearer auth — Twilio uses signature validation)
-    if (twilioHandler && url.startsWith('/twilio/')) {
-      try {
-        const handled = await twilioHandler.handleRequest(req, res, url.split('?')[0], method);
-        if (handled) return;
-      } catch (err: any) {
-        logger.error({ err, url }, 'Twilio handler error');
-        res.writeHead(500, { 'Content-Type': 'text/plain' });
-        res.end('Internal server error');
-        return;
-      }
-    }
-
-    // Auth check (exempt /web/, /memory/, /api/files/, /twilio/)
-    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/') && !url.startsWith('/twilio/')) {
+    // Auth check (exempt /web/, /memory/, /api/files/)
+    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/')) {
       const auth = req.headers.authorization;
       const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
       if (auth !== `Bearer ${secret}` && urlToken !== secret) {
