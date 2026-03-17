@@ -6,7 +6,6 @@ struct MainTabView: View {
     @State private var incomingCall: IncomingVoiceCall?
     @State private var callAccepted = false
     @State private var showCallSheet = false
-    @State private var callKitService = CallKitService.shared
 
     enum SidebarItem: Hashable {
         case chats
@@ -71,29 +70,18 @@ struct MainTabView: View {
                 showCallSheet = true
             }
         }
-        // CallKit answered call listener (iPad)
-        .onChange(of: callKitService.activeCall?.sessionId) { _, newValue in
-            if newValue != nil {
-                showCallSheet = true
-                callAccepted = true
-            }
-        }
         .fullScreenCover(isPresented: $showCallSheet) {
-            if callAccepted {
-                let call = callKitService.activeCall ?? incomingCall
-                if let call {
-                    let bot = call.botName
-                    let localChatId = appState.activeSessionForBot(bot)?.id
-                        ?? appState.activeSessionId
-                        ?? "call_\(UUID().uuidString.prefix(8))"
-                    RtcCallView(botName: bot, chatId: localChatId, incoming: call)
-                        .environment(appState)
-                        .onDisappear {
-                            callKitService.activeCall = nil
-                            incomingCall = nil
-                            callAccepted = false
-                        }
-                }
+            if callAccepted, let call = incomingCall {
+                let bot = call.botName
+                let localChatId = appState.activeSessionForBot(bot)?.id
+                    ?? appState.activeSessionId
+                    ?? "call_\(UUID().uuidString.prefix(8))"
+                RtcCallView(botName: bot, chatId: localChatId, incoming: call)
+                    .environment(appState)
+                    .onDisappear {
+                        incomingCall = nil
+                        callAccepted = false
+                    }
             } else if let call = incomingCall {
                 IncomingCallView(
                     call: call,
@@ -192,7 +180,6 @@ struct MobileTabView: View {
     @State private var incomingCall: IncomingVoiceCall?
     @State private var callAccepted = false
     @State private var showCallSheet = false
-    @State private var callKitService = CallKitService.shared
 
     var body: some View {
         Group {
@@ -206,7 +193,7 @@ struct MobileTabView: View {
                 }
             }
         }
-        // Global incoming call listener
+        // WebSocket incoming call listener (only for in-app calls, not CallKit)
         .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
             if let call = appState.incomingVoiceCall, newValue != nil {
                 appState.incomingVoiceCall = nil
@@ -217,30 +204,18 @@ struct MobileTabView: View {
                 showCallSheet = true
             }
         }
-        // CallKit answered call listener
-        .onChange(of: callKitService.activeCall?.sessionId) { _, newValue in
-            if newValue != nil {
-                showCallSheet = true
-                callAccepted = true
-            }
-        }
-        // Single fullScreenCover -- switches content between ringing and active call
         .fullScreenCover(isPresented: $showCallSheet) {
-            if callAccepted {
-                let call = callKitService.activeCall ?? incomingCall
-                if let call {
-                    let bot = call.botName
-                    let localChatId = appState.activeSessionForBot(bot)?.id
-                        ?? appState.activeSessionId
-                        ?? "call_\(UUID().uuidString.prefix(8))"
-                    RtcCallView(botName: bot, chatId: localChatId, incoming: call)
-                        .environment(appState)
-                        .onDisappear {
-                            callKitService.activeCall = nil
-                            incomingCall = nil
-                            callAccepted = false
-                        }
-                }
+            if callAccepted, let call = incomingCall {
+                let bot = call.botName
+                let localChatId = appState.activeSessionForBot(bot)?.id
+                    ?? appState.activeSessionId
+                    ?? "call_\(UUID().uuidString.prefix(8))"
+                RtcCallView(botName: bot, chatId: localChatId, incoming: call)
+                    .environment(appState)
+                    .onDisappear {
+                        incomingCall = nil
+                        callAccepted = false
+                    }
             } else if let call = incomingCall {
                 IncomingCallView(
                     call: call,
