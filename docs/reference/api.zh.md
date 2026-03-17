@@ -33,15 +33,44 @@ Authorization: Bearer <API_SECRET>
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `POST` | `/api/talk` | 与 Bot 对话（自动路由到 peer） |
+| `POST` | `/api/talk` | 与 Bot 对话（自动路由到 peer）。添加 `"async": true` 异步委派 |
+| `GET` | `/api/talk/:taskId` | 查询异步任务状态和结果 |
 
-**请求体：**
+**请求体（同步）：**
 
 ```json
 {
   "botName": "metabot",
   "chatId": "unique-chat-id",
   "prompt": "你的消息"
+}
+```
+
+**请求体（异步 — 即发即忘）：**
+
+```json
+{
+  "botName": "metabot",
+  "chatId": "unique-chat-id",
+  "prompt": "你的消息",
+  "async": true
+}
+```
+
+返回 `202 Accepted`，包含 `{ "taskId": "...", "status": "pending" }`。通过 `GET /api/talk/:taskId` 轮询结果。
+
+**轮询响应：**
+
+```json
+{
+  "taskId": "uuid",
+  "status": "complete",
+  "result": {
+    "success": true,
+    "responseText": "...",
+    "costUsd": 0.05,
+    "durationMs": 12000
+  }
 }
 ```
 

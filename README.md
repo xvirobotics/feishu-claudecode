@@ -322,7 +322,8 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `POST` | `/api/bots` | Create bot at runtime |
 | `GET` | `/api/bots/:name` | Get bot details |
 | `DELETE` | `/api/bots/:name` | Remove bot |
-| `POST` | `/api/talk` | Talk to a bot (auto-routes to peers, supports `peerName/botName`) |
+| `POST` | `/api/talk` | Talk to a bot (auto-routes to peers, supports `peerName/botName`). Add `"async":true` for fire-and-forget |
+| `GET` | `/api/talk/:taskId` | Poll async task status and result |
 | `GET` | `/api/peers` | List peers and their status |
 | `POST` | `/api/schedule` | Schedule one-time or recurring (cron) task |
 | `GET` | `/api/schedule` | List scheduled tasks (one-time + recurring) |
@@ -371,7 +372,10 @@ fd info <feishu-url>                # get document metadata
 # Agent Bus
 mb bots                             # list all bots (local + peer)
 mb talk <bot> <chatId> <prompt>     # talk to a bot (auto-routes to peers)
+mb talk --async <bot> <chatId> <prompt> # fire-and-forget (returns taskId)
 mb talk alice/bot <chatId> <prompt> # talk to a specific peer's bot
+mb poll <taskId>                    # check async task status
+mb poll <taskId> --wait             # poll until task completes
 mb peers                            # list peers and their status
 mb schedule list                    # list scheduled tasks
 mb schedule cron <bot> <chatId> '<cron>' <prompt>  # recurring task

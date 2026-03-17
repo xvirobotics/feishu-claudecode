@@ -18,11 +18,16 @@ mb bot <name>                       # get bot details
 ### Agent Talk
 
 ```bash
-mb talk <bot> <chatId> <prompt>     # talk to a bot
+mb talk <bot> <chatId> <prompt>     # talk to a bot (sync, waits for result)
+mb talk --async <bot> <chatId> <prompt> # fire-and-forget (returns taskId)
 mb talk alice/bot <chatId> <prompt> # talk to a specific peer's bot
+mb poll <taskId>                    # check async task status
+mb poll <taskId> --wait             # poll every 3s until task completes
 ```
 
 The bot name supports [qualified names](../features/peers.md#qualified-names) (`peerName/botName`) for cross-instance routing.
+
+Use `--async` for fire-and-forget delegation: the command returns immediately with a `taskId`, and the task runs in the background. Use `mb poll` to check results later.
 
 ### Peers
 
