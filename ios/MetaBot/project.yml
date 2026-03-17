@@ -39,9 +39,12 @@ targets:
         UILaunchScreen:
           UIColorName: ""
           UIImageName: ""
+    entitlements:
+      path: MetaBot.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.xvirobotics.MetaBot
+        CODE_SIGN_ENTITLEMENTS: MetaBot.entitlements
         SWIFT_VERSION: "5.9"
         SWIFT_STRICT_CONCURRENCY: minimal
         IPHONEOS_DEPLOYMENT_TARGET: "17.0"
