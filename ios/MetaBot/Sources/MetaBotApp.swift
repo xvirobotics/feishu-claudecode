@@ -73,21 +73,37 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     /// Pending Quick Action bot name (set when user long-presses app icon)
     static var pendingQuickAction: String?
 
+    /// Called when app is already running and Quick Action is triggered
     func application(
         _ application: UIApplication,
         performActionFor shortcutItem: UIApplicationShortcutItem,
         completionHandler: @escaping (Bool) -> Void
     ) {
-        print("[App] performActionFor: \(shortcutItem.type)")
         let prefix = "com.xvirobotics.MetaBot.call."
         if shortcutItem.type.hasPrefix(prefix) {
             let botName = String(shortcutItem.type.dropFirst(prefix.count))
-            print("[App] Quick Action: call \(botName)")
-            AppDelegate.pendingQuickAction = botName
-            // Post notification so already-running app picks it up immediately
+            print("[App] Quick Action (running): \(botName)")
             NotificationCenter.default.post(name: .quickActionCall, object: nil, userInfo: ["botName": botName])
         }
         completionHandler(true)
+    }
+
+    /// Called on cold launch with Quick Action
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        if let shortcutItem = options.shortcutItem {
+            let prefix = "com.xvirobotics.MetaBot.call."
+            if shortcutItem.type.hasPrefix(prefix) {
+                let botName = String(shortcutItem.type.dropFirst(prefix.count))
+                print("[App] Quick Action (cold launch): \(botName)")
+                AppDelegate.pendingQuickAction = botName
+            }
+        }
+        let config = UISceneConfiguration(name: nil, sessionRole: connectingSceneSession.role)
+        return config
     }
 }
 
@@ -104,6 +120,7 @@ struct MetaBotApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var appState = AppState()
+    @State private var selectedQuickAction: String?
 
     var body: some Scene {
         WindowGroup {
@@ -136,7 +153,6 @@ struct MetaBotApp: App {
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
                     appState.handleForegroundReturn()
-                    // Check pending Quick Action / Siri (app was in background)
                     checkPendingActions()
                 }
             }
