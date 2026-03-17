@@ -816,14 +816,13 @@ export class MessageBridge {
       task.abortController.abort();
       this.logger.info({ chatId }, 'Aborted running task during shutdown');
 
-      // Send final card update so the card doesn't stay stuck in "Running"
+      // Send final card update preserving existing content from the processor
       if (task.cardMessageId) {
+        const currentState = task.processor.processMessage({ type: 'system', subtype: 'noop' } as any);
         const finalState: CardState = {
+          ...currentState,
           status: 'error',
-          userPrompt: '',
-          responseText: '',
-          toolCalls: [],
-          errorMessage: 'Service restarted',
+          errorMessage: task.abortReason || 'Service restarted',
         };
         updatePromises.push(
           this.sender.updateCard(task.cardMessageId, finalState).catch(() => {}),
