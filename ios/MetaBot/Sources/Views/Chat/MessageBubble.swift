@@ -53,9 +53,9 @@ struct MessageBubble: View {
                         )
                 }
             }
-            .containerRelativeFrame(.horizontal) { width, _ in width * 0.8 }
         }
-        .padding(.horizontal, 16)
+        .padding(.trailing, 16)
+        .padding(.leading, 60)
         .padding(.vertical, 2)
         .contextMenu {
             if !message.text.isEmpty {

@@ -30,23 +30,37 @@ struct RtcCallView: View {
         ZStack {
             NexusColors.void.ignoresSafeArea()
 
-            // Radial accent glow at top
+            // Radial accent glow
             RadialGradient(
-                colors: [NexusColors.accent.opacity(0.12), .clear],
-                center: .top,
-                startRadius: 0,
-                endRadius: 300
+                colors: [NexusColors.accent.opacity(0.10), .clear],
+                center: .center,
+                startRadius: 40,
+                endRadius: 350
             )
             .ignoresSafeArea()
-            .blur(radius: 40)
 
-            // Main content
             VStack(spacing: 0) {
+                // Top bar — flush with safe area
                 topBar
+
+                Spacer(minLength: 20)
+
+                // Avatar + name
+                avatarAndName
+
+                Spacer(minLength: 16)
+
+                // Waveform + status
+                statusSection
+
+                Spacer(minLength: 16)
+
+                // Live subtitle
+                subtitleSection
+
                 Spacer()
-                avatarSection
-                Spacer()
-                transcriptSection
+
+                // Controls
                 controlsBar
             }
         }
@@ -63,158 +77,178 @@ struct RtcCallView: View {
         HStack {
             Button { endCall() } label: {
                 Image(systemName: "chevron.down")
-                    .font(.title3)
+                    .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(NexusColors.text1)
+                    .frame(width: 44, height: 44)
             }
             .accessibilityLabel("End call")
+
             Spacer()
+
             HStack(spacing: 6) {
                 Text(formattedDuration)
-                    .font(NexusTypography.label)
-                    .foregroundStyle(NexusColors.text2)
-                // RTC badge
+                    .font(NexusTypography.jetBrainsMono(size: 14))
+                    .foregroundStyle(NexusColors.text1)
+                    .monospacedDigit()
                 Text("RTC")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(NexusColors.accentText)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(NexusColors.accent.opacity(0.6))
+                    .background(NexusColors.accentSofter)
                     .clipShape(Capsule())
             }
+
             Spacer()
-            Color.clear.frame(width: 24)
+
+            Color.clear.frame(width: 44, height: 44)
         }
-        .padding(.horizontal, NexusSpacing.xl)
-        .padding(.top, NexusSpacing.lg)
+        .padding(.horizontal, 16)
     }
 
-    // MARK: - Avatar Section
+    // MARK: - Avatar + Name
 
-    private var avatarSection: some View {
-        VStack(spacing: 24) {
-            GradientAvatar(name: botName, size: 90)
-                .overlay(
-                    Circle().stroke(
-                        NexusColors.accent.opacity(rtcService.callPhase == .connected ? 0.4 : 0),
-                        lineWidth: 2
-                    )
-                )
-                .animation(NexusMotion.base, value: rtcService.callPhase == .connected)
+    private var avatarAndName: some View {
+        VStack(spacing: 16) {
+            ZStack {
+                // Outer pulse ring when connected
+                if rtcService.callPhase == .connected {
+                    Circle()
+                        .stroke(NexusColors.accent.opacity(0.15), lineWidth: 1.5)
+                        .frame(width: 120, height: 120)
+                }
 
-            Text(botName)
-                .font(NexusTypography.title)
-                .foregroundStyle(NexusColors.text0)
-
-            WaveformView(
-                audioLevel: rtcService.callPhase == .connected ? 0.3 : 0,
-                isActive: rtcService.callPhase == .connected
-            )
-            .padding(.horizontal, 40)
-
-            phaseIndicator
-        }
-    }
-
-    // MARK: - Phase Indicator
-
-    private var phaseIndicator: some View {
-        HStack(spacing: 8) {
-            switch rtcService.callPhase {
-            case .connecting:
-                NexusThinkingDots()
-            case .connected:
-                Image(systemName: rtcService.isMuted ? "mic.slash.fill" : "waveform")
-                    .foregroundStyle(NexusColors.accent)
-                    .symbolEffect(.variableColor.iterative)
-            case .error:
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(NexusColors.red)
-            default:
-                EmptyView()
+                GradientAvatar(name: botName, size: 96)
             }
 
-            Text(rtcService.callPhase.displayText)
-                .font(NexusTypography.body)
-                .foregroundStyle(NexusColors.text1)
+            Text(botName)
+                .font(NexusTypography.spaceGrotesk(size: 22, weight: .semibold))
+                .foregroundStyle(NexusColors.text0)
         }
-        .frame(height: 28)
     }
 
-    // MARK: - Transcript Section
+    // MARK: - Status Section
+
+    private var statusSection: some View {
+        VStack(spacing: 12) {
+            // Waveform — only show when connected
+            if rtcService.callPhase == .connected {
+                WaveformView(
+                    audioLevel: 0.3,
+                    isActive: true
+                )
+                .frame(height: 32)
+                .padding(.horizontal, 80)
+            }
+
+            // Phase indicator
+            HStack(spacing: 8) {
+                switch rtcService.callPhase {
+                case .connecting:
+                    NexusThinkingDots()
+                case .connected:
+                    Circle()
+                        .fill(NexusColors.accent)
+                        .frame(width: 6, height: 6)
+                case .error:
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(NexusColors.red)
+                default:
+                    EmptyView()
+                }
+
+                Text(rtcService.callPhase.displayText)
+                    .font(NexusTypography.spaceGrotesk(size: 14))
+                    .foregroundStyle(NexusColors.text2)
+            }
+        }
+    }
+
+    // MARK: - Subtitle Section
 
     @ViewBuilder
-    private var transcriptSection: some View {
-        // Live subtitle display
+    private var subtitleSection: some View {
         if !rtcService.subtitleText.isEmpty && rtcService.callPhase == .connected {
             Text(rtcService.subtitleText)
                 .font(NexusTypography.body)
                 .foregroundStyle(NexusColors.text0)
                 .multilineTextAlignment(.center)
-                .padding(NexusSpacing.md)
+                .lineLimit(4)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .frame(maxWidth: 320)
                 .background(NexusColors.surface1)
                 .clipShape(RoundedRectangle(cornerRadius: NexusRadius.lg))
                 .nexusGlassBorder(radius: NexusRadius.lg)
-                .padding(.horizontal, 40)
-                .padding(.bottom, 20)
+                .padding(.horizontal, 32)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.2), value: rtcService.subtitleText)
         }
 
-        // Error message
         if case .error(let msg) = rtcService.callPhase {
             Text(msg)
-                .font(.caption)
+                .font(NexusTypography.caption)
                 .foregroundStyle(NexusColors.red)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 32)
         }
     }
 
     // MARK: - Controls Bar
 
     private var controlsBar: some View {
-        HStack(spacing: NexusSpacing.xxl) {
+        HStack(spacing: 40) {
             // Mute
-            Button { rtcService.toggleMute() } label: {
-                ZStack {
-                    Circle()
-                        .fill(rtcService.isMuted ? NexusColors.red.opacity(0.2) : NexusColors.surface2)
-                        .frame(width: 56, height: 56)
-                        .nexusGlassBorder(radius: 28)
-                    Image(systemName: rtcService.isMuted ? "mic.slash.fill" : "mic.fill")
-                        .font(.title3)
-                        .foregroundStyle(rtcService.isMuted ? NexusColors.red : NexusColors.text1)
-                }
+            callButton(
+                icon: rtcService.isMuted ? "mic.slash.fill" : "mic.fill",
+                isActive: rtcService.isMuted,
+                activeColor: NexusColors.red,
+                size: 60
+            ) {
+                rtcService.toggleMute()
             }
             .accessibilityLabel(rtcService.isMuted ? "Unmute" : "Mute")
             .disabled(rtcService.callPhase != .connected)
 
             // End call
             Button { endCall() } label: {
-                ZStack {
-                    Circle().fill(NexusColors.red).frame(width: 68, height: 68)
-                        .nexusShadowMd()
-                    Image(systemName: "phone.down.fill")
-                        .font(.title2)
-                        .foregroundStyle(.white)
-                }
+                Image(systemName: "phone.down.fill")
+                    .font(.system(size: 24))
+                    .foregroundStyle(.white)
+                    .frame(width: 72, height: 72)
+                    .background(NexusColors.red)
+                    .clipShape(Circle())
+                    .shadow(color: NexusColors.red.opacity(0.4), radius: 12, y: 4)
             }
             .accessibilityLabel("End call")
 
             // Speaker toggle
-            Button { toggleSpeaker() } label: {
-                ZStack {
-                    Circle()
-                        .fill(isSpeakerOn ? NexusColors.accentSoft : NexusColors.surface2)
-                        .frame(width: 56, height: 56)
-                        .nexusGlassBorder(radius: 28)
-                    Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.2.fill")
-                        .font(.title3)
-                        .foregroundStyle(isSpeakerOn ? NexusColors.accent : NexusColors.text1)
-                }
+            callButton(
+                icon: isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.2.fill",
+                isActive: isSpeakerOn,
+                activeColor: NexusColors.accent,
+                size: 60
+            ) {
+                toggleSpeaker()
             }
             .accessibilityLabel(isSpeakerOn ? "Disable speaker" : "Enable speaker")
         }
-        .padding(.bottom, 50)
+        .padding(.bottom, 60)
+    }
+
+    /// Reusable call control button
+    private func callButton(icon: String, isActive: Bool, activeColor: Color, size: CGFloat, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundStyle(isActive ? activeColor : NexusColors.text1)
+                .frame(width: size, height: size)
+                .background(isActive ? activeColor.opacity(0.15) : NexusColors.surface2)
+                .clipShape(Circle())
+                .overlay {
+                    Circle().stroke(NexusColors.glassBorder, lineWidth: 1)
+                }
+        }
     }
 
     private var formattedDuration: String {
@@ -240,16 +274,10 @@ struct RtcCallView: View {
     // MARK: - Call Lifecycle
 
     private func startCall() {
-        // Prevent auto-lock during call
         UIApplication.shared.isIdleTimerDisabled = true
-
-        // Set up audio interruption handling
         setupInterruptionHandling()
-
-        // Set up Now Playing info for lock screen
         setupNowPlaying()
 
-        // Start call timer
         callTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             if rtcService.callStartTime != nil {
                 callDuration += 1
@@ -264,14 +292,12 @@ struct RtcCallView: View {
             }
 
             if let incoming {
-                // Agent-initiated call — join existing room
                 await rtcService.joinCall(
                     incoming: incoming,
                     serverURL: appState.serverURL,
                     token: token
                 )
             } else {
-                // User-initiated call — create room + join
                 let chatContext = appState.buildChatContext(forSession: chatId)
                 var systemPrompt: String?
                 if !chatContext.isEmpty {
@@ -299,12 +325,9 @@ struct RtcCallView: View {
         Haptics.medium()
         Task {
             let transcriptText = await rtcService.endCall()
-
-            // Inject transcript into chat for Claude processing
             if let transcriptText {
                 appState.injectRtcTranscript(transcriptText)
             }
-
             cleanup()
             dismiss()
         }
@@ -313,14 +336,8 @@ struct RtcCallView: View {
     private func cleanup() {
         callTimer?.invalidate()
         callTimer = nil
-
-        // Re-enable auto-lock
         UIApplication.shared.isIdleTimerDisabled = false
-
-        // Clear Now Playing
         clearNowPlaying()
-
-        // Remove interruption observer
         if let observer = interruptionObserver {
             NotificationCenter.default.removeObserver(observer)
             interruptionObserver = nil
@@ -337,18 +354,7 @@ struct RtcCallView: View {
         ) { notification in
             guard let info = notification.userInfo,
                   let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
-                  let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
-
-            switch type {
-            case .began:
-                // Phone call or Siri interrupted
-                break
-            case .ended:
-                // Interruption ended — RTC SDK should handle audio session recovery
-                break
-            @unknown default:
-                break
-            }
+                  let _ = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
         }
     }
 
@@ -363,7 +369,6 @@ struct RtcCallView: View {
             MPNowPlayingInfoPropertyPlaybackRate: 1.0,
         ]
 
-        // Handle remote command: pause = end call
         let commandCenter = MPRemoteCommandCenter.shared()
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.pauseCommand.addTarget { _ in

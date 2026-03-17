@@ -194,6 +194,9 @@ export class RtcVoiceChatService {
         },
         InterruptMode: 0,
         SubtitleConfig: {},
+        NoiseReductionConfig: {
+          Enable: true,
+        },
       },
     };
 

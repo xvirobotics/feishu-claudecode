@@ -41,7 +41,7 @@ struct InputBar: View {
                         .foregroundStyle(NexusColors.text2)
                     Spacer()
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, 16)
                 .padding(.bottom, 6)
             }
 
@@ -50,20 +50,20 @@ struct InputBar: View {
                 PendingFilesBar(files: pendingFiles) { file in
                     pendingFiles.removeAll { $0.id == file.id }
                 }
-                .padding(.horizontal, 28)
+                .padding(.horizontal, 16)
                 .padding(.bottom, 6)
             }
 
             // Recording indicator
             if voiceService.isRecording {
                 recordingIndicator
-                    .padding(.horizontal, 28)
+                    .padding(.horizontal, 16)
                     .padding(.bottom, 8)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
             // Input wrapper
-            HStack(alignment: .bottom, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 // Left buttons
                 HStack(spacing: 4) {
                     // Attach button
@@ -197,8 +197,9 @@ struct InputBar: View {
                 y: 0
             )
             .animation(NexusMotion.base, value: isFocused)
-            .padding(.horizontal, 28)
-            .padding(.bottom, 16)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
         }
         .animation(NexusMotion.base, value: voiceService.isRecording)
         .photosPicker(isPresented: $showPhotosPicker, selection: $selectedPhotos, matching: .any(of: [.images, .screenshots, .videos]))
