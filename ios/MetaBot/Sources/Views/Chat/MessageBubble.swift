@@ -25,7 +25,7 @@ struct MessageBubble: View {
 
     private var userBubble: some View {
         HStack {
-            Spacer(minLength: 100)
+            Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 6) {
                 // File attachments above text
                 if let attachments = message.attachments, !attachments.isEmpty {
@@ -39,7 +39,9 @@ struct MessageBubble: View {
                     Text(message.text)
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white)
-                        .lineSpacing(14 * 0.55) // 1.55 line-height
+                        .lineSpacing(4)
+                        .tracking(-0.1)
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 11)
                         .background(NexusColors.accent)
@@ -54,8 +56,6 @@ struct MessageBubble: View {
                 }
             }
         }
-        .padding(.trailing, 16)
-        .padding(.leading, 60)
         .padding(.vertical, 2)
         .contextMenu {
             if !message.text.isEmpty {

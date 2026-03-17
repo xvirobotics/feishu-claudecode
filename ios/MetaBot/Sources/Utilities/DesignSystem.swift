@@ -148,15 +148,27 @@ enum NexusLayout {
 
 // MARK: - Shadow ViewModifiers
 
+struct NexusShadowSm: ViewModifier {
+    func body(content: Content) -> some View {
+        content.shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+    }
+}
+
 struct NexusShadowMd: ViewModifier {
     func body(content: Content) -> some View {
-        content.shadow(color: .black.opacity(0.6), radius: 10, x: 0, y: 4)
+        content.shadow(color: .black.opacity(0.35), radius: 10, x: 0, y: 4)
     }
 }
 
 struct NexusShadowAccent: ViewModifier {
     func body(content: Content) -> some View {
-        content.shadow(color: NexusColors.accent.opacity(0.25), radius: 12, x: 0, y: 4)
+        content.shadow(color: NexusColors.accent.opacity(0.20), radius: 12, x: 0, y: 4)
+    }
+}
+
+struct NexusShadowGlow: ViewModifier {
+    func body(content: Content) -> some View {
+        content.shadow(color: NexusColors.accent.opacity(0.10), radius: 20, x: 0, y: 0)
     }
 }
 
@@ -171,8 +183,10 @@ struct NexusGlassBorder: ViewModifier {
 }
 
 extension View {
+    func nexusShadowSm() -> some View { modifier(NexusShadowSm()) }
     func nexusShadowMd() -> some View { modifier(NexusShadowMd()) }
     func nexusShadowAccent() -> some View { modifier(NexusShadowAccent()) }
+    func nexusShadowGlow() -> some View { modifier(NexusShadowGlow()) }
     func nexusGlassBorder(radius: CGFloat = NexusRadius.md) -> some View { modifier(NexusGlassBorder(radius: radius)) }
 }
 
