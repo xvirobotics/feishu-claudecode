@@ -220,12 +220,10 @@ final class AppState {
                 addMessage(chatId: chatId, message: msg)
             }
 
-        case .voiceCall(let call):
-            // Skip if CallKit is already handling this call (VoIP push arrived first)
-            if CallKitService.shared.activeCallUUID != nil || !CallKitService.shared.pendingCalls.isEmpty {
-                break
-            }
-            incomingVoiceCall = call
+        case .voiceCall:
+            // VoIP push + CallKit handles incoming calls natively.
+            // Ignore WebSocket voice_call to avoid duplicate UI / app jumping to foreground.
+            break
 
         case .groupCreated(let group):
             groups.append(group)
