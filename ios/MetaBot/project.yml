@@ -41,6 +41,8 @@ targets:
           UIImageName: ""
     entitlements:
       path: MetaBot.entitlements
+      properties:
+        aps-environment: development
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.xvirobotics.MetaBot
