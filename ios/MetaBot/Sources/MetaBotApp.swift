@@ -36,36 +36,21 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         let userInfo = response.notification.request.content.userInfo
         let type = userInfo["type"] as? String
 
-        if type == "incoming_call",
-           let sessionId = userInfo["sessionId"] as? String,
-           let roomId = userInfo["roomId"] as? String,
-           let token = userInfo["token"] as? String,
-           let appId = userInfo["appId"] as? String,
-           let userId = userInfo["userId"] as? String,
-           let aiUserId = userInfo["aiUserId"] as? String {
-            let chatId = userInfo["chatId"] as? String ?? ""
-            let botName = userInfo["botName"] as? String ?? "Voice Call"
+        if type == "incoming_call" {
+            // Store for cold launch — AppState will pick it up
+            AppDelegate.pendingCallData = userInfo as? [String: String]
             await MainActor.run {
-                NotificationCenter.default.post(
-                    name: .incomingCallFromPush,
-                    object: nil,
-                    userInfo: [
-                        "sessionId": sessionId, "roomId": roomId, "token": token,
-                        "appId": appId, "userId": userId, "aiUserId": aiUserId,
-                        "chatId": chatId, "botName": botName,
-                    ]
-                )
+                NotificationCenter.default.post(name: .incomingCallFromPush, object: nil, userInfo: userInfo)
             }
         } else if let chatId = userInfo["chatId"] as? String {
             await MainActor.run {
-                NotificationCenter.default.post(
-                    name: .navigateToChat,
-                    object: nil,
-                    userInfo: ["chatId": chatId]
-                )
+                NotificationCenter.default.post(name: .navigateToChat, object: nil, userInfo: ["chatId": chatId])
             }
         }
     }
+
+    /// Pending call data from push notification (survives cold launch)
+    static var pendingCallData: [String: String]?
 }
 
 extension Notification.Name {
@@ -121,20 +106,48 @@ struct MetaBotApp: App {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .incomingCallFromPush)) { notification in
-                guard let info = notification.userInfo else { return }
-                let call = IncomingVoiceCall(
-                    sessionId: info["sessionId"] as? String ?? "",
-                    roomId: info["roomId"] as? String ?? "",
-                    token: info["token"] as? String ?? "",
-                    appId: info["appId"] as? String ?? "",
-                    userId: info["userId"] as? String ?? "",
-                    aiUserId: info["aiUserId"] as? String ?? "",
-                    chatId: info["chatId"] as? String ?? "",
-                    botName: info["botName"] as? String ?? "Voice Call",
-                    prompt: nil
-                )
-                appState.incomingVoiceCall = call
+                if let info = notification.userInfo {
+                    appState.incomingVoiceCall = Self.parseCallFromUserInfo(info)
+                }
+            }
+            .task {
+                // Cold launch: check if app was opened from a call push notification
+                if let data = AppDelegate.pendingCallData {
+                    AppDelegate.pendingCallData = nil
+                    try? await Task.sleep(for: .seconds(1.5))
+                    await MainActor.run {
+                        appState.incomingVoiceCall = Self.parseCallFromDict(data)
+                    }
+                }
             }
         }
+    }
+
+    private static func parseCallFromUserInfo(_ info: [AnyHashable: Any]) -> IncomingVoiceCall {
+        IncomingVoiceCall(
+            sessionId: info["sessionId"] as? String ?? "",
+            roomId: info["roomId"] as? String ?? "",
+            token: info["token"] as? String ?? "",
+            appId: info["appId"] as? String ?? "",
+            userId: info["userId"] as? String ?? "",
+            aiUserId: info["aiUserId"] as? String ?? "",
+            chatId: info["chatId"] as? String ?? "",
+            botName: info["botName"] as? String ?? "Voice Call",
+            prompt: nil
+        )
+    }
+
+    private static func parseCallFromDict(_ info: [String: String]) -> IncomingVoiceCall {
+        IncomingVoiceCall(
+            sessionId: info["sessionId"] ?? "",
+            roomId: info["roomId"] ?? "",
+            token: info["token"] ?? "",
+            appId: info["appId"] ?? "",
+            userId: info["userId"] ?? "",
+            aiUserId: info["aiUserId"] ?? "",
+            chatId: info["chatId"] ?? "",
+            botName: info["botName"] ?? "Voice Call",
+            prompt: nil
+        )
     }
 }

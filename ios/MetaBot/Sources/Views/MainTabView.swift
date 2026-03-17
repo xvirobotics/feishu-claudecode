@@ -3,8 +3,7 @@ import SwiftUI
 struct MainTabView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedSidebarItem: SidebarItem? = .chats
-    @State private var showIncomingCallScreen = false
-    @State private var showActiveCall = false
+    @State private var callState: MobileTabView.CallScreenState = .none
     @State private var incomingCall: IncomingVoiceCall?
 
     enum SidebarItem: Hashable {
@@ -63,31 +62,29 @@ struct MainTabView: View {
         .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
             if let call = appState.incomingVoiceCall, newValue != nil {
                 appState.incomingVoiceCall = nil
-                guard !showIncomingCallScreen && !showActiveCall else { return }
+                guard callState == .none else { return }
                 incomingCall = call
                 Haptics.notification(.warning)
-                showIncomingCallScreen = true
+                withAnimation(.easeOut(duration: 0.3)) { callState = .ringing }
             }
         }
-        .fullScreenCover(isPresented: $showIncomingCallScreen) {
-            if let call = incomingCall {
+        .overlay {
+            if callState == .ringing, let call = incomingCall {
                 IncomingCallView(
                     call: call,
                     onAccept: {
-                        showIncomingCallScreen = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            showActiveCall = true
-                        }
+                        withAnimation(.easeOut(duration: 0.25)) { callState = .active }
                     },
                     onReject: {
-                        showIncomingCallScreen = false
-                        incomingCall = nil
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            callState = .none
+                            incomingCall = nil
+                        }
                     }
                 )
+                .transition(.opacity)
             }
-        }
-        .fullScreenCover(isPresented: $showActiveCall) {
-            if let call = incomingCall {
+            if callState == .active, let call = incomingCall {
                 let bot = call.botName
                 let localChatId = appState.activeSessionForBot(bot)?.id
                     ?? appState.activeSessionId
@@ -98,7 +95,11 @@ struct MainTabView: View {
                     incoming: call
                 )
                 .environment(appState)
-                .onDisappear { incomingCall = nil }
+                .onDisappear {
+                    callState = .none
+                    incomingCall = nil
+                }
+                .transition(.opacity)
             }
         }
     }
@@ -187,54 +188,51 @@ struct MainTabView: View {
 
 struct MobileTabView: View {
     @Environment(AppState.self) private var appState
-    @State private var showIncomingCallScreen = false
-    @State private var showActiveCall = false
+
+    enum CallScreenState: Equatable {
+        case none
+        case ringing    // Show accept/reject
+        case active     // In call
+    }
+    @State private var callState: CallScreenState = .none
     @State private var incomingCall: IncomingVoiceCall?
 
     var body: some View {
-        Group {
-            if appState.showingChat, appState.activeSession != nil {
-                fullScreenChat
-            } else {
-                if #available(iOS 26, *) {
-                    liquidGlassTabView
+        ZStack {
+            // Main content
+            Group {
+                if appState.showingChat, appState.activeSession != nil {
+                    fullScreenChat
                 } else {
-                    legacyTabView
+                    if #available(iOS 26, *) {
+                        liquidGlassTabView
+                    } else {
+                        legacyTabView
+                    }
                 }
             }
-        }
-        // Global incoming call listener — works from any tab/screen
-        .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
-            if let call = appState.incomingVoiceCall, newValue != nil {
-                appState.incomingVoiceCall = nil
-                guard !showIncomingCallScreen && !showActiveCall else { return }
-                incomingCall = call
-                Haptics.notification(.warning)
-                showIncomingCallScreen = true
-            }
-        }
-        // Incoming call screen (Accept / Decline)
-        .fullScreenCover(isPresented: $showIncomingCallScreen) {
-            if let call = incomingCall {
+
+            // Incoming call overlay (single ZStack, no fullScreenCover chaining)
+            if callState == .ringing, let call = incomingCall {
                 IncomingCallView(
                     call: call,
                     onAccept: {
-                        showIncomingCallScreen = false
-                        // Small delay so the dismiss animation completes
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            showActiveCall = true
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            callState = .active
                         }
                     },
                     onReject: {
-                        showIncomingCallScreen = false
-                        incomingCall = nil
+                        withAnimation(.easeOut(duration: 0.25)) {
+                            callState = .none
+                            incomingCall = nil
+                        }
                     }
                 )
+                .transition(.opacity)
+                .zIndex(10)
             }
-        }
-        // Active call screen (after accepting)
-        .fullScreenCover(isPresented: $showActiveCall) {
-            if let call = incomingCall {
+
+            if callState == .active, let call = incomingCall {
                 let bot = call.botName
                 let localChatId = appState.activeSessionForBot(bot)?.id
                     ?? appState.activeSessionId
@@ -245,7 +243,24 @@ struct MobileTabView: View {
                     incoming: call
                 )
                 .environment(appState)
-                .onDisappear { incomingCall = nil }
+                .onDisappear {
+                    callState = .none
+                    incomingCall = nil
+                }
+                .transition(.opacity)
+                .zIndex(11)
+            }
+        }
+        // Global incoming call listener — works from any tab/screen
+        .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
+            if let call = appState.incomingVoiceCall, newValue != nil {
+                appState.incomingVoiceCall = nil
+                guard callState == .none else { return }
+                incomingCall = call
+                Haptics.notification(.warning)
+                withAnimation(.easeOut(duration: 0.3)) {
+                    callState = .ringing
+                }
             }
         }
     }
