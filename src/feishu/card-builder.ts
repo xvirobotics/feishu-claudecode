@@ -45,13 +45,25 @@ function parseMarkdownTable(block: string): { headers: string[]; rows: string[][
 }
 
 /**
+ * Strip Markdown formatting from text, leaving plain content.
+ */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/~~(.+?)~~/g, '$1')
+    .replace(/`(.+?)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+}
+
+/**
  * Convert a parsed Markdown table into a Feishu card table element.
  * Uses the Feishu card v2 table component with column_list and rows.
  */
 function buildFeishuTableElement(table: { headers: string[]; rows: string[][] }): unknown {
   const columns = table.headers.map((h, i) => ({
     name: `col_${i}`,
-    display_name: h,
+    display_name: stripMarkdown(h),
     data_type: 'text' as const,
     width: 'auto' as const,
   }));
@@ -59,7 +71,7 @@ function buildFeishuTableElement(table: { headers: string[]; rows: string[][] })
   const rows = table.rows.map((row) => {
     const obj: Record<string, string> = {};
     table.headers.forEach((_, i) => {
-      obj[`col_${i}`] = row[i] ?? '';
+      obj[`col_${i}`] = stripMarkdown(row[i] ?? '');
     });
     return obj;
   });
