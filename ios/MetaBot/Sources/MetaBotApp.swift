@@ -55,6 +55,7 @@ extension Notification.Name {
 @main
 struct MetaBotApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
     @State private var appState = AppState()
 
     var body: some Scene {
@@ -85,6 +86,11 @@ struct MetaBotApp: App {
                 // Wire push service to AppDelegate
                 appDelegate.pushService = appState.pushService
                 UNUserNotificationCenter.current().delegate = appDelegate
+            }
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    appState.handleForegroundReturn()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .navigateToChat)) { notification in
                 if let chatId = notification.userInfo?["chatId"] as? String {

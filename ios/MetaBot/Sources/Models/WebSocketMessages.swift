@@ -10,6 +10,7 @@ enum ClientMessage: Encodable {
     case createGroup(name: String, members: [String])
     case deleteGroup(groupId: String)
     case listGroups
+    case resume(chatIds: [String])
     case ping
 
     func encode(to encoder: Encoder) throws {
@@ -44,6 +45,9 @@ enum ClientMessage: Encodable {
             try container.encode(groupId, forKey: .key("groupId"))
         case .listGroups:
             try container.encode("list_groups", forKey: .key("type"))
+        case .resume(let chatIds):
+            try container.encode("resume", forKey: .key("type"))
+            try container.encode(chatIds, forKey: .key("chatIds"))
         case .ping:
             try container.encode("ping", forKey: .key("type"))
         }

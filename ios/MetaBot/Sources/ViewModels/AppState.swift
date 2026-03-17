@@ -103,6 +103,24 @@ final class AppState {
         groups = []
     }
 
+    /// Called when app returns to foreground — reconnect and resume active sessions
+    func handleForegroundReturn() {
+        guard auth.isAuthenticated else { return }
+        if !webSocket.isConnected {
+            connect()
+        }
+        // Send resume for all sessions that have running tasks
+        let activeChatIds = sessions.values
+            .filter { session in
+                let lastStatus = session.messages.last?.state?.status
+                return lastStatus == .running || lastStatus == .thinking
+            }
+            .map(\.id)
+        if !activeChatIds.isEmpty {
+            webSocket.send(.resume(chatIds: activeChatIds))
+        }
+    }
+
     private func startListening() {
         messageListenerTask?.cancel()
         messageListenerTask = Task { [weak self] in

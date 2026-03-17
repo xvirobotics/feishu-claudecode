@@ -23,6 +23,7 @@ type ClientMessage =
   | { type: 'delete_group'; groupId: string }
   | { type: 'list_groups' }
   | { type: 'subscribe_group'; groupId: string; chatId: string }
+  | { type: 'resume'; chatIds: string[] }
   | { type: 'start_asr' }
   | { type: 'stop_asr' }
   | { type: 'ping' };
@@ -67,6 +68,23 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
+
+// Cache last known state per chatId+messageId for reconnection recovery.
+// Entries expire after 10 minutes.
+const STATE_CACHE_TTL_MS = 10 * 60 * 1000;
+const lastStateCache = new Map<string, { chatId: string; messageId: string; state: CardState; type: 'state' | 'complete'; ts: number }>();
+
+function cacheState(chatId: string, messageId: string, state: CardState, type: 'state' | 'complete') {
+  lastStateCache.set(chatId, { chatId, messageId, state, type, ts: Date.now() });
+}
+
+// Periodic cleanup of expired cache entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of lastStateCache) {
+    if (now - entry.ts > STATE_CACHE_TTL_MS) lastStateCache.delete(key);
+  }
+}, 60_000);
 
 export interface WebSocketHandle {
   /** Broadcast updated bot list to all connected WS clients. */
@@ -259,6 +277,19 @@ export function setupWebSocketServer(
           break;
         }
 
+        case 'resume': {
+          // Client reconnected — send last known state for requested chatIds
+          for (const cid of msg.chatIds) {
+            subscriptions.subscribe(cid, ws);
+            const cached = lastStateCache.get(cid);
+            if (cached) {
+              sendMessage(ws, { type: cached.type, chatId: cached.chatId, messageId: cached.messageId, state: cached.state });
+              wsLogger.debug({ chatId: cid, type: cached.type }, 'Sent cached state on resume');
+            }
+          }
+          break;
+        }
+
         case 'start_asr': {
           // Destroy previous session if any
           if (asrSession) { asrSession.destroy(); asrSession = null; }
@@ -396,6 +427,8 @@ async function handleChat(
         if (ws.readyState !== WebSocket.OPEN) return;
         // Use the client-provided messageId so the frontend can match the response
         const msgId = clientMessageId || bridgeMessageId;
+        // Cache state for reconnection recovery
+        cacheState(chatId, msgId, state, final ? 'complete' : 'state');
         if (final) {
           sendMessage(ws, { type: 'complete', chatId, messageId: msgId, state });
           // Send push notification if configured (non-blocking)
