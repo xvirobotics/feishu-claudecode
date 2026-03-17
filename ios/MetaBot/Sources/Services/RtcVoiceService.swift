@@ -1,9 +1,7 @@
 import AVFoundation
 import Foundation
 import Observation
-
-// NOTE: Uncomment when VolcEngineRTC pod is installed
-// import VolcEngineRTC
+import VolcEngineRTC
 
 // MARK: - Types
 
@@ -75,7 +73,7 @@ func parseSubtitle(from data: Data) -> SubtitleData? {
 
 /// Manages Volcengine RTC voice call lifecycle.
 /// Audio is captured/played by the RTC SDK (no local AVAudioEngine needed).
-/// ASR → LLM → TTS all happens in Volcengine cloud.
+/// ASR -> LLM -> TTS all happens in Volcengine cloud.
 @Observable
 final class RtcVoiceService: NSObject {
     // Observable state
@@ -86,11 +84,14 @@ final class RtcVoiceService: NSObject {
     private(set) var transcript: [RtcAPIService.TranscriptEntry] = []
 
     // Private state
-    // NOTE: Uncomment when VolcEngineRTC pod is installed
-    // private var rtcVideo: ByteRTCVideo?
-    // private var rtcRoom: ByteRTCRoom?
+    private var rtcEngine: ByteRTCEngine?
+    private var rtcRoom: ByteRTCRoom?
     private var sessionInfo: RtcSessionInfo?
     private var apiService: RtcAPIService?
+
+    func setError(_ message: String) {
+        callPhase = .error(message)
+    }
 
     // MARK: - Start Call (user-initiated)
 
@@ -214,12 +215,11 @@ final class RtcVoiceService: NSObject {
 
     func toggleMute() {
         isMuted.toggle()
-        // NOTE: Uncomment when VolcEngineRTC pod is installed
-        // if isMuted {
-        //     rtcVideo?.stopAudioCapture()
-        // } else {
-        //     rtcVideo?.startAudioCapture()
-        // }
+        if isMuted {
+            rtcEngine?.stopAudioCapture()
+        } else {
+            rtcEngine?.startAudioCapture()
+        }
     }
 
     // MARK: - Private: RTC Room
@@ -230,58 +230,41 @@ final class RtcVoiceService: NSObject {
         try audioSession.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
         try audioSession.setActive(true)
 
-        // NOTE: The actual RTC SDK integration goes here.
-        // Uncomment the block below when VolcEngineRTC pod is installed.
-        // The pattern follows the official VolcEngineRTC iOS example:
-        //
-        // ---- BEGIN RTC SDK CODE (uncomment after pod install) ----
-        //
-        // // Create engine
-        // let engineCfg = ByteRTCEngineConfig()
-        // engineCfg.appID = info.appId
-        // rtcVideo = ByteRTCEngine.createRTCEngine(engineCfg, delegate: self)
-        //
-        // // Create and configure room
-        // rtcRoom = rtcVideo?.createRTCRoom(info.roomId)
-        // rtcRoom?.delegate = self
-        //
-        // // Configure user info with AIGC call scene
-        // let userInfo = ByteRTCUserInfo()
-        // userInfo.userId = info.userId
-        // userInfo.extraInfo = """
-        // {"call_scene":"RTC-AIGC","user_name":"\(info.userId)","user_id":"\(info.userId)"}
-        // """
-        //
-        // // Configure room — must match web exactly
-        // let roomCfg = ByteRTCRoomConfig()
-        // roomCfg.isAutoPublish = true
-        // roomCfg.isAutoSubscribeAudio = true
-        // roomCfg.isAutoSubscribeVideo = false
-        // roomCfg.roomProfileType = .chat  // critical for AIGC
-        //
-        // // Join room
-        // rtcRoom?.joinRoom(info.token, userInfo: userInfo, roomConfig: roomCfg)
-        //
-        // // Start audio capture
-        // rtcVideo?.startAudioCapture()
-        //
-        // ---- END RTC SDK CODE ----
+        // Create engine
+        let engineCfg = ByteRTCEngineConfig()
+        engineCfg.appID = info.appId
+        rtcEngine = ByteRTCEngine.createRTCEngine(engineCfg, delegate: self)
 
-        await MainActor.run {
-            callPhase = .connected
-            callStartTime = Date()
-        }
+        // Create and configure room
+        rtcRoom = rtcEngine?.createRTCRoom(info.roomId)
+        rtcRoom?.delegate = self
+
+        // Configure user info with AIGC call scene
+        let userInfo = ByteRTCUserInfo()
+        userInfo.userId = info.userId
+        userInfo.extraInfo = "{\"call_scene\":\"RTC-AIGC\",\"user_name\":\"\(info.userId)\",\"user_id\":\"\(info.userId)\"}"
+
+        // Configure room
+        let roomCfg = ByteRTCRoomConfig()
+        roomCfg.profile = .communication
+        roomCfg.isPublishAudio = true
+
+        // Join room
+        rtcRoom?.joinRoom(info.token, userInfo: userInfo, userVisibility: true, roomConfig: roomCfg)
+
+        // Start audio capture
+        rtcEngine?.startAudioCapture()
+
+        // State will be updated in delegate callback (onRoomStateChanged)
     }
 
     private func cleanupRtc() {
-        // NOTE: Uncomment when VolcEngineRTC pod is installed
-        // rtcVideo?.stopAudioCapture()
-        // rtcRoom?.leave()
-        // rtcRoom?.destroy()
-        // ByteRTCEngine.destroyRTCEngine()
-        // rtcVideo = nil
-        // rtcRoom = nil
-
+        rtcEngine?.stopAudioCapture()
+        rtcRoom?.leave()
+        rtcRoom?.destroy()
+        ByteRTCEngine.destroyRTCEngine()
+        rtcEngine = nil
+        rtcRoom = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -313,40 +296,45 @@ final class RtcVoiceService: NSObject {
     }
 }
 
-// MARK: - ByteRTC Delegates
-// NOTE: Uncomment when VolcEngineRTC pod is installed
+// MARK: - ByteRTCEngineDelegate
 
-// extension RtcVoiceService: ByteRTCEngineDelegate {
-//     func rtcEngine(_ engine: ByteRTCEngine, onError error: ByteRTCEngineErrorCode) {
-//         Task { @MainActor in
-//             self.callPhase = .error("RTC error: \(error.rawValue)")
-//         }
-//     }
-// }
+extension RtcVoiceService: ByteRTCEngineDelegate {
+    func rtcEngine(_ engine: ByteRTCEngine, onError errorCode: ByteRTCErrorCode) {
+        Task { @MainActor in
+            self.callPhase = .error("RTC error: \(errorCode.rawValue)")
+        }
+    }
+}
 
-// extension RtcVoiceService: ByteRTCRoomDelegate {
-//     func rtcRoom(_ rtcRoom: ByteRTCRoom, onRoomStateChanged roomId: String, withUid uid: String, state: Int, extraInfo: String) {
-//         if state == 0 {
-//             Task { @MainActor in
-//                 self.callPhase = .connected
-//                 self.callStartTime = Date()
-//             }
-//         }
-//     }
-//
-//     func rtcRoom(_ rtcRoom: ByteRTCRoom, onUserJoined userInfo: ByteRTCRemoteStreamKey, elapsed: Int) {
-//         // AI user joined
-//     }
-//
-//     func rtcRoom(_ rtcRoom: ByteRTCRoom, onUserLeave uid: String, reason: ByteRTCUserOfflineReason) {
-//         if uid == sessionInfo?.aiUserId {
-//             Task { @MainActor in
-//                 self.subtitleText = "AI disconnected"
-//             }
-//         }
-//     }
-//
-//     func rtcRoom(_ rtcRoom: ByteRTCRoom, onRoomBinaryMessageReceived uid: String, message: Data) {
-//         processRoomBinaryMessage(from: uid, message: message)
-//     }
-// }
+// MARK: - ByteRTCRoomDelegate
+
+extension RtcVoiceService: ByteRTCRoomDelegate {
+    func rtcRoom(_ rtcRoom: ByteRTCRoom, onRoomStateChanged roomId: String, withUid uid: String, state: Int, extraInfo: String) {
+        if state == 0 {
+            Task { @MainActor in
+                self.callPhase = .connected
+                self.callStartTime = Date()
+            }
+        } else if state < 0 {
+            Task { @MainActor in
+                self.callPhase = .error("Room error: \(state)")
+            }
+        }
+    }
+
+    func rtcRoom(_ rtcRoom: ByteRTCRoom, onUserJoined userInfo: ByteRTCUserInfo) {
+        // AI user joined
+    }
+
+    func rtcRoom(_ rtcRoom: ByteRTCRoom, onUserLeave uid: String, reason: ByteRTCUserOfflineReason) {
+        if uid == sessionInfo?.aiUserId {
+            Task { @MainActor in
+                self.subtitleText = "AI disconnected"
+            }
+        }
+    }
+
+    func rtcRoom(_ rtcRoom: ByteRTCRoom, onRoomBinaryMessageReceived uid: String, message: Data) {
+        processRoomBinaryMessage(from: uid, message: message)
+    }
+}

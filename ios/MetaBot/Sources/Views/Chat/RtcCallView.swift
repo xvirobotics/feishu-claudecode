@@ -3,7 +3,7 @@ import MediaPlayer
 import SwiftUI
 
 /// Full-screen RTC voice call overlay.
-/// Uses Volcengine RTC for real-time AI voice chat (ASR → LLM → TTS in cloud).
+/// Uses Volcengine RTC for real-time AI voice chat (ASR -> LLM -> TTS in cloud).
 /// No local recording/VAD needed — all audio processing happens server-side.
 struct RtcCallView: View {
     @Environment(AppState.self) private var appState
@@ -18,6 +18,7 @@ struct RtcCallView: View {
     @State private var callDuration: TimeInterval = 0
     @State private var callTimer: Timer?
     @State private var interruptionObserver: Any?
+    @State private var isSpeakerOn = false
 
     init(botName: String, chatId: String, incoming: IncomingVoiceCall? = nil) {
         self.botName = botName
@@ -27,168 +28,213 @@ struct RtcCallView: View {
 
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(
-                colors: [Color(red: 0.05, green: 0.1, blue: 0.15), Color(red: 0.02, green: 0.05, blue: 0.08)],
-                startPoint: .top,
-                endPoint: .bottom
+            NexusColors.void.ignoresSafeArea()
+
+            // Radial accent glow at top
+            RadialGradient(
+                colors: [NexusColors.accent.opacity(0.12), .clear],
+                center: .top,
+                startRadius: 0,
+                endRadius: 300
             )
             .ignoresSafeArea()
+            .blur(radius: 40)
 
+            // Main content
             VStack(spacing: 0) {
-                // Top bar
-                HStack {
-                    Button {
-                        endCall()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.title3)
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                    Spacer()
-                    HStack(spacing: 6) {
-                        Text(formattedDuration)
-                            .font(.system(size: 14, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.6))
-                        // RTC badge
-                        Text("RTC")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.accentColor.opacity(0.6))
-                            .clipShape(Capsule())
-                    }
-                    Spacer()
-                    Color.clear.frame(width: 24)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-
+                topBar
                 Spacer()
-
-                // Avatar + status
-                VStack(spacing: 20) {
-                    ZStack {
-                        // Pulsing rings when connected
-                        if rtcService.callPhase == .connected {
-                            ForEach(0..<3, id: \.self) { i in
-                                Circle()
-                                    .stroke(Color.accentColor.opacity(0.15 - Double(i) * 0.05), lineWidth: 2)
-                                    .frame(width: 120 + CGFloat(i) * 30, height: 120 + CGFloat(i) * 30)
-                            }
-                        }
-
-                        GradientAvatar(name: botName, size: 100)
-                    }
-
-                    Text(botName)
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.white)
-
-                    // Phase indicator
-                    HStack(spacing: 8) {
-                        switch rtcService.callPhase {
-                        case .connecting:
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(0.8)
-                        case .connected:
-                            Image(systemName: rtcService.isMuted ? "mic.slash.fill" : "waveform")
-                                .foregroundStyle(Color.accentColor)
-                                .symbolEffect(.variableColor.iterative)
-                        case .error:
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.red)
-                        default:
-                            EmptyView()
-                        }
-
-                        Text(rtcService.callPhase.displayText)
-                            .font(.system(size: 15))
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                    .frame(height: 24)
-                }
-
+                avatarSection
                 Spacer()
-
-                // Live subtitle display
-                if !rtcService.subtitleText.isEmpty && rtcService.callPhase == .connected {
-                    Text(rtcService.subtitleText)
-                        .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 20)
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.2), value: rtcService.subtitleText)
-                }
-
-                // Error message
-                if case .error(let msg) = rtcService.callPhase {
-                    Text(msg)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .padding(.bottom, 8)
-                }
-
-                // Bottom controls
-                HStack(spacing: 60) {
-                    // Mute
-                    Button {
-                        rtcService.toggleMute()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(rtcService.isMuted ? .white : .white.opacity(0.15))
-                                .frame(width: 56, height: 56)
-                            Image(systemName: rtcService.isMuted ? "mic.slash.fill" : "mic.fill")
-                                .font(.title3)
-                                .foregroundStyle(rtcService.isMuted ? .black : .white)
-                        }
-                    }
-                    .disabled(rtcService.callPhase != .connected)
-
-                    // End call
-                    Button {
-                        endCall()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(.red)
-                                .frame(width: 64, height: 64)
-                            Image(systemName: "phone.down.fill")
-                                .font(.title2)
-                                .foregroundStyle(.white)
-                        }
-                    }
-
-                    // Speaker
-                    Button {
-                        // Toggle speaker (placeholder)
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(.white.opacity(0.15))
-                                .frame(width: 56, height: 56)
-                            Image(systemName: "speaker.wave.2.fill")
-                                .font(.title3)
-                                .foregroundStyle(.white)
-                        }
-                    }
-                }
-                .padding(.bottom, 50)
+                transcriptSection
+                controlsBar
             }
         }
-        .onAppear { startCall() }
+        .onAppear {
+            Haptics.medium()
+            startCall()
+        }
         .onDisappear { cleanup() }
+    }
+
+    // MARK: - Top Bar
+
+    private var topBar: some View {
+        HStack {
+            Button { endCall() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.title3)
+                    .foregroundStyle(NexusColors.text1)
+            }
+            .accessibilityLabel("End call")
+            Spacer()
+            HStack(spacing: 6) {
+                Text(formattedDuration)
+                    .font(NexusTypography.label)
+                    .foregroundStyle(NexusColors.text2)
+                // RTC badge
+                Text("RTC")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(NexusColors.accent.opacity(0.6))
+                    .clipShape(Capsule())
+            }
+            Spacer()
+            Color.clear.frame(width: 24)
+        }
+        .padding(.horizontal, NexusSpacing.xl)
+        .padding(.top, NexusSpacing.lg)
+    }
+
+    // MARK: - Avatar Section
+
+    private var avatarSection: some View {
+        VStack(spacing: 24) {
+            GradientAvatar(name: botName, size: 90)
+                .overlay(
+                    Circle().stroke(
+                        NexusColors.accent.opacity(rtcService.callPhase == .connected ? 0.4 : 0),
+                        lineWidth: 2
+                    )
+                )
+                .animation(NexusMotion.base, value: rtcService.callPhase == .connected)
+
+            Text(botName)
+                .font(NexusTypography.title)
+                .foregroundStyle(NexusColors.text0)
+
+            WaveformView(
+                audioLevel: rtcService.callPhase == .connected ? 0.3 : 0,
+                isActive: rtcService.callPhase == .connected
+            )
+            .padding(.horizontal, 40)
+
+            phaseIndicator
+        }
+    }
+
+    // MARK: - Phase Indicator
+
+    private var phaseIndicator: some View {
+        HStack(spacing: 8) {
+            switch rtcService.callPhase {
+            case .connecting:
+                NexusThinkingDots()
+            case .connected:
+                Image(systemName: rtcService.isMuted ? "mic.slash.fill" : "waveform")
+                    .foregroundStyle(NexusColors.accent)
+                    .symbolEffect(.variableColor.iterative)
+            case .error:
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(NexusColors.red)
+            default:
+                EmptyView()
+            }
+
+            Text(rtcService.callPhase.displayText)
+                .font(NexusTypography.body)
+                .foregroundStyle(NexusColors.text1)
+        }
+        .frame(height: 28)
+    }
+
+    // MARK: - Transcript Section
+
+    @ViewBuilder
+    private var transcriptSection: some View {
+        // Live subtitle display
+        if !rtcService.subtitleText.isEmpty && rtcService.callPhase == .connected {
+            Text(rtcService.subtitleText)
+                .font(NexusTypography.body)
+                .foregroundStyle(NexusColors.text0)
+                .multilineTextAlignment(.center)
+                .padding(NexusSpacing.md)
+                .background(NexusColors.surface1)
+                .clipShape(RoundedRectangle(cornerRadius: NexusRadius.lg))
+                .nexusGlassBorder(radius: NexusRadius.lg)
+                .padding(.horizontal, 40)
+                .padding(.bottom, 20)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: rtcService.subtitleText)
+        }
+
+        // Error message
+        if case .error(let msg) = rtcService.callPhase {
+            Text(msg)
+                .font(.caption)
+                .foregroundStyle(NexusColors.red)
+                .padding(.bottom, 8)
+        }
+    }
+
+    // MARK: - Controls Bar
+
+    private var controlsBar: some View {
+        HStack(spacing: NexusSpacing.xxl) {
+            // Mute
+            Button { rtcService.toggleMute() } label: {
+                ZStack {
+                    Circle()
+                        .fill(rtcService.isMuted ? NexusColors.red.opacity(0.2) : NexusColors.surface2)
+                        .frame(width: 56, height: 56)
+                        .nexusGlassBorder(radius: 28)
+                    Image(systemName: rtcService.isMuted ? "mic.slash.fill" : "mic.fill")
+                        .font(.title3)
+                        .foregroundStyle(rtcService.isMuted ? NexusColors.red : NexusColors.text1)
+                }
+            }
+            .accessibilityLabel(rtcService.isMuted ? "Unmute" : "Mute")
+            .disabled(rtcService.callPhase != .connected)
+
+            // End call
+            Button { endCall() } label: {
+                ZStack {
+                    Circle().fill(NexusColors.red).frame(width: 68, height: 68)
+                        .nexusShadowMd()
+                    Image(systemName: "phone.down.fill")
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                }
+            }
+            .accessibilityLabel("End call")
+
+            // Speaker toggle
+            Button { toggleSpeaker() } label: {
+                ZStack {
+                    Circle()
+                        .fill(isSpeakerOn ? NexusColors.accentSoft : NexusColors.surface2)
+                        .frame(width: 56, height: 56)
+                        .nexusGlassBorder(radius: 28)
+                    Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.2.fill")
+                        .font(.title3)
+                        .foregroundStyle(isSpeakerOn ? NexusColors.accent : NexusColors.text1)
+                }
+            }
+            .accessibilityLabel(isSpeakerOn ? "Disable speaker" : "Enable speaker")
+        }
+        .padding(.bottom, 50)
     }
 
     private var formattedDuration: String {
         let mins = Int(callDuration) / 60
         let secs = Int(callDuration) % 60
         return String(format: "%02d:%02d", mins, secs)
+    }
+
+    // MARK: - Speaker Toggle
+
+    private func toggleSpeaker() {
+        isSpeakerOn.toggle()
+        do {
+            let session = AVAudioSession.sharedInstance()
+            let options: AVAudioSession.CategoryOptions = isSpeakerOn ? [.defaultToSpeaker, .allowBluetooth] : [.allowBluetooth]
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+            try session.setActive(true)
+        } catch {
+            print("[Call] Speaker toggle error: \(error)")
+        }
     }
 
     // MARK: - Call Lifecycle
@@ -213,7 +259,7 @@ struct RtcCallView: View {
 
         Task {
             guard let token = appState.auth.token else {
-                rtcService.callPhase = .error("Not authenticated")
+                rtcService.setError("Not authenticated")
                 return
             }
 
@@ -250,6 +296,7 @@ struct RtcCallView: View {
     }
 
     private func endCall() {
+        Haptics.medium()
         Task {
             let transcriptText = await rtcService.endCall()
 

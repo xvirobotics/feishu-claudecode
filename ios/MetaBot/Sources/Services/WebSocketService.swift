@@ -112,6 +112,14 @@ final class WebSocketService: NSObject, @unchecked Sendable {
         }
     }
 
+    func sendBinary(_ data: Data) {
+        webSocketTask?.send(.data(data)) { error in
+            if let error = error {
+                print("[WS] Binary send error: \(error)")
+            }
+        }
+    }
+
     // MARK: - Receive
 
     private func startReceiving() {

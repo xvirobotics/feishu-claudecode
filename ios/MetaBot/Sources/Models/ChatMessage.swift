@@ -15,6 +15,7 @@ struct ChatMessage: Codable, Identifiable {
     var state: CardState?
     var attachments: [FileAttachment]?
     let timestamp: Double
+    var isPlanMode: Bool? = nil
 
     var date: Date {
         Date(timeIntervalSince1970: timestamp / 1000)

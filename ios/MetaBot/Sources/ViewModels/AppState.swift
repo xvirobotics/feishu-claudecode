@@ -27,6 +27,12 @@ final class AppState {
     var rtcAvailable = false
     var incomingVoiceCall: IncomingVoiceCall?
 
+    // Team
+    var teamStatus: TeamStatus? = nil
+
+    // ASR streaming
+    var asrPartialText: String = ""
+
     // Sessions
     var sessions: [String: ChatSession] = [:] {
         didSet { debounceSave() }
@@ -42,6 +48,14 @@ final class AppState {
 
     // Theme
     var colorScheme: ColorScheme? = nil
+
+    // Font Scale
+    var fontScale: Double = 1.0 {
+        didSet {
+            UserDefaults.standard.set(fontScale, forKey: "metabot:fontScale")
+            NexusFontScale.current = fontScale
+        }
+    }
 
     var activeSession: ChatSession? {
         guard let id = activeSessionId else { return nil }
@@ -60,6 +74,9 @@ final class AppState {
         serverURL = UserDefaults.standard.string(forKey: "metabot:serverURL") ?? "https://metabot.xvirobotics.com"
         activeBotName = UserDefaults.standard.string(forKey: "metabot:activeBotName")
         activeSessionId = UserDefaults.standard.string(forKey: "metabot:activeSessionId")
+        let storedScale = UserDefaults.standard.double(forKey: "metabot:fontScale")
+        fontScale = storedScale.nonZeroOrDefault
+        NexusFontScale.current = fontScale
         loadSessions()
     }
 
@@ -139,11 +156,17 @@ final class AppState {
             let attachment = FileAttachment(name: name, type: mimeType, size: size, url: url, path: nil)
             addAttachmentToLastAssistantMessage(chatId: chatId, attachment: attachment)
 
-        case .notice(let text, let chatId, _, _):
-            if let chatId, let text {
+        case .notice(let text, let chatId, let title, let content):
+            if let chatId {
+                // Plan mode: when content is present, show as a collapsible plan card
+                let isPlan = content != nil && title?.lowercased() == "plan"
+                let displayText = content ?? text ?? ""
+                guard !displayText.isEmpty else { break }
                 let msg = ChatMessage(
-                    id: UUID().uuidString, type: .system, text: text,
-                    state: nil, attachments: nil, timestamp: Date().timeIntervalSince1970 * 1000
+                    id: UUID().uuidString, type: .system, text: displayText,
+                    state: nil, attachments: nil,
+                    timestamp: Date().timeIntervalSince1970 * 1000,
+                    isPlanMode: isPlan ? true : nil
                 )
                 addMessage(chatId: chatId, message: msg)
             }
@@ -159,6 +182,14 @@ final class AppState {
 
         case .groupsList(let groups):
             self.groups = groups
+
+        case .asrPartial(let text):
+            asrPartialText = text
+
+        case .asrFinal(let text):
+            if !text.isEmpty {
+                asrPartialText = ""
+            }
 
         case .pong, .unknown:
             break
@@ -184,12 +215,30 @@ final class AppState {
     }
 
     func deleteSession(_ id: String) {
+        guard let session = sessions[id] else { return }
+        let botName = session.botName
         sessions.removeValue(forKey: id)
         if activeSessionId == id {
-            activeSessionId = sessions.values
+            // Switch to most recent remaining session for the same bot
+            let remaining = sessions.values
+                .filter { $0.botName == botName && $0.groupId == nil }
                 .sorted(by: { $0.updatedAt > $1.updatedAt })
-                .first?.id
+            if let next = remaining.first {
+                selectSession(next.id)
+            } else {
+                activeSessionId = nil
+                showingChat = false
+            }
         }
+    }
+
+    /// Delete session using labeled parameter (convenience for closures)
+    func deleteSession(id: String) {
+        deleteSession(id)
+    }
+
+    func renameSession(id: String, title: String) {
+        sessions[id]?.title = title
     }
 
     func selectSession(_ id: String) {
@@ -210,6 +259,14 @@ final class AppState {
             return existing.id
         }
         return createSession(botName: botName)
+    }
+
+    func deleteMessage(sessionId: String, messageId: String) {
+        sessions[sessionId]?.messages.removeAll { $0.id == messageId }
+    }
+
+    func clearSessionMessages(id: String) {
+        sessions[id]?.messages = []
     }
 
     func clearAllSessions() {
@@ -377,6 +434,22 @@ final class AppState {
         sendMessage(text: transcriptText)
     }
 
+    // MARK: - Team Status
+
+    func fetchTeamStatus() async {
+        guard let token = auth.token else { return }
+        guard let url = URL(string: "\(serverURL)/api/team/status") else { return }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            let status = try JSONDecoder().decode(TeamStatus.self, from: data)
+            await MainActor.run { teamStatus = status }
+        } catch {
+            print("[Team] Fetch error: \(error)")
+        }
+    }
+
     // MARK: - Persistence
 
     private func debounceSave() {
@@ -403,6 +476,14 @@ final class AppState {
 
 enum AppTab: String, CaseIterable {
     case chats
+    case team
     case memory
     case settings
+}
+
+// MARK: - Double Extension
+
+extension Double {
+    /// Returns self if non-zero, otherwise 1.0 (useful for UserDefaults where 0 means "not set")
+    var nonZeroOrDefault: Double { self == 0 ? 1.0 : self }
 }

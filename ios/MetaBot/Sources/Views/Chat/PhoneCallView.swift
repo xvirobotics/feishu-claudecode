@@ -39,6 +39,7 @@ struct PhoneCallView: View {
     @State private var audioPlayer: AVAudioPlayer?
     @State private var errorMessage: String?
     @State private var isMuted = false
+    @State private var isSpeakerOn = false
     @State private var conversationLog: [(role: String, text: String)] = []
     @State private var silenceTimer: Task<Void, Never>?
     @State private var lastSpeechTime = Date()
@@ -50,167 +51,198 @@ struct PhoneCallView: View {
 
     var body: some View {
         ZStack {
-            // Background gradient
-            LinearGradient(
-                colors: [Color(red: 0.05, green: 0.1, blue: 0.15), Color(red: 0.02, green: 0.05, blue: 0.08)],
-                startPoint: .top,
-                endPoint: .bottom
+            NexusColors.void.ignoresSafeArea()
+
+            // Radial accent glow at top
+            RadialGradient(
+                colors: [NexusColors.accent.opacity(0.12), .clear],
+                center: .top,
+                startRadius: 0,
+                endRadius: 300
             )
             .ignoresSafeArea()
+            .blur(radius: 40)
 
+            // Main content
             VStack(spacing: 0) {
-                // Top bar
-                HStack {
-                    Button {
-                        endCall()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.title3)
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                    Spacer()
-                    Text(formattedDuration)
-                        .font(.system(size: 14, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.6))
-                    Spacer()
-                    Color.clear.frame(width: 24)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-
+                topBar
                 Spacer()
-
-                // Avatar + status
-                VStack(spacing: 20) {
-                    ZStack {
-                        // Pulsing rings for active states
-                        if callPhase == .listening || callPhase == .playing {
-                            ForEach(0..<3, id: \.self) { i in
-                                Circle()
-                                    .stroke(Color.accentColor.opacity(0.15 - Double(i) * 0.05), lineWidth: 2)
-                                    .frame(width: 120 + CGFloat(i) * 30, height: 120 + CGFloat(i) * 30)
-                                    .scaleEffect(callPhase == .listening ? 1.0 + voiceService.audioLevel * 2 : 1.0)
-                                    .animation(.easeInOut(duration: 0.3), value: voiceService.audioLevel)
-                            }
-                        }
-
-                        GradientAvatar(name: botName, size: 100)
-                    }
-
-                    Text(botName)
-                        .font(.system(size: 24, weight: .semibold))
-                        .foregroundStyle(.white)
-
-                    // Phase indicator
-                    HStack(spacing: 8) {
-                        if callPhase == .thinking {
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(0.8)
-                        } else if callPhase == .listening {
-                            Image(systemName: "waveform")
-                                .foregroundStyle(Color.accentColor)
-                                .symbolEffect(.variableColor.iterative)
-                        } else if callPhase == .playing {
-                            Image(systemName: "speaker.wave.2.fill")
-                                .foregroundStyle(Color.accentColor)
-                                .symbolEffect(.variableColor.iterative)
-                        }
-
-                        Text(callPhase.displayText)
-                            .font(.system(size: 15))
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                    .frame(height: 24)
-                }
-
+                avatarSection
                 Spacer()
-
-                // Transcript display
-                if !voiceService.transcribedText.isEmpty && callPhase == .listening {
-                    Text(voiceService.transcribedText)
-                        .font(.system(size: 15))
-                        .foregroundStyle(.white.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 20)
-                        .transition(.opacity)
-                }
-
-                // Last response
-                if let last = conversationLog.last, last.role == "assistant" {
-                    Text(last.text)
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 20)
-                }
-
-                // Error
-                if let error = errorMessage {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .padding(.bottom, 8)
-                }
-
-                // Bottom controls
-                HStack(spacing: 60) {
-                    // Mute
-                    Button {
-                        isMuted.toggle()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(isMuted ? .white : .white.opacity(0.15))
-                                .frame(width: 56, height: 56)
-                            Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
-                                .font(.title3)
-                                .foregroundStyle(isMuted ? .black : .white)
-                        }
-                    }
-
-                    // End call
-                    Button {
-                        endCall()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(.red)
-                                .frame(width: 64, height: 64)
-                            Image(systemName: "phone.down.fill")
-                                .font(.title2)
-                                .foregroundStyle(.white)
-                        }
-                    }
-
-                    // Speaker
-                    Button {
-                        // Toggle speaker (placeholder)
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(.white.opacity(0.15))
-                                .frame(width: 56, height: 56)
-                            Image(systemName: "speaker.wave.2.fill")
-                                .font(.title3)
-                                .foregroundStyle(.white)
-                        }
-                    }
-                }
-                .padding(.bottom, 50)
+                transcriptSection
+                controlsBar
             }
         }
-        .onAppear { startCall() }
+        .onAppear {
+            Haptics.medium()
+            startCall()
+        }
         .onDisappear { cleanup() }
+    }
+
+    private var topBar: some View {
+        HStack {
+            Button { endCall() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.title3)
+                    .foregroundStyle(NexusColors.text1)
+            }
+            .accessibilityLabel("End call")
+            Spacer()
+            Text(formattedDuration)
+                .font(NexusTypography.label)
+                .foregroundStyle(NexusColors.text2)
+            Spacer()
+            Color.clear.frame(width: 24)
+        }
+        .padding(.horizontal, NexusSpacing.xl)
+        .padding(.top, NexusSpacing.lg)
+    }
+
+    private var avatarSection: some View {
+        VStack(spacing: 24) {
+            GradientAvatar(name: botName, size: 90)
+                .overlay(
+                    Circle().stroke(
+                        NexusColors.accent.opacity(callPhase == .listening || callPhase == .playing ? 0.4 : 0),
+                        lineWidth: 2
+                    )
+                )
+                .animation(NexusMotion.base, value: callPhase == .listening)
+
+            Text(botName)
+                .font(NexusTypography.title)
+                .foregroundStyle(NexusColors.text0)
+
+            WaveformView(
+                audioLevel: voiceService.audioLevel,
+                isActive: callPhase == .listening || callPhase == .playing
+            )
+            .padding(.horizontal, 40)
+
+            phaseIndicator
+        }
+    }
+
+    private var phaseIndicator: some View {
+        HStack(spacing: 8) {
+            if callPhase == .thinking {
+                NexusThinkingDots()
+            } else if callPhase == .listening {
+                Image(systemName: "waveform")
+                    .foregroundStyle(NexusColors.accent)
+                    .symbolEffect(.variableColor.iterative)
+            } else if callPhase == .playing {
+                Image(systemName: "speaker.wave.2.fill")
+                    .foregroundStyle(NexusColors.accent)
+                    .symbolEffect(.variableColor.iterative)
+            }
+            Text(callPhase.displayText)
+                .font(NexusTypography.body)
+                .foregroundStyle(NexusColors.text1)
+        }
+        .frame(height: 28)
+    }
+
+    @ViewBuilder
+    private var transcriptSection: some View {
+        if !voiceService.transcribedText.isEmpty && callPhase == .listening {
+            Text(voiceService.transcribedText)
+                .font(NexusTypography.body)
+                .foregroundStyle(NexusColors.text0)
+                .multilineTextAlignment(.center)
+                .padding(NexusSpacing.md)
+                .background(NexusColors.surface1)
+                .clipShape(RoundedRectangle(cornerRadius: NexusRadius.lg))
+                .nexusGlassBorder(radius: NexusRadius.lg)
+                .padding(.horizontal, 40)
+                .padding(.bottom, 20)
+                .transition(.opacity)
+        }
+        if let last = conversationLog.last, last.role == "assistant" {
+            Text(last.text)
+                .font(NexusTypography.caption)
+                .foregroundStyle(NexusColors.text1)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+                .padding(NexusSpacing.md)
+                .background(NexusColors.surface1)
+                .clipShape(RoundedRectangle(cornerRadius: NexusRadius.lg))
+                .nexusGlassBorder(radius: NexusRadius.lg)
+                .padding(.horizontal, 40)
+                .padding(.bottom, 20)
+        }
+        if let error = errorMessage {
+            Text(error)
+                .font(.caption)
+                .foregroundStyle(NexusColors.red)
+                .padding(.bottom, 8)
+        }
+    }
+
+    private var controlsBar: some View {
+        HStack(spacing: NexusSpacing.xxl) {
+            // Mute
+            Button { isMuted.toggle() } label: {
+                ZStack {
+                    Circle()
+                        .fill(isMuted ? NexusColors.red.opacity(0.2) : NexusColors.surface2)
+                        .frame(width: 56, height: 56)
+                        .nexusGlassBorder(radius: 28)
+                    Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
+                        .font(.title3)
+                        .foregroundStyle(isMuted ? NexusColors.red : NexusColors.text1)
+                }
+            }
+            .accessibilityLabel(isMuted ? "Unmute" : "Mute")
+
+            // End call
+            Button { endCall() } label: {
+                ZStack {
+                    Circle().fill(NexusColors.red).frame(width: 68, height: 68)
+                        .nexusShadowMd()
+                    Image(systemName: "phone.down.fill")
+                        .font(.title2)
+                        .foregroundStyle(.white)
+                }
+            }
+            .accessibilityLabel("End call")
+
+            // Speaker toggle
+            Button { toggleSpeaker() } label: {
+                ZStack {
+                    Circle()
+                        .fill(isSpeakerOn ? NexusColors.accentSoft : NexusColors.surface2)
+                        .frame(width: 56, height: 56)
+                        .nexusGlassBorder(radius: 28)
+                    Image(systemName: isSpeakerOn ? "speaker.wave.3.fill" : "speaker.wave.2.fill")
+                        .font(.title3)
+                        .foregroundStyle(isSpeakerOn ? NexusColors.accent : NexusColors.text1)
+                }
+            }
+            .accessibilityLabel(isSpeakerOn ? "Disable speaker" : "Enable speaker")
+        }
+        .padding(.bottom, 50)
     }
 
     private var formattedDuration: String {
         let mins = Int(callDuration) / 60
         let secs = Int(callDuration) % 60
         return String(format: "%02d:%02d", mins, secs)
+    }
+
+    // MARK: - Speaker Toggle
+
+    private func toggleSpeaker() {
+        isSpeakerOn.toggle()
+        do {
+            let session = AVAudioSession.sharedInstance()
+            let options: AVAudioSession.CategoryOptions = isSpeakerOn ? [.defaultToSpeaker, .allowBluetooth] : [.allowBluetooth]
+            try session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+            try session.setActive(true)
+        } catch {
+            print("[Call] Speaker toggle error: \(error)")
+        }
     }
 
     // MARK: - Call Lifecycle
@@ -376,6 +408,7 @@ struct PhoneCallView: View {
     }
 
     private func endCall() {
+        Haptics.medium()
         cleanup()
         dismiss()
     }

@@ -64,6 +64,8 @@ enum ServerMessage {
     case groupCreated(group: ChatGroup)
     case groupDeleted(groupId: String)
     case groupsList(groups: [ChatGroup])
+    case asrPartial(text: String)
+    case asrFinal(text: String)
     case pong
     case unknown(type: String)
 }
@@ -145,6 +147,12 @@ extension ServerMessage: Decodable {
                 prompt: try container.decodeIfPresent(String.self, forKey: .key("prompt"))
             )
             self = .voiceCall(call)
+        case "asr_partial":
+            let text = try container.decode(String.self, forKey: .key("text"))
+            self = .asrPartial(text: text)
+        case "asr_final":
+            let text = try container.decode(String.self, forKey: .key("text"))
+            self = .asrFinal(text: text)
         case "pong":
             self = .pong
         default:

@@ -1,18 +1,24 @@
 import SwiftUI
 
-/// Deterministic gradient avatar based on name hash (matches Web UI)
+/// Deterministic gradient avatar based on name hash using NEXUS palette colors
 struct GradientAvatar: View {
     let name: String
     let size: CGFloat
 
-    private var colors: [Color] {
+    /// NEXUS palette hues for avatar variety
+    private static let paletteColors: [(Color, Color)] = [
+        (NexusColors.accent, NexusColors.accentHover),
+        (NexusColors.green, NexusColors.accent),
+        (NexusColors.blue, NexusColors.purple),
+        (NexusColors.purple, NexusColors.accent),
+        (NexusColors.amber, NexusColors.red),
+        (NexusColors.blue, NexusColors.green),
+    ]
+
+    private var colors: (Color, Color) {
         let hash = Self.stableHash(name)
-        let hue1 = Double(hash % 360) / 360.0
-        let hue2 = (hue1 + 0.3).truncatingRemainder(dividingBy: 1.0)
-        return [
-            Color(hue: hue1, saturation: 0.6, brightness: 0.8),
-            Color(hue: hue2, saturation: 0.7, brightness: 0.7),
-        ]
+        let idx = hash % Self.paletteColors.count
+        return Self.paletteColors[idx]
     }
 
     /// Deterministic hash stable across app launches (unlike hashValue which is randomized)
@@ -33,13 +39,13 @@ struct GradientAvatar: View {
             Circle()
                 .fill(
                     LinearGradient(
-                        colors: colors,
+                        colors: [colors.0, colors.1],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
             Text(initial)
-                .font(.system(size: size * 0.4, weight: .bold, design: .rounded))
+                .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
         }
         .frame(width: size, height: size)

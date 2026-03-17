@@ -4,7 +4,11 @@ import MarkdownUI
 struct MessageBubble: View {
     let message: ChatMessage
     let serverURL: String
+    var botName: String?
+    var isGroupChat: Bool = false
     var onFilePreview: ((FileAttachment) -> Void)?
+    var onDelete: (() -> Void)?
+    var onRetry: (() -> Void)?
 
     var body: some View {
         switch message.type {
@@ -21,9 +25,9 @@ struct MessageBubble: View {
 
     private var userBubble: some View {
         HStack {
-            Spacer(minLength: 60)
+            Spacer(minLength: 100)
             VStack(alignment: .trailing, spacing: 6) {
-                // File attachments
+                // File attachments above text
                 if let attachments = message.attachments, !attachments.isEmpty {
                     ForEach(attachments) { file in
                         FileCardView(file: file, serverURL: serverURL)
@@ -33,14 +37,23 @@ struct MessageBubble: View {
                 // Text
                 if !message.text.isEmpty {
                     Text(message.text)
-                        .font(.body)
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.accentColor)
-                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .lineSpacing(14 * 0.55) // 1.55 line-height
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 11)
+                        .background(NexusColors.accent)
+                        .clipShape(
+                            UnevenRoundedRectangle(
+                                topLeadingRadius: 16,
+                                bottomLeadingRadius: 16,
+                                bottomTrailingRadius: 4,
+                                topTrailingRadius: 16
+                            )
+                        )
                 }
             }
+            .containerRelativeFrame(.horizontal) { width, _ in width * 0.8 }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 2)
@@ -49,55 +62,87 @@ struct MessageBubble: View {
                 Button {
                     UIPasteboard.general.string = message.text
                 } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
+                    Label("Copy Text", systemImage: "doc.on.doc")
                 }
                 ShareLink(item: message.text) {
                     Label("Share", systemImage: "square.and.arrow.up")
                 }
             }
+            Button(role: .destructive) {
+                onDelete?()
+            } label: {
+                Label("Delete", systemImage: "trash")
+            }
         }
     }
 
-    // MARK: - Assistant Bubble
+    // MARK: - Assistant Bubble (full-width, no box)
 
     private var assistantBubble: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Status indicator
+        VStack(alignment: .leading, spacing: 0) {
+            // Bot name label (group chats only)
+            if isGroupChat, let name = botName, !name.isEmpty {
+                Text("@\(name)")
+                    .font(NexusTypography.jetBrainsMono(size: 11))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(NexusColors.accentText)
+                    .padding(.bottom, 6)
+            }
+
+            // Status header (only for non-complete states)
             statusHeader
 
             // Tool calls
             if let tools = message.state?.toolCalls, !tools.isEmpty {
                 ToolCallView(toolCalls: tools)
+                    .padding(.top, 4)
+            }
+
+            // Error block
+            if message.state?.status == .error, let errorMsg = message.state?.errorMessage {
+                errorBlock(errorMsg)
+
+                // Inline retry button
+                if let prompt = message.state?.userPrompt, !prompt.isEmpty {
+                    Button {
+                        onRetry?()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 12))
+                            Text("Retry")
+                                .font(NexusTypography.jetBrainsMono(size: 12))
+                        }
+                        .foregroundStyle(NexusColors.text2)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(NexusColors.surface2)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(NexusColors.glassBorder))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 8)
+                }
             }
 
             // Pending question
             if message.state?.status == .waitingForInput, let q = message.state?.pendingQuestion {
                 PendingQuestionView(question: q)
+                    .padding(.top, 8)
             }
 
             // Markdown content
             if !message.text.isEmpty {
                 Markdown(message.text)
-                    .markdownTheme(.metabot)
+                    .markdownTheme(.nexus)
                     .textSelection(.enabled)
+                    .padding(.top, 4)
             }
 
-            // Cost / duration
+            // Stats footer
             if message.state?.status == .complete {
-                HStack(spacing: 4) {
-                    if let cost = message.state?.costUsd {
-                        Text(String(format: "$%.4f", cost))
-                    }
-                    if message.state?.costUsd != nil && message.state?.durationMs != nil {
-                        Text("·")
-                    }
-                    if let duration = message.state?.durationMs {
-                        Text(String(format: "%.1fs", duration / 1000))
-                    }
-                }
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.tertiary)
-                .padding(.top, 4)
+                statsFooter
+                    .padding(.top, 6)
             }
 
             // Output file attachments
@@ -114,230 +159,135 @@ struct MessageBubble: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
         .contextMenu {
-            if !message.text.isEmpty {
+            Button {
+                UIPasteboard.general.string = message.state?.responseText ?? message.text
+            } label: {
+                Label("Copy Text", systemImage: "doc.on.doc")
+            }
+            if message.state?.status == .error, let prompt = message.state?.userPrompt, !prompt.isEmpty {
                 Button {
-                    UIPasteboard.general.string = message.text
+                    onRetry?()
                 } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
+                    Label("Retry", systemImage: "arrow.clockwise")
                 }
-                ShareLink(item: message.text) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                }
+            }
+            Button(role: .destructive) {
+                onDelete?()
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }
 
+    // MARK: - Status Header
+
     @ViewBuilder
     private var statusHeader: some View {
-        HStack(spacing: 6) {
-            switch message.state?.status {
-            case .thinking:
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .frame(width: 16, height: 16)
+        switch message.state?.status {
+        case .thinking:
+            HStack(spacing: 6) {
+                NexusThinkingDots()
+                    .frame(width: 24, height: 16)
                 Text("Thinking...")
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-            case .running:
-                ProgressView()
-                    .scaleEffect(0.7)
-                    .frame(width: 16, height: 16)
+                    .font(NexusTypography.caption)
+                    .foregroundStyle(NexusColors.text2)
+            }
+        case .running:
+            HStack(spacing: 6) {
+                NexusThinkingDots()
+                    .frame(width: 24, height: 16)
                 Text("Running...")
-                    .font(.caption)
-                    .foregroundStyle(.blue)
-            case .complete:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.green)
-            case .error:
-                Image(systemName: "xmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                if let error = message.state?.errorMessage {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .lineLimit(1)
-                }
-            case .waitingForInput:
+                    .font(NexusTypography.caption)
+                    .foregroundStyle(NexusColors.text2)
+            }
+        case .waitingForInput:
+            HStack(spacing: 6) {
                 Image(systemName: "questionmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(NexusColors.amber)
                 Text("Waiting for input...")
+                    .font(NexusTypography.caption)
+                    .foregroundStyle(NexusColors.amber)
+            }
+        case .error:
+            HStack(spacing: 6) {
+                Image(systemName: "xmark.circle.fill")
                     .font(.caption)
-                    .foregroundStyle(.orange)
-            case .none:
-                EmptyView()
+                    .foregroundStyle(NexusColors.red)
+                Text("ERROR")
+                    .font(NexusTypography.caption)
+                    .foregroundStyle(NexusColors.red)
+            }
+        case .complete, .none:
+            EmptyView()
+        }
+    }
+
+    // MARK: - Error Block
+
+    private func errorBlock(_ errorMessage: String) -> some View {
+        HStack(spacing: 0) {
+            Rectangle()
+                .fill(NexusColors.red)
+                .frame(width: 3)
+            Text(errorMessage)
+                .font(NexusTypography.codeBody)
+                .foregroundStyle(NexusColors.red)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(NexusColors.redSoft)
+        }
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 0,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: NexusRadius.md,
+                topTrailingRadius: NexusRadius.md
+            )
+        )
+        .padding(.top, 8)
+    }
+
+    // MARK: - Stats Footer
+
+    private var statsFooter: some View {
+        HStack(spacing: 4) {
+            if let cost = message.state?.costUsd {
+                Text(String(format: "$%.4f", cost))
+            }
+            if message.state?.costUsd != nil && message.state?.durationMs != nil {
+                Text("\u{00B7}")
+            }
+            if let duration = message.state?.durationMs {
+                Text(String(format: "%.1fs", duration / 1000))
             }
         }
+        .font(NexusTypography.jetBrainsMono(size: 11))
+        .foregroundStyle(NexusColors.text3)
     }
 
     // MARK: - System Bubble
 
     private var systemBubble: some View {
-        HStack {
-            Spacer()
-            Text(message.text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(.quaternary)
-                .clipShape(Capsule())
-            Spacer()
-        }
-        .padding(.vertical, 4)
-    }
-}
-
-// MARK: - File Card
-
-struct FileCardView: View {
-    let file: FileAttachment
-    let serverURL: String
-    var compact: Bool = false
-
-    var body: some View {
-        if file.category == .image {
-            imageCard
-        } else {
-            genericCard
-        }
-    }
-
-    /// Inline image thumbnail for image files
-    private var imageCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let url = URL(string: "\(serverURL)\(file.url)") {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(maxWidth: 260, maxHeight: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                    case .failure:
-                        genericCard
-                    default:
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(.quaternary)
-                            .frame(width: 160, height: 100)
-                            .overlay {
-                                ProgressView()
-                            }
-                    }
+        Group {
+            if message.isPlanMode == true {
+                PlanModeCard(text: message.text)
+            } else {
+                HStack {
+                    Spacer()
+                    Text(message.text)
+                        .font(.system(size: 12))
+                        .foregroundStyle(NexusColors.text2)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(NexusColors.surface1)
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(NexusColors.glassBorder, lineWidth: 1))
+                    Spacer()
                 }
+                .padding(.vertical, 4)
             }
         }
     }
-
-    /// Generic file card with extension icon
-    private var genericCard: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.accentColor.opacity(0.15))
-                    .frame(width: compact ? 32 : 36, height: compact ? 32 : 36)
-                Text(file.fileExtension.uppercased().prefix(4))
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.accentColor)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(file.name)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(file.formattedSize)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            if let url = URL(string: "\(serverURL)\(file.url)") {
-                Link(destination: url) {
-                    Image(systemName: "arrow.down.circle")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .padding(10)
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-}
-
-// MARK: - Pending Question
-
-struct PendingQuestionView: View {
-    let question: PendingQuestion
-
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let text = question.question {
-                Text(text)
-                    .font(.subheadline)
-                    .foregroundStyle(.primary)
-            }
-
-            if let options = question.options {
-                ForEach(options) { option in
-                    Button {
-                        if let toolUseId = question.toolUseId {
-                            appState.answerQuestion(toolUseId: toolUseId, answer: option.label)
-                        }
-                    } label: {
-                        Text(option.label)
-                            .font(.subheadline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.accentColor.opacity(0.1))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .padding(12)
-        .background(.orange.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-// MARK: - Markdown Theme
-
-extension MarkdownUI.Theme {
-    static let metabot = Theme()
-        .text {
-            ForegroundColor(.primary)
-            FontSize(15)
-        }
-        .code {
-            FontFamilyVariant(.monospaced)
-            FontSize(13)
-            ForegroundColor(.secondary)
-        }
-        .codeBlock { configuration in
-            ScrollView(.horizontal, showsIndicators: false) {
-                configuration.label
-                    .markdownTextStyle {
-                        FontFamilyVariant(.monospaced)
-                        FontSize(13)
-                    }
-                    .padding(12)
-            }
-            .background(Color(red: 0.95, green: 0.95, blue: 0.97)
-                .opacity(0.5))
-            .background(.quaternary)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .link {
-            ForegroundColor(.accentColor)
-        }
 }

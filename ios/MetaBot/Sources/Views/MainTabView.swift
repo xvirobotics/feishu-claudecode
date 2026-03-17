@@ -6,36 +6,21 @@ struct MainTabView: View {
 
     enum SidebarItem: Hashable {
         case chats
+        case team
         case memory
         case settings
     }
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selectedSidebarItem) {
-                Section {
-                    NavigationLink(value: SidebarItem.chats) {
-                        Label("Chats", systemImage: "bubble.left.and.bubble.right")
-                    }
-                    NavigationLink(value: SidebarItem.memory) {
-                        Label("Memory", systemImage: "book")
-                    }
-                    NavigationLink(value: SidebarItem.settings) {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                }
-            }
-            .navigationTitle("MetaBot")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    connectionDot
-                }
-            }
+            sidebarList
         } content: {
             switch selectedSidebarItem {
             case .chats, .none:
                 BotListView()
                     .navigationTitle("Chats")
+            case .team:
+                TeamDashboardView()
             case .memory:
                 MemoryView()
             case .settings:
@@ -51,7 +36,8 @@ struct MainTabView: View {
                                     HStack(spacing: 8) {
                                         GradientAvatar(name: bot.name, size: 28)
                                         Text(bot.name)
-                                            .font(.headline)
+                                            .font(NexusTypography.heading)
+                                            .foregroundStyle(NexusColors.text0)
                                     }
                                 }
                             }
@@ -72,14 +58,82 @@ struct MainTabView: View {
         }
     }
 
+    private var sidebarList: some View {
+        VStack(spacing: 0) {
+            List(selection: $selectedSidebarItem) {
+                Section {
+                    NavigationLink(value: SidebarItem.chats) {
+                        Label("Chats", systemImage: "bubble.left.and.bubble.right")
+                    }
+                } header: {
+                    Text("Navigation")
+                        .font(NexusTypography.label)
+                        .foregroundStyle(NexusColors.text2)
+                        .textCase(.uppercase)
+                }
+            }
+            .scrollContentBackground(.hidden)
+
+            Spacer()
+
+            // Bottom nav buttons matching web design
+            HStack(spacing: 0) {
+                sidebarBottomButton(item: .team, icon: "person.3", label: "TEAM")
+                sidebarBottomButton(item: .memory, icon: "book", label: "MEMORY")
+                sidebarBottomButton(item: .settings, icon: "gearshape", label: "SETTINGS")
+            }
+            .padding(.horizontal, NexusSpacing.sm)
+            .padding(.bottom, NexusSpacing.sm)
+        }
+        .background(sidebarBackground)
+        .navigationTitle("MetaBot")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                connectionDot
+            }
+        }
+    }
+
+    private func sidebarBottomButton(item: SidebarItem, icon: String, label: String) -> some View {
+        let isActive = selectedSidebarItem == item
+        return Button {
+            selectedSidebarItem = item
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                Text(label)
+                    .font(.system(size: 9, design: .monospaced))
+                    .tracking(1)
+            }
+            .foregroundStyle(isActive ? NexusColors.accentText : NexusColors.text2)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, NexusSpacing.sm)
+            .background(
+                RoundedRectangle(cornerRadius: NexusRadius.sm)
+                    .fill(isActive ? NexusColors.accentSofter : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// On iOS 26+, use clear background to let Liquid Glass shine through.
+    /// On earlier versions, use the opaque surface color.
+    private var sidebarBackground: Color {
+        if #available(iOS 26, *) {
+            return Color.clear
+        }
+        return NexusColors.surface0
+    }
+
     private var connectionDot: some View {
         HStack(spacing: 4) {
             Circle()
-                .fill(appState.isConnected ? .green : .gray)
+                .fill(appState.isConnected ? NexusColors.green : NexusColors.text2)
                 .frame(width: 8, height: 8)
             Text(appState.isConnected ? "Live" : "Offline")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(NexusTypography.label)
+                .foregroundStyle(NexusColors.text2)
         }
     }
 }
@@ -91,74 +145,127 @@ struct MobileTabView: View {
 
     var body: some View {
         if appState.showingChat, appState.activeSession != nil {
-            // Full-screen chat
-            NavigationStack {
-                ChatView()
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button {
-                                appState.showingChat = false
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "chevron.left")
-                                    Text("Back")
-                                }
+            fullScreenChat
+        } else {
+            if #available(iOS 26, *) {
+                liquidGlassTabView
+            } else {
+                legacyTabView
+            }
+        }
+    }
+
+    // MARK: - Full-screen Chat
+
+    private var fullScreenChat: some View {
+        NavigationStack {
+            ChatView()
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            appState.showingChat = false
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "chevron.left")
+                                Text("Back")
                             }
+                            .foregroundStyle(NexusColors.accent)
                         }
-                        ToolbarItem(placement: .principal) {
-                            if let bot = appState.activeBot {
-                                HStack(spacing: 8) {
-                                    GradientAvatar(name: bot.name, size: 26)
-                                    Text(bot.name)
-                                        .font(.headline)
-                                    Circle()
-                                        .fill(appState.isConnected ? .green : .gray)
-                                        .frame(width: 8, height: 8)
-                                }
+                    }
+                    ToolbarItem(placement: .principal) {
+                        if let bot = appState.activeBot {
+                            HStack(spacing: 8) {
+                                GradientAvatar(name: bot.name, size: 26)
+                                Text(bot.name)
+                                    .font(NexusTypography.heading)
+                                    .foregroundStyle(NexusColors.text0)
+                                Circle()
+                                    .fill(appState.isConnected ? NexusColors.green : NexusColors.text2)
+                                    .frame(width: 8, height: 8)
                             }
                         }
                     }
-            }
-        } else {
-            TabView(selection: Binding(
-                get: { appState.activeTab },
-                set: { appState.activeTab = $0 }
-            )) {
-                NavigationStack {
-                    BotListView()
-                        .navigationTitle("Chats")
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                HStack(spacing: 4) {
-                                    Circle()
-                                        .fill(appState.isConnected ? .green : .gray)
-                                        .frame(width: 8, height: 8)
-                                    Text(appState.isConnected ? "Live" : "Offline")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
                 }
+        }
+    }
+
+    // MARK: - Chats Content (shared between tab layouts)
+
+    private var chatsContent: some View {
+        NavigationStack {
+            BotListView()
+                .navigationTitle("Chats")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(appState.isConnected ? NexusColors.green : NexusColors.text2)
+                                .frame(width: 8, height: 8)
+                            Text(appState.isConnected ? "Live" : "Offline")
+                                .font(NexusTypography.label)
+                                .foregroundStyle(NexusColors.text2)
+                        }
+                    }
+                }
+        }
+    }
+
+    // MARK: - iOS 26+ Liquid Glass Tab API
+
+    @available(iOS 26, *)
+    private var liquidGlassTabView: some View {
+        TabView(selection: Binding(
+            get: { appState.activeTab },
+            set: { appState.activeTab = $0 }
+        )) {
+            Tab("Chats", systemImage: "bubble.left.and.bubble.right", value: AppTab.chats) {
+                chatsContent
+            }
+            Tab("Team", systemImage: "person.3", value: AppTab.team) {
+                TeamDashboardView()
+            }
+            Tab("Memory", systemImage: "brain", value: AppTab.memory) {
+                MemoryView()
+            }
+            Tab("Settings", systemImage: "gear", value: AppTab.settings) {
+                SettingsView()
+            }
+        }
+        .tint(NexusColors.accent)
+    }
+
+    // MARK: - Legacy TabView (iOS 17-25)
+
+    private var legacyTabView: some View {
+        TabView(selection: Binding(
+            get: { appState.activeTab },
+            set: { appState.activeTab = $0 }
+        )) {
+            chatsContent
                 .tabItem {
                     Label("Chats", systemImage: "bubble.left.and.bubble.right")
                 }
                 .tag(AppTab.chats)
 
-                MemoryView()
-                    .tabItem {
-                        Label("Memory", systemImage: "book")
-                    }
-                    .tag(AppTab.memory)
+            TeamDashboardView()
+                .tabItem {
+                    Label("Team", systemImage: "person.3")
+                }
+                .tag(AppTab.team)
 
-                SettingsView()
-                    .tabItem {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                    .tag(AppTab.settings)
-            }
-            .tint(.accentColor)
+            MemoryView()
+                .tabItem {
+                    Label("Memory", systemImage: "book")
+                }
+                .tag(AppTab.memory)
+
+            SettingsView()
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .tag(AppTab.settings)
         }
+        .tint(NexusColors.accent)
     }
 }

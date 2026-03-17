@@ -18,109 +18,189 @@ struct InputBar: View {
     @State private var voiceService = VoiceService()
     @State private var showVoiceHint = false
 
+    // Mic pulse animation
+    @State private var micPulse = false
+
+    // Phone call
+    @State private var showPhoneCall = false
+    @State private var showRtcCall = false
+
+    private var canSend: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingFiles.isEmpty
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            Divider()
+            // Upload progress
+            if isUploading {
+                HStack(spacing: 6) {
+                    NexusThinkingDots()
+                        .frame(width: 24, height: 14)
+                    Text("Uploading...")
+                        .font(NexusTypography.caption)
+                        .foregroundStyle(NexusColors.text2)
+                    Spacer()
+                }
+                .padding(.horizontal, 28)
+                .padding(.bottom, 6)
+            }
 
             // Pending files bar
             if !pendingFiles.isEmpty {
                 PendingFilesBar(files: pendingFiles) { file in
                     pendingFiles.removeAll { $0.id == file.id }
                 }
+                .padding(.horizontal, 28)
+                .padding(.bottom, 6)
             }
 
-            // Upload progress
-            if isUploading {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                    Text("Uploading...")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 4)
+            // Recording indicator
+            if voiceService.isRecording {
+                recordingIndicator
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 8)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
-            HStack(alignment: .bottom, spacing: 6) {
-                // Attachment button
-                Menu {
-                    Button {
-                        showPhotosPicker = true
+            // Input wrapper
+            HStack(alignment: .bottom, spacing: 8) {
+                // Left buttons
+                HStack(spacing: 4) {
+                    // Attach button
+                    Menu {
+                        Button {
+                            showPhotosPicker = true
+                        } label: {
+                            Label("Photos", systemImage: "photo.on.rectangle")
+                        }
+                        Button {
+                            showDocumentPicker = true
+                        } label: {
+                            Label("Files", systemImage: "doc")
+                        }
                     } label: {
-                        Label("Photos", systemImage: "photo.on.rectangle")
+                        Image(systemName: "paperclip")
+                            .font(.system(size: 16))
+                            .foregroundStyle(NexusColors.text2)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
                     }
-                    Button {
-                        showDocumentPicker = true
-                    } label: {
-                        Label("Files", systemImage: "doc")
+                    .accessibilityLabel("Attach")
+
+                    // Mic button
+                    if !appState.isRunning {
+                        Button {
+                            toggleVoiceInput()
+                        } label: {
+                            ZStack {
+                                if voiceService.isRecording {
+                                    Circle()
+                                        .stroke(NexusColors.red.opacity(0.4), lineWidth: 2)
+                                        .frame(width: 40, height: 40)
+                                        .scaleEffect(micPulse ? 1.3 : 1.0)
+                                        .opacity(micPulse ? 0.0 : 0.8)
+                                        .animation(
+                                            .easeOut(duration: 1.2).repeatForever(autoreverses: false),
+                                            value: micPulse
+                                        )
+                                }
+
+                                Image(systemName: "mic.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(voiceService.isRecording ? NexusColors.red : NexusColors.text2)
+                                    .frame(width: 36, height: 36)
+                            }
+                        }
+                        .accessibilityLabel(voiceService.isRecording ? "Stop recording" : "Start voice input")
+                        .onChange(of: voiceService.isRecording) { _, recording in
+                            micPulse = recording
+                        }
                     }
-                } label: {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 36, height: 36)
                 }
 
-                // Text field
+                // TextEditor
                 TextField("Ask anything...", text: $text, axis: .vertical)
-                    .lineLimit(1...6)
-                    .font(.body)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(.quaternary)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
+                    .lineLimit(1...8)
+                    .font(NexusTypography.spaceGrotesk(size: 14))
+                    .foregroundStyle(NexusColors.text0)
+                    .frame(minHeight: 24)
                     .focused($isFocused)
                     .submitLabel(.send)
                     .onSubmit { send() }
 
-                // Mic button (voice input → text)
-                if text.isEmpty && pendingFiles.isEmpty && !appState.isRunning {
+                // Right buttons
+                HStack(spacing: 4) {
+                    // Phone call button
                     Button {
-                        toggleVoiceInput()
+                        if appState.rtcAvailable {
+                            showRtcCall = true
+                        } else {
+                            showPhoneCall = true
+                        }
                     } label: {
-                        Image(systemName: voiceService.isRecording ? "mic.fill" : "mic")
-                            .font(.system(size: 16))
-                            .foregroundStyle(voiceService.isRecording ? Color.accentColor : .secondary)
-                            .frame(width: 36, height: 36)
-                            .background(voiceService.isRecording ? Color.accentColor.opacity(0.15) : .clear)
-                            .clipShape(Circle())
-                    }
-                }
-
-                // Send / Stop button
-                if appState.isRunning {
-                    Button {
-                        Haptics.notification(.warning)
-                        appState.stopTask()
-                    } label: {
-                        Image(systemName: "stop.fill")
+                        Image(systemName: "phone.fill")
                             .font(.system(size: 14))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(.red)
-                            .clipShape(Circle())
+                            .foregroundStyle(NexusColors.text2)
+                            .frame(width: 38, height: 38)
+                            .contentShape(Rectangle())
                     }
-                } else if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingFiles.isEmpty {
-                    Button {
-                        send()
-                    } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 36, height: 36)
-                            .background(Color.accentColor)
-                            .clipShape(Circle())
+                    .accessibilityLabel("Voice call")
+
+                    // Send / Stop button
+                    if appState.isRunning {
+                        Button {
+                            Haptics.notification(.warning)
+                            appState.stopTask()
+                        } label: {
+                            Image(systemName: "stop.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .background(NexusColors.red)
+                                .clipShape(RoundedRectangle(cornerRadius: NexusRadius.sm))
+                        }
+                        .accessibilityLabel("Stop")
+                        .buttonStyle(.plain)
+                    } else {
+                        Button {
+                            send()
+                        } label: {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .background(NexusColors.accent)
+                                .clipShape(RoundedRectangle(cornerRadius: NexusRadius.sm))
+                                .opacity(canSend ? 1.0 : 0.15)
+                        }
+                        .accessibilityLabel("Send message")
+                        .buttonStyle(SendButtonStyle())
+                        .disabled(!canSend || !appState.isConnected)
                     }
-                    .disabled(!appState.isConnected)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .padding(.bottom, 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(NexusColors.surface1)
+            .clipShape(RoundedRectangle(cornerRadius: NexusRadius.lg))
+            .overlay(
+                RoundedRectangle(cornerRadius: NexusRadius.lg)
+                    .stroke(
+                        isFocused ? NexusColors.accent.opacity(0.3) : NexusColors.glassBorder,
+                        lineWidth: 1
+                    )
+            )
+            .shadow(
+                color: isFocused ? NexusColors.accent.opacity(0.1) : .clear,
+                radius: 4,
+                x: 0,
+                y: 0
+            )
+            .animation(NexusMotion.base, value: isFocused)
+            .padding(.horizontal, 28)
+            .padding(.bottom, 16)
         }
-        .background(.bar)
+        .animation(NexusMotion.base, value: voiceService.isRecording)
         .photosPicker(isPresented: $showPhotosPicker, selection: $selectedPhotos, matching: .any(of: [.images, .screenshots, .videos]))
         .sheet(isPresented: $showDocumentPicker) {
             DocumentPickerView { urls in
@@ -136,6 +216,61 @@ struct InputBar: View {
         } message: {
             Text("Tap the mic button to start speaking. Your speech will be converted to text.")
         }
+        .fullScreenCover(isPresented: $showPhoneCall) {
+            if let botName = appState.activeBotName {
+                let chatId = appState.activeSessionId ?? "call_\(UUID().uuidString.prefix(8))"
+                PhoneCallView(botName: botName, chatId: chatId)
+                    .environment(appState)
+            }
+        }
+        .fullScreenCover(isPresented: $showRtcCall) {
+            if let botName = appState.activeBotName {
+                let chatId = appState.activeSessionId ?? "call_\(UUID().uuidString.prefix(8))"
+                RtcCallView(botName: botName, chatId: chatId, incoming: nil)
+                    .environment(appState)
+            }
+        }
+    }
+
+    // MARK: - Recording Indicator
+
+    private var recordingIndicator: some View {
+        HStack(spacing: 10) {
+            // Waveform bars
+            HStack(spacing: 3) {
+                ForEach(0..<5, id: \.self) { i in
+                    WaveformBar(index: i)
+                }
+            }
+            .frame(width: 24, height: 18)
+
+            // Streaming ASR text
+            if !voiceService.transcribedText.isEmpty {
+                Text(voiceService.transcribedText)
+                    .font(NexusTypography.spaceGrotesk(size: 14))
+                    .foregroundStyle(NexusColors.text0)
+                    .lineLimit(2)
+            } else {
+                Text("Listening...")
+                    .font(NexusTypography.spaceGrotesk(size: 14))
+                    .foregroundStyle(NexusColors.text2)
+            }
+
+            Spacer()
+
+            Text("Tap mic to stop")
+                .font(NexusTypography.spaceGrotesk(size: 11))
+                .foregroundStyle(NexusColors.text2)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(NexusColors.surface1)
+        .clipShape(RoundedRectangle(cornerRadius: NexusRadius.xl))
+        .overlay(
+            RoundedRectangle(cornerRadius: NexusRadius.xl)
+                .stroke(NexusColors.accent.opacity(0.2), lineWidth: 1)
+        )
+        .shadow(color: NexusColors.accent.opacity(0.08), radius: 12, x: 0, y: 4)
     }
 
     // MARK: - Send
@@ -274,5 +409,37 @@ struct InputBar: View {
                 self.text = ""
             }
         }
+    }
+}
+
+// MARK: - Send Button Style (scale on press)
+
+private struct SendButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .animation(NexusMotion.fast, value: configuration.isPressed)
+    }
+}
+
+// MARK: - Waveform Bar
+
+private struct WaveformBar: View {
+    let index: Int
+    @State private var height: CGFloat = 4
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(NexusColors.accent)
+            .frame(width: 3, height: height)
+            .onAppear {
+                withAnimation(
+                    .easeInOut(duration: Double.random(in: 0.3...0.6))
+                        .repeatForever(autoreverses: true)
+                        .delay(Double(index) * 0.1)
+                ) {
+                    height = CGFloat.random(in: 8...18)
+                }
+            }
     }
 }

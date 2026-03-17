@@ -9,83 +9,123 @@ struct LoginView: View {
     @State private var isLoading = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
+        ZStack {
+            // NEXUS background
+            NexusColors.void.ignoresSafeArea()
+            RadialGradient(
+                colors: [NexusColors.accent.opacity(0.08), .clear],
+                center: .top,
+                startRadius: 0,
+                endRadius: 400
+            )
+            .ignoresSafeArea()
 
-            // Logo
-            VStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.accentColor.opacity(0.15))
-                        .frame(width: 80, height: 80)
-                    Text("M")
-                        .font(.system(size: 36, weight: .bold, design: .rounded))
-                        .foregroundStyle(Color.accentColor)
-                }
+            VStack(spacing: 0) {
+                Spacer()
 
-                Text("MetaBot")
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-
-                Text("Claude Code Agent, Anywhere")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.bottom, 48)
-
-            // Form
-            VStack(spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Server URL")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    TextField("https://metabot.example.com", text: $serverInput)
-                        .textFieldStyle(.roundedBorder)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("API Token")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    SecureField("Enter your API token", text: $tokenInput)
-                        .textFieldStyle(.roundedBorder)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-
-                if let errorMessage {
-                    Text(errorMessage)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                Button {
-                    Task { await login() }
-                } label: {
-                    if isLoading {
-                        ProgressView()
-                            .tint(.white)
-                    } else {
-                        Text("Connect")
-                            .fontWeight(.semibold)
+                // Logo
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .stroke(NexusColors.accent.opacity(0.2), lineWidth: 1.5)
+                            .frame(width: 88, height: 88)
+                        Circle()
+                            .fill(NexusColors.accentSoft)
+                            .frame(width: 72, height: 72)
+                        Text("M")
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundStyle(NexusColors.accent)
                     }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(Color.accentColor)
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .disabled(tokenInput.isEmpty || isLoading)
-                .opacity(tokenInput.isEmpty ? 0.5 : 1)
-            }
-            .padding(.horizontal, 32)
 
-            Spacer()
-            Spacer()
+                    Text("MetaBot")
+                        .font(NexusTypography.title)
+                        .foregroundStyle(NexusColors.text0)
+
+                    Text("Claude Code Agent, Anywhere")
+                        .font(NexusTypography.body)
+                        .foregroundStyle(NexusColors.text2)
+                }
+                .padding(.bottom, 48)
+
+                // Form
+                VStack(spacing: 20) {
+                    // Server URL field
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("SERVER URL")
+                            .font(NexusTypography.jetBrainsMono(size: 10))
+                            .foregroundStyle(NexusColors.text2)
+                            .tracking(1)
+                        TextField("https://metabot.example.com", text: $serverInput)
+                            .font(NexusTypography.body)
+                            .foregroundStyle(NexusColors.text0)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(NexusColors.surface1)
+                            .clipShape(RoundedRectangle(cornerRadius: NexusRadius.md))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: NexusRadius.md)
+                                    .stroke(NexusColors.glassBorder, lineWidth: 1)
+                            }
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                    }
+
+                    // API Token field
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("API TOKEN")
+                            .font(NexusTypography.jetBrainsMono(size: 10))
+                            .foregroundStyle(NexusColors.text2)
+                            .tracking(1)
+                        SecureField("Enter your API token", text: $tokenInput)
+                            .font(NexusTypography.body)
+                            .foregroundStyle(NexusColors.text0)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                            .background(NexusColors.surface1)
+                            .clipShape(RoundedRectangle(cornerRadius: NexusRadius.md))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: NexusRadius.md)
+                                    .stroke(NexusColors.glassBorder, lineWidth: 1)
+                            }
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+
+                    // Error message
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(NexusTypography.caption)
+                            .foregroundStyle(NexusColors.red)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    // Connect button
+                    Button {
+                        Task { await login() }
+                    } label: {
+                        if isLoading {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Text("Connect")
+                                .font(NexusTypography.spaceGrotesk(size: 16, weight: .semibold))
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .foregroundStyle(.white)
+                    .background(NexusColors.accent)
+                    .clipShape(RoundedRectangle(cornerRadius: NexusRadius.md))
+                    .shadow(color: NexusColors.accent.opacity(0.3), radius: 12, x: 0, y: 4)
+                    .disabled(tokenInput.isEmpty || isLoading)
+                    .opacity(tokenInput.isEmpty ? 0.5 : 1)
+                }
+                .frame(maxWidth: 400)
+                .padding(.horizontal, 32)
+
+                Spacer()
+            }
         }
         .onAppear {
             serverInput = appState.serverURL

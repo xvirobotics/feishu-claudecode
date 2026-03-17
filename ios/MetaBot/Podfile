@@ -5,7 +5,7 @@ platform :ios, '17.0'
 use_frameworks!
 
 target 'MetaBot' do
-  pod 'VolcEngineRTC', '~> 3.62'
+  pod 'VolcEngineRTC', '~> 3.60'
 end
 
 post_install do |installer|
