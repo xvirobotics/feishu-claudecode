@@ -101,7 +101,7 @@ export class PushService {
   }
 
   /** Notify for incoming RTC voice call */
-  async notifyIncomingCall(chatId: string, botName: string): Promise<void> {
+  async notifyIncomingCall(chatId: string, botName: string, callData?: Record<string, string>): Promise<void> {
     const tokens = this.deviceStore.getTokens(chatId);
     if (tokens.length === 0) return;
 
@@ -109,7 +109,9 @@ export class PushService {
     const body = 'Incoming voice call';
 
     const results = await Promise.allSettled(
-      tokens.map((token) => this.sendNotification(token, { title, body, chatId, botName })),
+      tokens.map((token) => this.sendNotification(token, {
+        title, body, chatId, botName, type: 'incoming_call', ...callData,
+      })),
     );
 
     let sent = 0;
@@ -126,18 +128,20 @@ export class PushService {
   /** Send a single push notification to a device token. Returns true on success. */
   async sendNotification(
     deviceToken: string,
-    payload: { title: string; body: string; chatId: string; botName?: string },
+    payload: { title: string; body: string; chatId: string; botName?: string; [key: string]: unknown },
   ): Promise<boolean> {
-    const apnsPayload = {
+    const { title, body, chatId, botName, ...extra } = payload;
+    const apnsPayload: Record<string, unknown> = {
       aps: {
-        alert: { title: payload.title, body: payload.body },
-        sound: 'default',
+        alert: { title, body },
+        sound: title.startsWith('📞') ? 'default' : 'default',
         badge: 1,
-        'thread-id': payload.chatId,
+        'thread-id': chatId,
         'mutable-content': 1,
       },
-      chatId: payload.chatId,
-      botName: payload.botName,
+      chatId,
+      botName,
+      ...extra,
     };
 
     try {

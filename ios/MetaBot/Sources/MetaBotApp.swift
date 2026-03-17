@@ -28,13 +28,35 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return [.banner, .sound]
     }
 
-    // Handle notification tap → navigate to the correct chat
+    // Handle notification tap → navigate to chat or accept call
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
-        if let chatId = userInfo["chatId"] as? String {
+        let type = userInfo["type"] as? String
+
+        if type == "incoming_call",
+           let sessionId = userInfo["sessionId"] as? String,
+           let roomId = userInfo["roomId"] as? String,
+           let token = userInfo["token"] as? String,
+           let appId = userInfo["appId"] as? String,
+           let userId = userInfo["userId"] as? String,
+           let aiUserId = userInfo["aiUserId"] as? String {
+            let chatId = userInfo["chatId"] as? String ?? ""
+            let botName = userInfo["botName"] as? String ?? "Voice Call"
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .incomingCallFromPush,
+                    object: nil,
+                    userInfo: [
+                        "sessionId": sessionId, "roomId": roomId, "token": token,
+                        "appId": appId, "userId": userId, "aiUserId": aiUserId,
+                        "chatId": chatId, "botName": botName,
+                    ]
+                )
+            }
+        } else if let chatId = userInfo["chatId"] as? String {
             await MainActor.run {
                 NotificationCenter.default.post(
                     name: .navigateToChat,
@@ -48,6 +70,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
 extension Notification.Name {
     static let navigateToChat = Notification.Name("navigateToChat")
+    static let incomingCallFromPush = Notification.Name("incomingCallFromPush")
 }
 
 // MARK: - App Entry Point
@@ -96,6 +119,21 @@ struct MetaBotApp: App {
                 if let chatId = notification.userInfo?["chatId"] as? String {
                     appState.selectSession(chatId)
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .incomingCallFromPush)) { notification in
+                guard let info = notification.userInfo else { return }
+                let call = IncomingVoiceCall(
+                    sessionId: info["sessionId"] as? String ?? "",
+                    roomId: info["roomId"] as? String ?? "",
+                    token: info["token"] as? String ?? "",
+                    appId: info["appId"] as? String ?? "",
+                    userId: info["userId"] as? String ?? "",
+                    aiUserId: info["aiUserId"] as? String ?? "",
+                    chatId: info["chatId"] as? String ?? "",
+                    botName: info["botName"] as? String ?? "Voice Call",
+                    prompt: nil
+                )
+                appState.incomingVoiceCall = call
             }
         }
     }

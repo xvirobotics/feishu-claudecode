@@ -3,7 +3,8 @@ import SwiftUI
 struct MainTabView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedSidebarItem: SidebarItem? = .chats
-    @State private var showIncomingCall = false
+    @State private var showIncomingCallScreen = false
+    @State private var showActiveCall = false
     @State private var incomingCall: IncomingVoiceCall?
 
     enum SidebarItem: Hashable {
@@ -61,16 +62,39 @@ struct MainTabView: View {
         // Global incoming call listener (iPad)
         .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
             if let call = appState.incomingVoiceCall, newValue != nil {
-                incomingCall = call
                 appState.incomingVoiceCall = nil
-                showIncomingCall = true
+                guard !showIncomingCallScreen && !showActiveCall else { return }
+                incomingCall = call
+                Haptics.notification(.warning)
+                showIncomingCallScreen = true
             }
         }
-        .fullScreenCover(isPresented: $showIncomingCall) {
+        .fullScreenCover(isPresented: $showIncomingCallScreen) {
             if let call = incomingCall {
+                IncomingCallView(
+                    call: call,
+                    onAccept: {
+                        showIncomingCallScreen = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showActiveCall = true
+                        }
+                    },
+                    onReject: {
+                        showIncomingCallScreen = false
+                        incomingCall = nil
+                    }
+                )
+            }
+        }
+        .fullScreenCover(isPresented: $showActiveCall) {
+            if let call = incomingCall {
+                let bot = call.botName
+                let localChatId = appState.activeSessionForBot(bot)?.id
+                    ?? appState.activeSessionId
+                    ?? "call_\(UUID().uuidString.prefix(8))"
                 RtcCallView(
-                    botName: call.botName,
-                    chatId: call.chatId,
+                    botName: bot,
+                    chatId: localChatId,
                     incoming: call
                 )
                 .environment(appState)
@@ -163,7 +187,8 @@ struct MainTabView: View {
 
 struct MobileTabView: View {
     @Environment(AppState.self) private var appState
-    @State private var showIncomingCall = false
+    @State private var showIncomingCallScreen = false
+    @State private var showActiveCall = false
     @State private var incomingCall: IncomingVoiceCall?
 
     var body: some View {
@@ -182,16 +207,35 @@ struct MobileTabView: View {
         .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
             if let call = appState.incomingVoiceCall, newValue != nil {
                 appState.incomingVoiceCall = nil
-                // Don't accept if already in a call
-                guard !showIncomingCall else { return }
+                guard !showIncomingCallScreen && !showActiveCall else { return }
                 incomingCall = call
-                showIncomingCall = true
+                Haptics.notification(.warning)
+                showIncomingCallScreen = true
             }
         }
-        .fullScreenCover(isPresented: $showIncomingCall) {
+        // Incoming call screen (Accept / Decline)
+        .fullScreenCover(isPresented: $showIncomingCallScreen) {
+            if let call = incomingCall {
+                IncomingCallView(
+                    call: call,
+                    onAccept: {
+                        showIncomingCallScreen = false
+                        // Small delay so the dismiss animation completes
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showActiveCall = true
+                        }
+                    },
+                    onReject: {
+                        showIncomingCallScreen = false
+                        incomingCall = nil
+                    }
+                )
+            }
+        }
+        // Active call screen (after accepting)
+        .fullScreenCover(isPresented: $showActiveCall) {
             if let call = incomingCall {
                 let bot = call.botName
-                // Use the iOS active session for this bot (same as user-initiated call)
                 let localChatId = appState.activeSessionForBot(bot)?.id
                     ?? appState.activeSessionId
                     ?? "call_\(UUID().uuidString.prefix(8))"
