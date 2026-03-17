@@ -45,7 +45,6 @@ Feishu WSClient → EventHandler (parse, @mention filter) → MessageBridge → 
 - **`src/feishu/message-sender.ts`** — Feishu API wrapper for sending/updating cards, uploading/downloading images, sending text.
 - **`src/bridge/rate-limiter.ts`** — Throttles card updates to avoid Feishu API rate limits (default 1.5s interval). Keeps only the latest pending update.
 - **`src/api/peer-manager.ts`** — Manages cross-instance bot discovery and task forwarding. Polls peer MetaBot instances every 30s, caches their bot lists, supports qualified name routing (`peerName/botName`). Anti-loop via `X-MetaBot-Origin` header.
-- **`src/api/async-task-manager.ts`** — In-memory tracker for async (fire-and-forget) tasks. `POST /api/talk` with `"async": true` returns 202 + taskId immediately; `GET /api/talk/:taskId` polls for results. Results retained for 1 hour, max 50 concurrent async tasks. Also handles peer-proxied async tasks.
 
 ### Outputs Directory Pattern
 

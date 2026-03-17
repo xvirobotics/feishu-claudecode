@@ -19,11 +19,8 @@ mb bots                                    # List all bots (local + peer)
 mb bot <name>                              # Get bot details
 
 # Agent Talk (cross-instance auto-routing)
-mb talk <botName> <chatId> <prompt>        # Talk to a bot (sync, waits for result)
-mb talk --async <botName> <chatId> <prompt> # Fire-and-forget (returns taskId)
+mb talk <botName> <chatId> <prompt>        # Talk to a bot
 mb talk alice/backend-bot <chatId> <prompt> # Talk to a specific peer's bot
-mb poll <taskId>                           # Check async task status
-mb poll <taskId> --wait                    # Poll until task completes
 
 # Peers
 mb peers                                   # List peers and their status
@@ -54,33 +51,13 @@ Use qualified names to target a specific peer: `mb talk <peerName>/<botName> <ch
 
 Use `mb bots` to see all available bots including those on peer instances (they will have `peerName` and `peerUrl` fields indicating which instance hosts them).
 
-### Async Task Delegation
-
-Use `--async` to delegate work without blocking. The command returns immediately with a `taskId`, and the task runs in the background.
-
-```bash
-# Delegate a task asynchronously — returns taskId immediately
-mb talk --async mybot chat123 "run all tests and report results"
-
-# Check task status
-mb poll <taskId>
-
-# Wait for task to complete (polls every 3s)
-mb poll <taskId> --wait
-```
-
-This is ideal for:
-- Delegating work to another bot while continuing your own task
-- Running long tasks without blocking the caller
-- Parallelizing work across multiple bots
-
 ### API Reference (for complex operations)
 
 For operations not covered by `mb` (creating bots, updating tasks, sendCards option), use the API directly.
 Auth header: `-H "Authorization: Bearer $METABOT_API_SECRET"`
 Base URL: !`echo http://localhost:${METABOT_API_PORT:-9100}`
 
-**Talk to a bot (sync):**
+**Talk to a bot (primary endpoint):**
 ```bash
 curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/talk \
   -H "Authorization: Bearer $METABOT_API_SECRET" \
@@ -88,22 +65,6 @@ curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/talk \
   -d '{"botName":"<bot>","chatId":"<chatId>","prompt":"<message>","sendCards":true}'
 ```
 The `botName` field supports qualified names: `"alice/backend-bot"` routes directly to the peer named "alice".
-
-**Talk to a bot (async — fire and forget):**
-```bash
-curl -s -X POST http://localhost:${METABOT_API_PORT:-9100}/api/talk \
-  -H "Authorization: Bearer $METABOT_API_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"botName":"<bot>","chatId":"<chatId>","prompt":"<message>","sendCards":true,"async":true}'
-# → 202 {"taskId":"...","status":"pending","message":"..."}
-```
-
-**Poll async task result:**
-```bash
-curl -s http://localhost:${METABOT_API_PORT:-9100}/api/talk/<taskId> \
-  -H "Authorization: Bearer $METABOT_API_SECRET"
-# → {"taskId":"...","status":"running|complete|error","result":{...}}
-```
 
 **Create Feishu bot:**
 ```bash

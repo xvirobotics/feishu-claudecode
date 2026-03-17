@@ -18,16 +18,11 @@ mb bot <name>                       # 获取 Bot 详情
 ### Agent 对话
 
 ```bash
-mb talk <bot> <chatId> <prompt>     # 与 Bot 对话（同步，等待结果）
-mb talk --async <bot> <chatId> <prompt> # 异步委派（返回 taskId）
+mb talk <bot> <chatId> <prompt>     # 与 Bot 对话
 mb talk alice/bot <chatId> <prompt> # 指定 peer 的 Bot 对话
-mb poll <taskId>                    # 查询异步任务状态
-mb poll <taskId> --wait             # 每 3 秒轮询直到任务完成
 ```
 
 Bot 名称支持[限定名](../features/peers.md#限定名)（`peerName/botName`）实现跨实例路由。
-
-使用 `--async` 实现即发即忘委派：命令立即返回 `taskId`，任务在后台执行。使用 `mb poll` 查询结果。
 
 ### Peers
 

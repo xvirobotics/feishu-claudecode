@@ -273,7 +273,7 @@ export function resolveTTSProvider(explicit: string): string {
 export function resolveTTSVoice(explicit: string, ttsProvider: string): string {
   if (explicit) return explicit;
   // Sensible defaults per provider
-  if (ttsProvider === 'doubao') return 'zh_female_wanwanxiaohe_moon_bigtts';
+  if (ttsProvider === 'doubao') return 'zh_female_wanqudashu_moon_bigtts';
   if (ttsProvider === 'elevenlabs') return 'EXAVITQu4vr4xnSDxMaL'; // Bella
   return 'alloy'; // OpenAI
 }

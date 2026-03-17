@@ -30,55 +30,22 @@ case "$cmd" in
     ;;
   # --- Agent Talk (cross-instance auto-routing) ---
   talk|t)
-    _async=false
-    _args=()
-    while [[ $# -gt 0 ]]; do
-      case "$1" in
-        --async|-a) _async=true; shift ;;
-        *) _args+=("$1"); shift ;;
-      esac
-    done
-    bot="${_args[0]:-}" chat="${_args[1]:-}"
-    prompt="${_args[*]:2}"
+    bot="$1" chat="$2"; shift 2 2>/dev/null || true
+    prompt="$*"
     if [[ -z "${bot:-}" || -z "${chat:-}" || -z "${prompt:-}" ]]; then
-      echo "Usage: mb talk [--async] [peer/]<botName> <chatId> <prompt>"
+      echo "Usage: mb talk [peer/]<botName> <chatId> <prompt>"
       echo "  Examples:"
       echo "    mb talk mybot chat123 'fix the bug'"
-      echo "    mb talk --async mybot chat123 'do something in background'"
       echo "    mb talk alice/backend-bot chat123 'deploy to staging'"
       exit 1
     fi
     python3 -c "
 import json, sys
-body = {'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.argv[3], 'sendCards': True}
-if sys.argv[4] == 'true': body['async'] = True
-print(json.dumps(body))
-" "$bot" "$chat" "$prompt" "$_async" | \
+print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.argv[3], 'sendCards': True}))
+" "$bot" "$chat" "$prompt" | \
     curl -s -X POST "$METABOT_URL/api/talk" \
       -H "$METABOT_AUTH" -H "Content-Type: application/json" \
-      -d @- | _json
-    ;;
-  # --- Poll async task result ---
-  poll)
-    _task_id="${1:-}"
-    _wait=false
-    if [[ "${2:-}" == "--wait" || "${2:-}" == "-w" ]]; then _wait=true; fi
-    if [[ -z "$_task_id" ]]; then
-      echo "Usage: mb poll <taskId> [--wait]"
-      echo "  --wait  Poll every 3s until task completes"
-      exit 1
-    fi
-    if [[ "$_wait" == "true" ]]; then
-      while true; do
-        _result=$(curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/talk/$_task_id")
-        _status=$(echo "$_result" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status','unknown'))" 2>/dev/null || echo "unknown")
-        echo "$_result" | _json
-        if [[ "$_status" == "complete" || "$_status" == "error" ]]; then break; fi
-        sleep 3
-      done
-    else
-      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/talk/$_task_id" | _json
-    fi
+      -d @-
     ;;
   # --- Task delegation (deprecated alias for talk) ---
   task)
@@ -345,10 +312,7 @@ print(json.dumps(body))
     echo ""
     echo "  Agent Talk:"
     echo "    mb talk <bot> <chatId> <prompt>  - Talk to a bot (auto-routes to peers)"
-    echo "    mb talk --async <bot> <chatId> <prompt> - Fire-and-forget (returns taskId)"
     echo "    mb talk peer/bot <chatId> <prompt> - Talk to a specific peer's bot"
-    echo "    mb poll <taskId>                 - Check async task status"
-    echo "    mb poll <taskId> --wait          - Poll until task completes"
     echo ""
     echo "  Peers:"
     echo "    mb peers                         - List peers and their status"

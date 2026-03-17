@@ -10,7 +10,6 @@ import { installSkillsToWorkDir } from './skills-installer.js';
 import { metrics } from '../utils/metrics.js';
 import { FeishuDocReader } from '../feishu/doc-reader.js';
 import type { PeerManager } from './peer-manager.js';
-import type { AsyncTaskManager } from './async-task-manager.js';
 import { handleVoiceRequest, doubaoTTS, openaiTTS, elevenlabsTTS, resolveTTSProvider, resolveTTSVoice } from './voice-handler.js';
 
 interface ApiServerOptions {
@@ -23,7 +22,6 @@ interface ApiServerOptions {
   docSync?: DocSync;
   feishuServiceClient?: lark.Client;
   peerManager?: PeerManager;
-  asyncTaskManager?: AsyncTaskManager;
 }
 
 interface JsonBody {
@@ -73,7 +71,7 @@ async function parseJsonBody(req: http.IncomingMessage): Promise<JsonBody> {
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, asyncTaskManager } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   const server = http.createServer(async (req, res) => {
@@ -168,40 +166,6 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         return;
       }
 
-      // Route: GET /api/talk/:taskId — poll async task status
-      if (method === 'GET' && url.startsWith('/api/talk/')) {
-        const taskId = url.slice('/api/talk/'.length);
-        if (!taskId || !asyncTaskManager) {
-          jsonResponse(res, 404, { error: 'Not found' });
-          return;
-        }
-        const task = asyncTaskManager.get(taskId);
-        if (!task) {
-          jsonResponse(res, 404, { error: `Task not found: ${taskId}` });
-          return;
-        }
-        // If this is a peer-proxied task, poll the peer for latest status
-        if (task.peerRef && (task.status === 'pending' || task.status === 'running')) {
-          try {
-            const headers: Record<string, string> = { 'X-MetaBot-Origin': 'peer' };
-            if (task.peerRef.secret) headers['Authorization'] = `Bearer ${task.peerRef.secret}`;
-            const peerRes = await fetch(`${task.peerRef.url}/api/talk/${task.peerRef.taskId}`, { headers, signal: AbortSignal.timeout(10_000) });
-            const peerData = await peerRes.json() as any;
-            if (peerData.status === 'complete' || peerData.status === 'error') {
-              asyncTaskManager.complete(taskId, peerData.result || { success: peerData.status === 'complete', responseText: '' });
-            }
-            jsonResponse(res, 200, { taskId, ...peerData });
-          } catch {
-            jsonResponse(res, 200, { taskId, status: task.status });
-          }
-          return;
-        }
-        const response: Record<string, unknown> = { taskId, status: task.status };
-        if (task.result) response.result = task.result;
-        jsonResponse(res, 200, response);
-        return;
-      }
-
       // Route: POST /api/talk (primary) + POST /api/tasks (deprecated alias)
       if (method === 'POST' && (url === '/api/talk' || url === '/api/tasks')) {
         const body = await parseJsonBody(req);
@@ -209,7 +173,6 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         const chatId = body.chatId as string;
         const prompt = body.prompt as string;
         const sendCards = body.sendCards as boolean | undefined;
-        const isAsync = body.async === true;
 
         if (!rawBotName || !chatId || !prompt) {
           jsonResponse(res, 400, { error: 'Missing required fields: botName, chatId, prompt' });
@@ -238,19 +201,11 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             jsonResponse(res, 404, { error: `Bot not found on peer "${targetPeerName}": ${botName}` });
             return;
           }
-          logger.info({ botName, peerName: targetPeerName, chatId, promptLength: prompt.length, async: isAsync }, 'Forwarding talk to peer (qualified)');
+          logger.info({ botName, peerName: targetPeerName, chatId, promptLength: prompt.length }, 'Forwarding talk to peer (qualified)');
           try {
-            const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards, async: isAsync });
-            if (isAsync && asyncTaskManager) {
-              const peerTaskId = (result as any).taskId;
-              const localId = asyncTaskManager.createPeerProxy(botName, chatId, prompt, {
-                url: peerMatch.peer.url, taskId: peerTaskId, secret: peerMatch.peer.secret,
-              });
-              jsonResponse(res, 202, { taskId: localId, peerTaskId, status: 'pending', message: 'Task accepted (peer), poll GET /api/talk/' + localId });
-            } else {
-              const statusCode = (result as any).success === false ? 500 : 200;
-              jsonResponse(res, statusCode, result);
-            }
+            const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards });
+            const statusCode = (result as any).success === false ? 500 : 200;
+            jsonResponse(res, statusCode, result);
           } catch (err: any) {
             logger.error({ err, botName, peerName: targetPeerName }, 'Peer forwarding failed');
             jsonResponse(res, 502, { error: `Peer forwarding failed: ${err.message}` });
@@ -261,20 +216,6 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         // Try local registry first
         const bot = registry.get(botName);
         if (bot) {
-          // Async mode: return 202 immediately, run in background
-          if (isAsync && asyncTaskManager) {
-            const taskId = asyncTaskManager.create(botName, chatId, prompt);
-            logger.info({ botName, chatId, taskId, promptLength: prompt.length }, 'Async talk request accepted');
-            asyncTaskManager.setRunning(taskId);
-            bot.bridge.executeApiTask({ prompt, chatId, userId: 'api', sendCards: sendCards ?? true }).then(
-              (result) => asyncTaskManager!.complete(taskId, result),
-              (err) => asyncTaskManager!.complete(taskId, { success: false, responseText: '', error: err.message }),
-            );
-            jsonResponse(res, 202, { taskId, status: 'pending', message: 'Task accepted, poll GET /api/talk/' + taskId });
-            return;
-          }
-
-          // Sync mode: wait for completion
           logger.info({ botName, chatId, promptLength: prompt.length }, 'API talk request');
           const result = await bot.bridge.executeApiTask({
             prompt,
@@ -291,19 +232,11 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         if (!origin && peerManager) {
           const peerMatch = peerManager.findBotPeer(botName);
           if (peerMatch) {
-            logger.info({ botName, peerName: peerMatch.peer.name, peerUrl: peerMatch.peer.url, chatId, promptLength: prompt.length, async: isAsync }, 'Forwarding talk to peer');
+            logger.info({ botName, peerName: peerMatch.peer.name, peerUrl: peerMatch.peer.url, chatId, promptLength: prompt.length }, 'Forwarding talk to peer');
             try {
-              const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards, async: isAsync });
-              if (isAsync && asyncTaskManager) {
-                const peerTaskId = (result as any).taskId;
-                const localId = asyncTaskManager.createPeerProxy(botName, chatId, prompt, {
-                  url: peerMatch.peer.url, taskId: peerTaskId, secret: peerMatch.peer.secret,
-                });
-                jsonResponse(res, 202, { taskId: localId, peerTaskId, status: 'pending', message: 'Task accepted (peer), poll GET /api/talk/' + localId });
-              } else {
-                const statusCode = (result as any).success === false ? 500 : 200;
-                jsonResponse(res, statusCode, result);
-              }
+              const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards });
+              const statusCode = (result as any).success === false ? 500 : 200;
+              jsonResponse(res, statusCode, result);
             } catch (err: any) {
               logger.error({ err, botName, peerUrl: peerMatch.peer.url }, 'Peer forwarding failed');
               jsonResponse(res, 502, { error: `Peer forwarding failed: ${err.message}` });

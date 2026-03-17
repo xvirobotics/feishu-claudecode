@@ -13,7 +13,6 @@ import { BotRegistry } from './api/bot-registry.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
-import { AsyncTaskManager } from './api/async-task-manager.js';
 import { startMemoryServer } from './memory/memory-server.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
@@ -218,9 +217,6 @@ async function main() {
     ? path.resolve(process.env.BOTS_CONFIG)
     : undefined;
 
-  // Async task manager for fire-and-forget /api/talk
-  const asyncTaskManager = new AsyncTaskManager(logger);
-
   // Start API server
   const apiServer = startApiServer({
     port: appConfig.api.port,
@@ -232,14 +228,12 @@ async function main() {
     docSync,
     feishuServiceClient,
     peerManager,
-    asyncTaskManager,
   });
 
   // Graceful shutdown
   const shutdown = () => {
     logger.info('Shutting down...');
     scheduler.destroy();
-    asyncTaskManager.destroy();
     if (peerManager) {
       peerManager.destroy();
     }

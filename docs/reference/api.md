@@ -33,44 +33,15 @@ Authorization: Bearer <API_SECRET>
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/talk` | Talk to a bot (auto-routes to peers). Add `"async": true` for fire-and-forget |
-| `GET` | `/api/talk/:taskId` | Poll async task status and result |
+| `POST` | `/api/talk` | Talk to a bot (auto-routes to peers) |
 
-**Request body (sync):**
+**Request body:**
 
 ```json
 {
   "botName": "metabot",
   "chatId": "unique-chat-id",
   "prompt": "Your message to the agent"
-}
-```
-
-**Request body (async — fire and forget):**
-
-```json
-{
-  "botName": "metabot",
-  "chatId": "unique-chat-id",
-  "prompt": "Your message to the agent",
-  "async": true
-}
-```
-
-Returns `202 Accepted` with `{ "taskId": "...", "status": "pending" }`. Poll `GET /api/talk/:taskId` for results.
-
-**Poll response:**
-
-```json
-{
-  "taskId": "uuid",
-  "status": "complete",
-  "result": {
-    "success": true,
-    "responseText": "...",
-    "costUsd": 0.05,
-    "durationMs": 12000
-  }
 }
 ```
 
