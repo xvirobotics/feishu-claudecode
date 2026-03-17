@@ -3,8 +3,10 @@ import SwiftUI
 struct MainTabView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedSidebarItem: SidebarItem? = .chats
-    @State private var callState: MobileTabView.CallScreenState = .none
     @State private var incomingCall: IncomingVoiceCall?
+    @State private var showRinging = false
+    @State private var showActiveCall = false
+    @State private var activeCallInfo: (botName: String, chatId: String, call: IncomingVoiceCall)?
 
     enum SidebarItem: Hashable {
         case chats
@@ -62,44 +64,50 @@ struct MainTabView: View {
         .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
             if let call = appState.incomingVoiceCall, newValue != nil {
                 appState.incomingVoiceCall = nil
-                guard callState == .none else { return }
+                guard !showRinging && !showActiveCall else { return }
                 incomingCall = call
                 Haptics.notification(.warning)
-                withAnimation(.easeOut(duration: 0.3)) { callState = .ringing }
+                showRinging = true
             }
         }
-        .overlay {
-            if callState == .ringing, let call = incomingCall {
+        .fullScreenCover(isPresented: $showRinging) {
+            if let call = incomingCall {
                 IncomingCallView(
                     call: call,
                     onAccept: {
-                        withAnimation(.easeOut(duration: 0.25)) { callState = .active }
+                        let bot = call.botName
+                        let localChatId = appState.activeSessionForBot(bot)?.id
+                            ?? appState.activeSessionId
+                            ?? "call_\(UUID().uuidString.prefix(8))"
+                        activeCallInfo = (bot, localChatId, call)
+                        showRinging = false
                     },
                     onReject: {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            callState = .none
-                            incomingCall = nil
-                        }
+                        showRinging = false
+                        incomingCall = nil
                     }
                 )
-                .transition(.opacity)
             }
-            if callState == .active, let call = incomingCall {
-                let bot = call.botName
-                let localChatId = appState.activeSessionForBot(bot)?.id
-                    ?? appState.activeSessionId
-                    ?? "call_\(UUID().uuidString.prefix(8))"
+        }
+        .onChange(of: showRinging) { _, isShowing in
+            if !isShowing, activeCallInfo != nil {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showActiveCall = true
+                }
+            }
+        }
+        .fullScreenCover(isPresented: $showActiveCall) {
+            if let info = activeCallInfo {
                 RtcCallView(
-                    botName: bot,
-                    chatId: localChatId,
-                    incoming: call
+                    botName: info.botName,
+                    chatId: info.chatId,
+                    incoming: info.call
                 )
                 .environment(appState)
                 .onDisappear {
-                    callState = .none
+                    activeCallInfo = nil
                     incomingCall = nil
                 }
-                .transition(.opacity)
             }
         }
     }
@@ -189,77 +197,74 @@ struct MainTabView: View {
 struct MobileTabView: View {
     @Environment(AppState.self) private var appState
 
-    enum CallScreenState: Equatable {
-        case none
-        case ringing    // Show accept/reject
-        case active     // In call
-    }
-    @State private var callState: CallScreenState = .none
     @State private var incomingCall: IncomingVoiceCall?
+    @State private var showRinging = false
+    @State private var showActiveCall = false
+    @State private var activeCallInfo: (botName: String, chatId: String, call: IncomingVoiceCall)?
 
     var body: some View {
-        ZStack {
-            // Main content
-            Group {
-                if appState.showingChat, appState.activeSession != nil {
-                    fullScreenChat
+        Group {
+            if appState.showingChat, appState.activeSession != nil {
+                fullScreenChat
+            } else {
+                if #available(iOS 26, *) {
+                    liquidGlassTabView
                 } else {
-                    if #available(iOS 26, *) {
-                        liquidGlassTabView
-                    } else {
-                        legacyTabView
-                    }
+                    legacyTabView
                 }
-            }
-
-            // Incoming call overlay (single ZStack, no fullScreenCover chaining)
-            if callState == .ringing, let call = incomingCall {
-                IncomingCallView(
-                    call: call,
-                    onAccept: {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            callState = .active
-                        }
-                    },
-                    onReject: {
-                        withAnimation(.easeOut(duration: 0.25)) {
-                            callState = .none
-                            incomingCall = nil
-                        }
-                    }
-                )
-                .transition(.opacity)
-                .zIndex(10)
-            }
-
-            if callState == .active, let call = incomingCall {
-                let bot = call.botName
-                let localChatId = appState.activeSessionForBot(bot)?.id
-                    ?? appState.activeSessionId
-                    ?? "call_\(UUID().uuidString.prefix(8))"
-                RtcCallView(
-                    botName: bot,
-                    chatId: localChatId,
-                    incoming: call
-                )
-                .environment(appState)
-                .onDisappear {
-                    callState = .none
-                    incomingCall = nil
-                }
-                .transition(.opacity)
-                .zIndex(11)
             }
         }
-        // Global incoming call listener — works from any tab/screen
+        // Global incoming call listener
         .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
             if let call = appState.incomingVoiceCall, newValue != nil {
                 appState.incomingVoiceCall = nil
-                guard callState == .none else { return }
+                guard !showRinging && !showActiveCall else { return }
                 incomingCall = call
                 Haptics.notification(.warning)
-                withAnimation(.easeOut(duration: 0.3)) {
-                    callState = .ringing
+                showRinging = true
+            }
+        }
+        // Ringing screen (accept/reject)
+        .fullScreenCover(isPresented: $showRinging) {
+            if let call = incomingCall {
+                IncomingCallView(
+                    call: call,
+                    onAccept: {
+                        let bot = call.botName
+                        let localChatId = appState.activeSessionForBot(bot)?.id
+                            ?? appState.activeSessionId
+                            ?? "call_\(UUID().uuidString.prefix(8))"
+                        activeCallInfo = (bot, localChatId, call)
+                        showRinging = false
+                    },
+                    onReject: {
+                        showRinging = false
+                        incomingCall = nil
+                    }
+                )
+            }
+        }
+        // After ringing dismisses, show active call
+        .onChange(of: showRinging) { _, isShowing in
+            if !isShowing, activeCallInfo != nil {
+                // Present active call after ringing dismiss completes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showActiveCall = true
+                }
+            }
+        }
+        // Active call screen
+        .fullScreenCover(isPresented: $showActiveCall) {
+            if let info = activeCallInfo {
+                RtcCallView(
+                    botName: info.botName,
+                    chatId: info.chatId,
+                    incoming: info.call
+                )
+                .environment(appState)
+                .onDisappear {
+                    activeCallInfo = nil
+                    incomingCall = nil
                 }
             }
         }
