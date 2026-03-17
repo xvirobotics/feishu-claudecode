@@ -19,9 +19,32 @@ final class PushNotificationService: NSObject {
 
     // MARK: - Permission & Registration
 
+    /// Notification category for incoming calls
+    static let incomingCallCategory = "INCOMING_CALL"
+
     /// Request notification permission and register for remote notifications.
     func requestPermission() async {
         let center = UNUserNotificationCenter.current()
+
+        // Register call notification category with Accept/Reject actions
+        let acceptAction = UNNotificationAction(
+            identifier: "ACCEPT_CALL",
+            title: "Accept",
+            options: [.foreground]
+        )
+        let rejectAction = UNNotificationAction(
+            identifier: "REJECT_CALL",
+            title: "Decline",
+            options: [.destructive]
+        )
+        let callCategory = UNNotificationCategory(
+            identifier: Self.incomingCallCategory,
+            actions: [acceptAction, rejectAction],
+            intentIdentifiers: [],
+            options: []
+        )
+        center.setNotificationCategories([callCategory])
+
         do {
             let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
             await MainActor.run {

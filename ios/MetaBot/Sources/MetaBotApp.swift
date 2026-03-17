@@ -37,17 +37,26 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return [.banner, .sound]
     }
 
-    // Handle notification tap → navigate to chat or accept call
+    // Handle notification tap or action button
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
         let type = userInfo["type"] as? String
+        let actionId = response.actionIdentifier
 
         if type == "incoming_call" {
-            // Store for cold launch — AppState will pick it up
-            AppDelegate.pendingCallData = userInfo as? [String: String]
+            // Reject action — just dismiss, don't open call
+            if actionId == "REJECT_CALL" { return }
+
+            // Accept action or default tap — open incoming call screen
+            let callInfo = userInfo.reduce(into: [String: String]()) { dict, pair in
+                if let key = pair.key as? String, let val = pair.value as? String {
+                    dict[key] = val
+                }
+            }
+            AppDelegate.pendingCallData = callInfo
             await MainActor.run {
                 NotificationCenter.default.post(name: .incomingCallFromPush, object: nil, userInfo: userInfo)
             }

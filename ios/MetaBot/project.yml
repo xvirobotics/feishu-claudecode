@@ -21,6 +21,8 @@ targets:
     resources:
       - path: Sources/Resources/Fonts
         buildPhase: resources
+      - path: Sources/Resources/ringtone.caf
+        buildPhase: resources
     info:
       path: Info.plist
       properties:

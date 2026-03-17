@@ -131,13 +131,18 @@ export class PushService {
     payload: { title: string; body: string; chatId: string; botName?: string; [key: string]: unknown },
   ): Promise<boolean> {
     const { title, body, chatId, botName, ...extra } = payload;
+    const isCall = extra.type === 'incoming_call';
     const apnsPayload: Record<string, unknown> = {
       aps: {
         alert: { title, body },
-        sound: title.startsWith('📞') ? 'default' : 'default',
+        sound: isCall ? { name: 'ringtone.caf', critical: false, volume: 1.0 } : 'default',
         badge: 1,
         'thread-id': chatId,
         'mutable-content': 1,
+        ...(isCall ? {
+          'category': 'INCOMING_CALL',
+          'interruption-level': 'time-sensitive',
+        } : {}),
       },
       chatId,
       botName,
