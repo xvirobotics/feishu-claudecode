@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 /// Global application state
 @Observable
@@ -160,6 +161,15 @@ final class AppState {
             self.bots = bots
             if activeBotName == nil, let first = bots.first {
                 activeBotName = first.name
+            }
+            // Update Quick Actions with first 4 bots for long-press menu
+            UIApplication.shared.shortcutItems = bots.prefix(4).map { bot in
+                UIApplicationShortcutItem(
+                    type: "com.xvirobotics.MetaBot.call.\(bot.name)",
+                    localizedTitle: "Call \(bot.name)",
+                    localizedSubtitle: "Voice call",
+                    icon: UIApplicationShortcutIcon(systemImageName: "phone.fill")
+                )
             }
             // Request groups list on connect
             webSocket.send(.listGroups)
@@ -458,6 +468,18 @@ final class AppState {
     }
 
     // MARK: - RTC Voice Call
+
+    /// Initiate an outgoing call to a bot via CallKit
+    func initiateOutgoingCall(botName: String) {
+        guard let token = auth.token else { return }
+        let chatId = activeSessionForBot(botName)?.id ?? "call_\(UUID().uuidString.prefix(8))"
+        CallKitService.shared.initiateOutgoingCall(
+            botName: botName,
+            chatId: chatId,
+            serverURL: serverURL,
+            token: token
+        )
+    }
 
     func checkRtcAvailability() async {
         guard let token = auth.token else { return }

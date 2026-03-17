@@ -69,6 +69,22 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     /// Pending call data from push notification (survives cold launch)
     static var pendingCallData: [String: String]?
+
+    /// Pending Quick Action bot name (set when user long-presses app icon)
+    static var pendingQuickAction: String?
+
+    func application(
+        _ application: UIApplication,
+        performActionFor shortcutItem: UIApplicationShortcutItem,
+        completionHandler: @escaping (Bool) -> Void
+    ) {
+        let prefix = "com.xvirobotics.MetaBot.call."
+        if shortcutItem.type.hasPrefix(prefix) {
+            let botName = String(shortcutItem.type.dropFirst(prefix.count))
+            AppDelegate.pendingQuickAction = botName
+        }
+        completionHandler(true)
+    }
 }
 
 extension Notification.Name {
@@ -128,12 +144,23 @@ struct MetaBotApp: App {
                 }
             }
             .task {
-                // Cold launch: check if app was opened from a call push notification
-                if let data = AppDelegate.pendingCallData {
-                    AppDelegate.pendingCallData = nil
-                    try? await Task.sleep(for: .seconds(1.5))
-                    await MainActor.run {
+                // Cold launch: check for pending actions (VoIP push, Quick Action, Siri)
+                try? await Task.sleep(for: .seconds(1.5))
+                await MainActor.run {
+                    // VoIP push incoming call
+                    if let data = AppDelegate.pendingCallData {
+                        AppDelegate.pendingCallData = nil
                         appState.incomingVoiceCall = Self.parseCallFromDict(data)
+                    }
+                    // Quick Action: outgoing call
+                    if let botName = AppDelegate.pendingQuickAction {
+                        AppDelegate.pendingQuickAction = nil
+                        appState.initiateOutgoingCall(botName: botName)
+                    }
+                    // Siri: outgoing call
+                    if let botName = CallBotIntent.pendingCallBot {
+                        CallBotIntent.pendingCallBot = nil
+                        appState.initiateOutgoingCall(botName: botName)
                     }
                 }
             }

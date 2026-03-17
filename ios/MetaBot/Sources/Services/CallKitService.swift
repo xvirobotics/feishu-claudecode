@@ -3,7 +3,15 @@ import CallKit
 import Foundation
 import Observation
 
-/// Manages CallKit integration for native incoming call UI.
+/// Info needed to initiate an outgoing call via CallKit
+struct OutgoingCallInfo {
+    let botName: String
+    let chatId: String
+    let serverURL: String
+    let token: String
+}
+
+/// Manages CallKit integration for native incoming and outgoing call UI.
 /// Singleton -- initialized once at app launch.
 @Observable
 final class CallKitService: NSObject {
@@ -18,6 +26,8 @@ final class CallKitService: NSObject {
     private let callController = CXCallController()
     /// Cache: CallKit UUID -> IncomingVoiceCall data (from VoIP push payload)
     private var pendingCalls: [UUID: IncomingVoiceCall] = [:]
+    /// Cache: CallKit UUID -> OutgoingCallInfo (from user-initiated call)
+    private var pendingOutgoingCalls: [UUID: OutgoingCallInfo] = [:]
 
     private override init() {
         let config = CXProviderConfiguration(localizedName: "MetaBot")
@@ -58,6 +68,32 @@ final class CallKitService: NSObject {
         }
     }
 
+    /// Start an outgoing call via CallKit (shows system "Calling..." UI)
+    func initiateOutgoingCall(botName: String, chatId: String, serverURL: String, token: String) {
+        let uuid = UUID()
+        pendingOutgoingCalls[uuid] = OutgoingCallInfo(
+            botName: botName, chatId: chatId, serverURL: serverURL, token: token
+        )
+
+        let handle = CXHandle(type: .generic, value: botName)
+        let action = CXStartCallAction(call: uuid, handle: handle)
+        action.isVideo = false
+        action.contactIdentifier = botName
+
+        callController.request(CXTransaction(action: action)) { [weak self] error in
+            if let error {
+                print("[CallKit] Start call error: \(error)")
+                self?.pendingOutgoingCalls.removeValue(forKey: uuid)
+            }
+        }
+    }
+
+    /// Report that an outgoing call has connected (called when RTC room joins)
+    func reportOutgoingCallConnected() {
+        guard let uuid = activeCallUUID else { return }
+        provider.reportOutgoingCall(with: uuid, connectedAt: Date())
+    }
+
     /// End the current call (called from RtcCallView when user hangs up)
     func endCurrentCall() {
         guard let uuid = activeCallUUID else { return }
@@ -95,6 +131,7 @@ extension CallKitService: CXProviderDelegate {
         activeCall = nil
         activeCallUUID = nil
         pendingCalls.removeAll()
+        pendingOutgoingCalls.removeAll()
     }
 
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
@@ -107,6 +144,62 @@ extension CallKitService: CXProviderDelegate {
         activeCall = call
         pendingCalls.removeValue(forKey: action.callUUID)
         action.fulfill()
+    }
+
+    func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        let uuid = action.callUUID
+
+        // For recents callback: if no pending info, use the handle value as botName
+        let info = pendingOutgoingCalls[uuid] ?? OutgoingCallInfo(
+            botName: action.handle.value,
+            chatId: "",
+            serverURL: "",
+            token: ""
+        )
+        pendingOutgoingCalls.removeValue(forKey: uuid)
+
+        activeCallUUID = uuid
+
+        // Configure the call update
+        let update = CXCallUpdate()
+        update.remoteHandle = action.handle
+        update.localizedCallerName = info.botName
+        update.hasVideo = false
+        provider.reportCall(with: uuid, updated: update)
+
+        action.fulfill()
+
+        // Start RTC connection in background
+        Task { @MainActor in
+            guard !info.serverURL.isEmpty, !info.token.isEmpty else {
+                // Recents callback without connection info — cannot connect
+                print("[CallKit] Outgoing call from recents without connection info, ending")
+                provider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
+                self.activeCallUUID = nil
+                return
+            }
+            let api = RtcAPIService(serverURL: info.serverURL, token: info.token)
+            do {
+                let chatId = info.chatId.isEmpty ? "call_\(UUID().uuidString.prefix(8))" : info.chatId
+                let result = try await api.startCall(botName: info.botName, chatId: chatId)
+                let call = IncomingVoiceCall(
+                    sessionId: result.sessionId,
+                    roomId: result.roomId,
+                    token: result.token,
+                    appId: result.appId,
+                    userId: result.userId,
+                    aiUserId: result.aiUserId,
+                    chatId: chatId,
+                    botName: info.botName,
+                    prompt: nil
+                )
+                self.activeCall = call
+            } catch {
+                print("[CallKit] Failed to start RTC room: \(error)")
+                provider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
+                self.activeCallUUID = nil
+            }
+        }
     }
 
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {

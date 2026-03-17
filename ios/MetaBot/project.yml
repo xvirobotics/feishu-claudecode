@@ -63,6 +63,7 @@ targets:
         product: MarkdownUI
       - sdk: AVFoundation.framework
       - sdk: CallKit.framework
+      - sdk: Intents.framework
       - sdk: PushKit.framework
       - sdk: Speech.framework
       - sdk: UserNotifications.framework
