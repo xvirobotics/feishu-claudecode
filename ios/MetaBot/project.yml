@@ -46,7 +46,6 @@ targets:
       path: MetaBot.entitlements
       properties:
         aps-environment: development
-        com.apple.developer.networking.voip: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.xvirobotics.MetaBot
