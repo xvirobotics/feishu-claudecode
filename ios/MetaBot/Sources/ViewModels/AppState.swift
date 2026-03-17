@@ -471,7 +471,11 @@ final class AppState {
 
     /// Initiate an outgoing call to a bot via CallKit
     func initiateOutgoingCall(botName: String) {
-        guard let token = auth.token else { return }
+        print("[Call] initiateOutgoingCall: botName=\(botName), hasToken=\(auth.token != nil), isConnected=\(webSocket.isConnected)")
+        guard let token = auth.token else {
+            print("[Call] No auth token, cannot initiate call")
+            return
+        }
         let chatId = activeSessionForBot(botName)?.id ?? "call_\(UUID().uuidString.prefix(8))"
         CallKitService.shared.initiateOutgoingCall(
             botName: botName,
