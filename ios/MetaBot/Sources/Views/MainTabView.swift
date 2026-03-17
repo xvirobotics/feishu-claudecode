@@ -190,9 +190,14 @@ struct MobileTabView: View {
         }
         .fullScreenCover(isPresented: $showIncomingCall) {
             if let call = incomingCall {
+                let bot = call.botName
+                // Use the iOS active session for this bot (same as user-initiated call)
+                let localChatId = appState.activeSessionForBot(bot)?.id
+                    ?? appState.activeSessionId
+                    ?? "call_\(UUID().uuidString.prefix(8))"
                 RtcCallView(
-                    botName: call.botName ?? appState.activeBotName ?? "Voice Call",
-                    chatId: call.chatId ?? appState.activeSessionId ?? "call_\(UUID().uuidString.prefix(8))",
+                    botName: bot,
+                    chatId: localChatId,
                     incoming: call
                 )
                 .environment(appState)

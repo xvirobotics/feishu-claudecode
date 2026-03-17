@@ -207,7 +207,7 @@ export function setupWebSocketServer(
         case 'chat':
           chatBotMap.set(msg.chatId, msg.botName);
           subscriptions.subscribe(msg.chatId, ws);
-          handleChat(ws, msg, registry, peerManager, pendingAnswers, wsLogger, pushService).catch((err) => {
+          handleChat(ws, msg, registry, peerManager, pendingAnswers, wsLogger, pushService, subscriptions).catch((err) => {
             wsLogger.error({ err, chatId: msg.chatId }, 'WS chat handler error');
             sendMessage(ws, { type: 'error', chatId: msg.chatId, messageId: msg.messageId, error: err.message || 'Internal error' });
           });
@@ -390,6 +390,7 @@ async function handleChat(
   pendingAnswers: Map<string, { resolve: (answer: string) => void; reject: (err: Error) => void }>,
   logger: Logger,
   pushService?: PushService,
+  subscriptions?: ChatSubscriptionManager,
 ): Promise<void> {
   const { botName, chatId, text, messageId: clientMessageId } = msg;
 
@@ -438,11 +439,17 @@ async function handleChat(
           }
         }
 
-        if (ws.readyState !== WebSocket.OPEN) return;
-        if (final) {
-          sendMessage(ws, { type: 'complete', chatId, messageId: msgId, state });
-        } else {
-          sendMessage(ws, { type: 'state', chatId, messageId: msgId, state });
+        // Use subscriptions.broadcast so messages reach the client even after reconnect
+        // (the captured `ws` may be stale if client reconnected during task execution)
+        const msg = final
+          ? { type: 'complete' as const, chatId, messageId: msgId, state }
+          : { type: 'state' as const, chatId, messageId: msgId, state };
+        const subscribers = subscriptions?.getSubscribers(chatId);
+        if (subscribers && subscribers.size > 0) {
+          subscriptions!.broadcast(chatId, msg);
+        } else if (ws.readyState === WebSocket.OPEN) {
+          // Fallback: direct send if no subscribers (shouldn't happen normally)
+          sendMessage(ws, msg);
         }
       },
       onOutputFiles: (files) => {

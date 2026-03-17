@@ -66,6 +66,14 @@ final class AppState {
         bots.first(where: { $0.name == activeBotName })
     }
 
+    /// Find the most recent session for a given bot name
+    func activeSessionForBot(_ botName: String) -> ChatSession? {
+        sessions.values
+            .filter { $0.botName == botName }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .first
+    }
+
     var isConnected: Bool { webSocket.isConnected }
 
     private var messageListenerTask: Task<Void, Never>?
@@ -462,25 +470,10 @@ final class AppState {
 
     /// Inject RTC call transcript into chat as a message for Claude to process
     func injectRtcTranscript(_ transcriptText: String, chatId: String? = nil, botName: String? = nil) {
-        // Switch to the correct bot and session for this call
-        if let botName {
-            activeBotName = botName
-        }
-        if let chatId {
-            // Ensure session exists for this chatId
-            if sessions[chatId] == nil {
-                let bot = botName ?? activeBotName ?? "default"
-                let session = ChatSession(
-                    id: chatId, botName: bot, title: "", messages: [],
-                    createdAt: Date().timeIntervalSince1970 * 1000,
-                    updatedAt: Date().timeIntervalSince1970 * 1000,
-                    groupId: nil
-                )
-                sessions[chatId] = session
-            }
-            activeSessionId = chatId
-            showingChat = true
-        }
+        // Switch to the correct session
+        if let botName { activeBotName = botName }
+        if let chatId { activeSessionId = chatId }
+        showingChat = true
         sendMessage(text: transcriptText)
     }
 
