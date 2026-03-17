@@ -75,6 +75,54 @@ export class PushService {
     }
   }
 
+  /** Notify when AI has a question waiting for user input */
+  async notifyPendingQuestion(chatId: string, question: string, botName: string): Promise<void> {
+    const tokens = this.deviceStore.getTokens(chatId);
+    if (tokens.length === 0) return;
+
+    const title = `❓ ${botName}`;
+    let body = question || 'Waiting for your response';
+    if (body.length > 200) body = body.slice(0, 197) + '...';
+    body = body.replace(/[*_`#[\]]/g, '').replace(/\n{2,}/g, '\n').trim();
+
+    const results = await Promise.allSettled(
+      tokens.map((token) => this.sendNotification(token, { title, body, chatId, botName })),
+    );
+
+    let sent = 0;
+    let failed = 0;
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) sent++;
+      else failed++;
+    }
+    if (sent > 0 || failed > 0) {
+      this.logger.info({ chatId, sent, failed }, 'Pending question push sent');
+    }
+  }
+
+  /** Notify for incoming RTC voice call */
+  async notifyIncomingCall(chatId: string, botName: string): Promise<void> {
+    const tokens = this.deviceStore.getTokens(chatId);
+    if (tokens.length === 0) return;
+
+    const title = `📞 ${botName}`;
+    const body = 'Incoming voice call';
+
+    const results = await Promise.allSettled(
+      tokens.map((token) => this.sendNotification(token, { title, body, chatId, botName })),
+    );
+
+    let sent = 0;
+    let failed = 0;
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) sent++;
+      else failed++;
+    }
+    if (sent > 0 || failed > 0) {
+      this.logger.info({ chatId, sent, failed }, 'Incoming call push sent');
+    }
+  }
+
   /** Send a single push notification to a device token. Returns true on success. */
   async sendNotification(
     deviceToken: string,

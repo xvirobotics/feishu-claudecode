@@ -424,19 +424,23 @@ async function handleChat(
       userId: 'web',
       sendCards: false,
       onUpdate: (state: CardState, bridgeMessageId: string, final: boolean) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
         // Use the client-provided messageId so the frontend can match the response
         const msgId = clientMessageId || bridgeMessageId;
         // Cache state for reconnection recovery
         cacheState(chatId, msgId, state, final ? 'complete' : 'state');
+
         if (final) {
-          sendMessage(ws, { type: 'complete', chatId, messageId: msgId, state });
-          // Send push notification if configured (non-blocking)
+          // Always send push on completion, even if WS is disconnected
           if (pushService?.isConfigured()) {
             pushService.notifyTaskComplete(chatId, state, botName).catch((err: unknown) => {
               logger.warn({ err, chatId }, 'Push notification failed');
             });
           }
+        }
+
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (final) {
+          sendMessage(ws, { type: 'complete', chatId, messageId: msgId, state });
         } else {
           sendMessage(ws, { type: 'state', chatId, messageId: msgId, state });
         }
@@ -475,6 +479,13 @@ async function handleChat(
         }
       },
       onQuestion: (question: PendingQuestion): Promise<string> => {
+        // Send push notification for pending question
+        if (pushService?.isConfigured()) {
+          pushService.notifyPendingQuestion(chatId, question?.questions?.[0]?.question || '', botName).catch((err: unknown) => {
+            logger.warn({ err, chatId }, 'Push notification failed');
+          });
+        }
+
         return new Promise<string>((resolve, reject) => {
           pendingAnswers.set(question.toolUseId, { resolve, reject });
 
