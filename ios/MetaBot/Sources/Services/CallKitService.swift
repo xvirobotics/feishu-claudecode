@@ -17,7 +17,7 @@ final class CallKitService: NSObject {
     private let provider: CXProvider
     private let callController = CXCallController()
     /// Cache: CallKit UUID -> IncomingVoiceCall data (from VoIP push payload)
-    private var pendingCalls: [UUID: IncomingVoiceCall] = [:]
+    private(set) var pendingCalls: [UUID: IncomingVoiceCall] = [:]
 
     private override init() {
         let config = CXProviderConfiguration(localizedName: "MetaBot")

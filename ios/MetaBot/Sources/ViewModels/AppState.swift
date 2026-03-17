@@ -221,6 +221,10 @@ final class AppState {
             }
 
         case .voiceCall(let call):
+            // Skip if CallKit is already handling this call (VoIP push arrived first)
+            if CallKitService.shared.activeCallUUID != nil || !CallKitService.shared.pendingCalls.isEmpty {
+                break
+            }
             incomingVoiceCall = call
 
         case .groupCreated(let group):
