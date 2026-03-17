@@ -325,10 +325,12 @@ struct RtcCallView: View {
         Haptics.medium()
         Task {
             let transcriptText = await rtcService.endCall()
-            if let transcriptText {
-                // Use the call's chatId and botName, not whatever is currently active
+            if let transcriptText, incoming == nil {
+                // User-initiated call — inject transcript for Claude to process
                 appState.injectRtcTranscript(transcriptText, chatId: chatId, botName: botName)
             }
+            // For incoming (agent-initiated) calls, the agent already has the
+            // transcript via mb voice call --wait response. Don't inject.
             cleanup()
             dismiss()
         }
