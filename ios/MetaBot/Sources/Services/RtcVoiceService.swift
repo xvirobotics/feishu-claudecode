@@ -235,6 +235,11 @@ final class RtcVoiceService: NSObject {
         engineCfg.appID = info.appId
         rtcEngine = ByteRTCEngine.createRTCEngine(engineCfg, delegate: self)
 
+        // Configure audio processing — match web's echoCancellation/noiseSuppression/autoGainControl
+        rtcEngine?.setAudioScenario(.aiClient)        // AIGC-optimized scenario
+        rtcEngine?.setAudioProfile(.standard)          // Standard quality for voice
+        rtcEngine?.setAnsMode(.automatic)              // Automatic noise suppression
+
         // Create and configure room
         rtcRoom = rtcEngine?.createRTCRoom(info.roomId)
         rtcRoom?.delegate = self
