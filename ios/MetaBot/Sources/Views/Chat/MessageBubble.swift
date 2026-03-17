@@ -39,14 +39,14 @@ struct MessageBubble: View {
                     Text(message.text)
                         .font(.system(size: 14, weight: .medium))
                         .foregroundStyle(Color(UIColor { traits in
-                            traits.userInterfaceStyle == .dark ? .white : UIColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
+                            traits.userInterfaceStyle == .dark ? .white : UIColor(red: 0.1, green: 0.1, blue: 0.12, alpha: 1)
                         }))
                         .lineSpacing(4)
                         .tracking(-0.1)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 11)
-                        .background(NexusColors.accent)
+                        .background(NexusColors.userBubble)
                         .clipShape(
                             UnevenRoundedRectangle(
                                 topLeadingRadius: 16,

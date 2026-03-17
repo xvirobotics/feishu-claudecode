@@ -41,8 +41,8 @@ enum NexusColors {
     static let userBubbleStart = Color("NexusAccent")
     static let userBubbleEnd = Color("NexusAccentHover")
 
-    // User bubble uses solid accent (not gradient) to match web exactly
-    static let userBubble = Color("NexusAccent")
+    // User bubble: bright green in dark, soft mint in light
+    static let userBubble = Color("NexusUserBubble")
 
     // Extended palette
     static let accentText = Color("NexusAccentText")     // bright green for text on dark

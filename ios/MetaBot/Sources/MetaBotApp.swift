@@ -80,6 +80,7 @@ struct MetaBotApp: App {
             .environment(appState)
             .preferredColorScheme(appState.colorScheme)
             .tint(NexusColors.accent)
+            .id(appState.fontScale) // Force full re-render when font scale changes
             .onAppear {
                 // Wire push service to AppDelegate
                 appDelegate.pushService = appState.pushService
