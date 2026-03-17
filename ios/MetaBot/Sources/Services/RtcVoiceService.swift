@@ -321,8 +321,16 @@ extension RtcVoiceService: ByteRTCRoomDelegate {
                 self.callStartTime = Date()
             }
         } else if state < 0 {
+            let errorMsg: String
+            switch state {
+            case -1000: errorMsg = "Invalid token"
+            case -1004: errorMsg = "Duplicate login — another device already joined"
+            case -1009: errorMsg = "Token expired"
+            case -2001: errorMsg = "Failed to join room"
+            default: errorMsg = "Room error: \(state)"
+            }
             Task { @MainActor in
-                self.callPhase = .error("Room error: \(state)")
+                self.callPhase = .error(errorMsg)
             }
         }
     }

@@ -181,8 +181,10 @@ struct MobileTabView: View {
         // Global incoming call listener — works from any tab/screen
         .onChange(of: appState.incomingVoiceCall?.sessionId) { _, newValue in
             if let call = appState.incomingVoiceCall, newValue != nil {
-                incomingCall = call
                 appState.incomingVoiceCall = nil
+                // Don't accept if already in a call
+                guard !showIncomingCall else { return }
+                incomingCall = call
                 showIncomingCall = true
             }
         }
