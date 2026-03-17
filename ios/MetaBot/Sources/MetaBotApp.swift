@@ -8,6 +8,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
 
     func application(
         _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        // Set delegate early so cold-launch notification taps are handled
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
         pushService?.didRegisterForRemoteNotifications(deviceToken: deviceToken)
@@ -93,7 +102,6 @@ struct MetaBotApp: App {
             .onAppear {
                 // Wire push service to AppDelegate
                 appDelegate.pushService = appState.pushService
-                UNUserNotificationCenter.current().delegate = appDelegate
             }
             .onChange(of: scenePhase) { _, newPhase in
                 if newPhase == .active {
