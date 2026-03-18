@@ -153,36 +153,48 @@ async function main() {
   const allNames = [...feishuHandles.map((h) => h.name), ...telegramHandles.map((h) => h.name)];
   logger.info({ bots: allNames }, 'All bots started');
 
-  // WebSocket heartbeat: detect silent disconnects and force reconnect
-  const WS_CHECK_INTERVAL_MS = 10_000;    // Check every 10 seconds
-  const WS_IDLE_THRESHOLD_MS = 5 * 60_000; // Reconnect if no WS activity for 5 minutes
+  // WebSocket heartbeat: detect silent disconnects via active API probe.
+  // Only reconnect when API is healthy but WS has been idle too long,
+  // indicating a silent WS disconnect (not just quiet hours with no messages).
+  const WS_CHECK_INTERVAL_MS = 60_000;     // Probe every 60 seconds
+  const WS_IDLE_THRESHOLD_MS = 30 * 60_000; // Only consider reconnect after 30 min idle
   const wsReconnecting = new Set<string>();
+  let lastProbeHadMessage = new Map<string, boolean>(); // track if probe detected activity
 
   const wsHeartbeatInterval = setInterval(async () => {
     const now = Date.now();
     for (const handle of feishuHandles) {
       const idleMs = now - handle.lastWsActivity;
-      if (idleMs > WS_IDLE_THRESHOLD_MS && !wsReconnecting.has(handle.name)) {
-        wsReconnecting.add(handle.name);
-        const idleMin = Math.round(idleMs / 60_000);
-        logger.warn({ bot: handle.name, idleMinutes: idleMin }, 'WS idle too long, forcing reconnect');
-        try {
-          handle.wsClient.close();
-          // Create a fresh WSClient (reuse dispatcher)
-          const newWsClient = new lark.WSClient({
-            appId: handle.botConfig.feishu.appId,
-            appSecret: handle.botConfig.feishu.appSecret,
-            loggerLevel: lark.LoggerLevel.info,
-          });
-          await newWsClient.start({ eventDispatcher: handle.dispatcher });
-          handle.wsClient = newWsClient;
-          handle.lastWsActivity = Date.now();
-          logger.info({ bot: handle.name }, 'WS reconnected successfully');
-        } catch (err) {
-          logger.error({ bot: handle.name, err }, 'WS reconnect failed, will retry next cycle');
-        } finally {
-          wsReconnecting.delete(handle.name);
-        }
+      // Skip if recently active or already reconnecting
+      if (idleMs <= WS_IDLE_THRESHOLD_MS || wsReconnecting.has(handle.name)) continue;
+
+      // Active probe: make a lightweight API call to verify Feishu connectivity
+      try {
+        await handle.feishuClient.request({ method: 'GET', url: '/open-apis/bot/v3/info' });
+      } catch {
+        // API also failing — network is down, not a WS-specific issue. Skip.
+        continue;
+      }
+
+      // API works but no WS activity for 30+ min — WS is likely dead
+      wsReconnecting.add(handle.name);
+      const idleMin = Math.round(idleMs / 60_000);
+      logger.warn({ bot: handle.name, idleMinutes: idleMin }, 'WS silent disconnect detected (API healthy, no WS activity), forcing reconnect');
+      try {
+        handle.wsClient.close();
+        const newWsClient = new lark.WSClient({
+          appId: handle.botConfig.feishu.appId,
+          appSecret: handle.botConfig.feishu.appSecret,
+          loggerLevel: lark.LoggerLevel.info,
+        });
+        await newWsClient.start({ eventDispatcher: handle.dispatcher });
+        handle.wsClient = newWsClient;
+        handle.lastWsActivity = Date.now();
+        logger.info({ bot: handle.name }, 'WS reconnected successfully');
+      } catch (err) {
+        logger.error({ bot: handle.name, err }, 'WS reconnect failed, will retry next cycle');
+      } finally {
+        wsReconnecting.delete(handle.name);
       }
     }
   }, WS_CHECK_INTERVAL_MS);
