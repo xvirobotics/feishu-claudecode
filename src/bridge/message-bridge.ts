@@ -265,6 +265,73 @@ export class MessageBridge {
     await this.executeQuery(msg);
   }
 
+  private isDefaultMediaText(msg: IncomingMessage): boolean {
+    return (!!msg.imageKey && msg.text === DEFAULT_IMAGE_TEXT)
+        || (!!msg.fileKey && msg.text === DEFAULT_FILE_TEXT);
+  }
+
+  /** Timer expired: merge batched media messages and execute. */
+  private flushBatch(chatId: string): void {
+    const batch = this.pendingBatches.get(chatId);
+    if (!batch) return;
+    this.pendingBatches.delete(chatId);
+
+    const merged = this.mergeBatchMessages(batch.messages);
+    this.logger.info({ chatId, batchSize: batch.messages.length }, 'Flushing media batch (timeout)');
+
+    // If a task started running during the debounce window, queue instead
+    if (this.runningTasks.has(chatId)) {
+      const queue = this.messageQueues.get(chatId) || [];
+      if (queue.length < MAX_QUEUE_SIZE) {
+        queue.push(merged);
+        this.messageQueues.set(chatId, queue);
+        this.sender.sendTextNotice(chatId, '📋 Queued', `Your ${batch.messages.length} media message(s) have been queued.`, 'blue')
+          .catch(() => {});
+      }
+      return;
+    }
+
+    this.executeQuery(merged).catch(err => {
+      this.logger.error({ err, chatId }, 'Error executing batched messages');
+    });
+  }
+
+  /** Merge multiple media-only messages into one (no user text). */
+  private mergeBatchMessages(messages: IncomingMessage[]): IncomingMessage {
+    const first = messages[0];
+    if (messages.length === 1) return first;
+
+    const imageCount = messages.filter(m => m.imageKey).length;
+    const fileCount = messages.filter(m => m.fileKey).length;
+    const parts: string[] = [];
+    if (imageCount > 0) parts.push(`${imageCount}张图片`);
+    if (fileCount > 0) parts.push(`${fileCount}个文件`);
+
+    return {
+      ...first,
+      text: `请分析这些${parts.join('和')}`,
+      extraMedia: messages.slice(1).map(m => ({
+        messageId: m.messageId,
+        imageKey: m.imageKey,
+        fileKey: m.fileKey,
+        fileName: m.fileName,
+      })),
+    };
+  }
+
+  /** Merge batched media messages with a user text message. */
+  private mergeBatchWithText(batchMsgs: IncomingMessage[], textMsg: IncomingMessage): IncomingMessage {
+    return {
+      ...textMsg,
+      extraMedia: batchMsgs.map(m => ({
+        messageId: m.messageId,
+        imageKey: m.imageKey,
+        fileKey: m.fileKey,
+        fileName: m.fileName,
+      })),
+    };
+  }
+
   private async handleAnswer(msg: IncomingMessage, task: RunningTask): Promise<void> {
     const { chatId, text, imageKey } = msg;
     const pending = task.pendingQuestion!;
