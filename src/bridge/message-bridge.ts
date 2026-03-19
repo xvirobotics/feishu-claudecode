@@ -7,7 +7,7 @@ import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import { ClaudeExecutor, type ExecutionHandle } from '../claude/executor.js';
-import { StreamProcessor } from '../claude/stream-processor.js';
+import { StreamProcessor, type StreamProcessorConfig } from '../claude/stream-processor.js';
 import { SessionManager } from '../claude/session-manager.js';
 import { RateLimiter } from './rate-limiter.js';
 import { OutputsManager } from './outputs-manager.js';
@@ -277,12 +277,15 @@ export class MessageBridge {
 
     // Send initial "thinking" card
     const displayPrompt = fileKey ? '📎 ' + text : imageKey ? '🖼️ ' + text : text;
-    const processor = new StreamProcessor(displayPrompt);
+    const taskStartTime = Date.now();
+    const processorConfig: StreamProcessorConfig = { startTime: taskStartTime };
+    const processor = new StreamProcessor(displayPrompt, processorConfig, cwd);
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      startTime: taskStartTime,
     };
 
     const messageId = await this.sender.sendCard(chatId, initialState);
@@ -345,6 +348,16 @@ export class MessageBridge {
       }, IDLE_TIMEOUT_MS);
     };
     resetIdleTimer();
+
+    // Periodic timer to update elapsed time during thinking/running
+    const thinkingTimerId = setInterval(() => {
+      const currentState = processor.getCurrentState();
+      if (currentState.status === 'thinking' || currentState.status === 'running') {
+        rateLimiter.schedule(() => {
+          this.sender.updateCard(messageId, currentState);
+        });
+      }
+    }, 3000);
 
     let lastState: CardState = initialState;
 
@@ -561,6 +574,7 @@ export class MessageBridge {
     } finally {
       clearTimeout(timeoutId);
       if (idleTimerId) clearTimeout(idleTimerId);
+      if (thinkingTimerId) clearInterval(thinkingTimerId);
       if (runningTask.questionTimeoutId) {
         clearTimeout(runningTask.questionTimeoutId);
       }
@@ -595,7 +609,9 @@ export class MessageBridge {
     const outputsDir = this.outputsManager.prepareDir(chatId);
 
     const displayPrompt = prompt;
-    const processor = new StreamProcessor(displayPrompt);
+    const apiStartTime = Date.now();
+    const apiProcessorConfig: StreamProcessorConfig = { startTime: apiStartTime };
+    const processor = new StreamProcessor(displayPrompt, apiProcessorConfig, cwd);
     const rateLimiter = new RateLimiter(1500);
 
     let messageId: string | undefined;

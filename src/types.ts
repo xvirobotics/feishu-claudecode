@@ -6,6 +6,18 @@ export interface ToolCall {
   name: string;
   detail: string;
   status: 'running' | 'done';
+  input?: string;
+  output?: string;
+}
+
+export interface SubagentTask {
+  taskId: string;
+  description: string;
+  status: 'running' | 'completed' | 'failed';
+  summary?: string;
+  usage?: { total_tokens?: number; tool_uses?: number; duration_ms?: number };
+  toolCalls?: ToolCall[];
+  thinkingText?: string;
 }
 
 export interface PendingQuestion {
@@ -27,6 +39,13 @@ export interface CardState {
   durationMs?: number;
   errorMessage?: string;
   pendingQuestion?: PendingQuestion;
+  thinkingText?: string;
+  toolSummaries?: string[];
+  subagentTasks?: SubagentTask[];
+  startTime?: number;
+  sessionId?: string;
+  workingDirectory?: string;
+  numTurns?: number;
 }
 
 export interface IncomingMessage {

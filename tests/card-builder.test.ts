@@ -16,7 +16,7 @@ describe('buildCard', () => {
     expect(json.elements.some((e: any) => e.tag === 'markdown' && e.content.includes('thinking'))).toBe(true);
   });
 
-  it('builds running card with tool calls', () => {
+  it('builds running card with tool calls in collapsible panel', () => {
     const state: CardState = {
       status: 'running',
       userPrompt: 'fix bug',
@@ -28,10 +28,17 @@ describe('buildCard', () => {
     };
     const json = JSON.parse(buildCard(state));
     expect(json.header.template).toBe('blue');
-    const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('Read'));
-    expect(md).toBeDefined();
-    expect(md.content).toContain('✅');
-    expect(md.content).toContain('⏳');
+    // Tool calls are now wrapped in a collapsible panel
+    const panel = json.elements.find((e: any) => e.tag === 'collapsible_panel');
+    expect(panel).toBeDefined();
+    const panelMd = panel.elements.find((e: any) => e.tag === 'markdown');
+    expect(panelMd.content).toContain('✅');
+    expect(panelMd.content).toContain('⏳');
+    expect(panelMd.content).toContain('Read');
+    expect(panelMd.content).toContain('Edit');
+    // Header shows tool names
+    expect(panel.header.title.content).toContain('Read');
+    expect(panel.header.title.content).toContain('Edit');
   });
 
   it('builds complete card with stats', () => {
@@ -48,6 +55,7 @@ describe('buildCard', () => {
     const note = json.elements.find((e: any) => e.tag === 'note');
     expect(note).toBeDefined();
     expect(note.elements[0].content).toContain('5.0s');
+    expect(note.elements[0].content).toContain('$0.0300');
   });
 
   it('builds error card with error message', () => {

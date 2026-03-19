@@ -12,9 +12,9 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
 
 const MAX_CONTENT_LENGTH = 28000;
 
-function truncateContent(text: string): string {
-  if (text.length <= MAX_CONTENT_LENGTH) return text;
-  const half = Math.floor(MAX_CONTENT_LENGTH / 2) - 50;
+function truncateContent(text: string, maxLen: number = MAX_CONTENT_LENGTH): string {
+  if (text.length <= maxLen) return text;
+  const half = Math.floor(maxLen / 2) - 50;
   return (
     text.slice(0, half) +
     '\n\n... (content truncated) ...\n\n' +
@@ -22,21 +22,122 @@ function truncateContent(text: string): string {
   );
 }
 
+function formatElapsed(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = seconds % 60;
+  return `${minutes}m${remaining}s`;
+}
+
 export function buildCard(state: CardState): string {
   const config = STATUS_CONFIG[state.status];
   const elements: unknown[] = [];
 
-  // Tool calls section
-  if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
-      const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
+  // Calculate elapsed time for header
+  let headerTitle = `${config.icon} ${config.title}`;
+  if (state.startTime && (state.status === 'thinking' || state.status === 'running')) {
+    const elapsed = formatElapsed(Date.now() - state.startTime);
+    headerTitle = `${config.icon} ${config.title} (${elapsed})`;
+  }
+
+  // Build detail content (tool calls, subagent tasks, summaries, thinking)
+  const detailLines: string[] = [];
+
+  // Tool calls
+  for (const t of state.toolCalls) {
+    const icon = t.status === 'running' ? '⏳' : '✅';
+    let line = `${icon} **${t.name}** ${t.detail}`;
+    if (t.status === 'done') {
+      if (t.input?.trim()) {
+        line += `\n> Input: \`${truncateContent(t.input, 200)}\``;
+      }
+      if (t.output?.trim()) {
+        line += `\n> Output: \`${truncateContent(t.output, 200)}\``;
+      }
+    }
+    detailLines.push(line);
+  }
+
+  // Subagent tasks
+  if (state.subagentTasks && state.subagentTasks.length > 0) {
+    if (detailLines.length > 0) detailLines.push('---');
+    for (const task of state.subagentTasks) {
+      const icon = task.status === 'running' ? '⏳' : task.status === 'completed' ? '✅' : '❌';
+      let line = `${icon} **Agent:** ${task.description}`;
+      if (task.summary) {
+        line += `\n> ${truncateContent(task.summary, 300)}`;
+      }
+      if (task.usage) {
+        const usageParts: string[] = [];
+        if (task.usage.total_tokens) usageParts.push(`${task.usage.total_tokens} tokens`);
+        if (task.usage.tool_uses) usageParts.push(`${task.usage.tool_uses} tools`);
+        if (task.usage.duration_ms) usageParts.push(`${(task.usage.duration_ms / 1000).toFixed(1)}s`);
+        if (usageParts.length) line += `\n> ${usageParts.join(' · ')}`;
+      }
+      if (task.toolCalls && task.toolCalls.length > 0) {
+        const toolNames = task.toolCalls.map(t => t.name).join(', ');
+        line += `\n> Tools: ${toolNames}`;
+      }
+      if (task.thinkingText?.trim()) {
+        line += `\n> 💭 _${truncateContent(task.thinkingText, 200)}_`;
+      }
+      detailLines.push(line);
+    }
+  }
+
+  // Tool summaries
+  if (state.toolSummaries && state.toolSummaries.length > 0) {
+    if (detailLines.length > 0) detailLines.push('---');
+    for (const summary of state.toolSummaries) {
+      detailLines.push(`📋 ${summary}`);
+    }
+  }
+
+  // Thinking content
+  if (state.thinkingText?.trim()) {
+    if (detailLines.length > 0) detailLines.push('---');
+    detailLines.push(`💭 _${truncateContent(state.thinkingText, 500)}_`);
+  }
+
+  // Wrap all details in a single collapsible panel
+  if (detailLines.length > 0) {
+    // Smart header: show unique tool names
+    const uniqueTools = [...new Set(state.toolCalls.map(t => t.name))];
+    const agentCount = state.subagentTasks?.length ?? 0;
+    const headerParts: string[] = [];
+    if (uniqueTools.length > 0) {
+      if (uniqueTools.length <= 5) {
+        headerParts.push(uniqueTools.join(' · '));
+      } else {
+        headerParts.push(uniqueTools.slice(0, 5).join(' · ') + ` +${uniqueTools.length - 5}`);
+      }
+    }
+    if (agentCount > 0) {
+      headerParts.push(`${agentCount} agent${agentCount > 1 ? 's' : ''}`);
+    }
+    if (headerParts.length === 0) {
+      if (state.thinkingText?.trim()) headerParts.push('thinking');
+      else headerParts.push('details');
+    }
+    const panelHeader = `🔧 ${headerParts.join(' · ')}`;
+
     elements.push({
-      tag: 'markdown',
-      content: toolLines.join('\n'),
+      tag: 'collapsible_panel',
+      expanded: false,
+      header: {
+        title: {
+          tag: 'plain_text',
+          content: panelHeader,
+        },
+      },
+      elements: [
+        {
+          tag: 'markdown',
+          content: truncateContent(detailLines.join('\n\n')),
+        },
+      ],
     });
-    elements.push({ tag: 'hr' });
   }
 
   // Response content
@@ -46,9 +147,14 @@ export function buildCard(state: CardState): string {
       content: truncateContent(state.responseText),
     });
   } else if (state.status === 'thinking') {
+    let thinkingMsg = '_Claude is thinking..._';
+    if (state.startTime) {
+      const elapsed = formatElapsed(Date.now() - state.startTime);
+      thinkingMsg = `_Claude is thinking... (${elapsed})_`;
+    }
     elements.push({
       tag: 'markdown',
-      content: '_Claude is thinking..._',
+      content: thinkingMsg,
     });
   }
 
@@ -84,7 +190,22 @@ export function buildCard(state: CardState): string {
   if (state.status === 'complete' || state.status === 'error') {
     const parts: string[] = [];
     if (state.durationMs !== undefined) {
-      parts.push(`Duration: ${(state.durationMs / 1000).toFixed(1)}s`);
+      parts.push(`⏱ ${(state.durationMs / 1000).toFixed(1)}s`);
+    }
+    if (state.numTurns !== undefined) {
+      parts.push(`🔄 ${state.numTurns} turns`);
+    }
+    if (state.costUsd !== undefined) {
+      parts.push(`💰 $${state.costUsd.toFixed(4)}`);
+    }
+    if (state.workingDirectory) {
+      const dir = state.workingDirectory.length > 40
+        ? '.../' + state.workingDirectory.split('/').slice(-2).join('/')
+        : state.workingDirectory;
+      parts.push(`📁 ${dir}`);
+    }
+    if (state.sessionId) {
+      parts.push(`🔑 ${state.sessionId.slice(0, 8)}`);
     }
     if (parts.length > 0) {
       elements.push({
@@ -92,7 +213,7 @@ export function buildCard(state: CardState): string {
         elements: [
           {
             tag: 'plain_text',
-            content: parts.join(' | '),
+            content: parts.join(' · '),
           },
         ],
       });
@@ -104,7 +225,7 @@ export function buildCard(state: CardState): string {
     header: {
       template: config.color,
       title: {
-        content: `${config.icon} ${config.title}`,
+        content: headerTitle,
         tag: 'plain_text',
       },
     },
