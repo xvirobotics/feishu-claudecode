@@ -4,9 +4,10 @@ import Foundation
 import Observation
 import VolcEngineRTC
 
-/// Manages CallKit integration for native incoming call UI.
-/// When a call is answered via CallKit, RTC audio is connected directly here —
-/// no RtcCallView is shown. The native phone UI handles mute/speaker/hangup.
+/// Manages CallKit integration for incoming and outgoing calls.
+/// Incoming: VoIP push → CallKit UI → answer → RTC audio connected here.
+/// Outgoing: Phone app recents → CXStartCallAction → creates RTC room → connects.
+/// No RtcCallView is shown — the native phone UI handles mute/speaker/hangup.
 /// Singleton -- initialized once at app launch.
 @Observable
 final class CallKitService: NSObject {
@@ -25,6 +26,8 @@ final class CallKitService: NSObject {
     private var rtcRoom: ByteRTCRoom?
     private var currentCall: IncomingVoiceCall?
     private var transcript: [RtcAPIService.TranscriptEntry] = []
+    private var isOutgoingCall = false
+    private var audioSessionActivated = false
 
     /// Server credentials for transcript submission (set by AppState.connect)
     var serverURL: String = ""
@@ -86,9 +89,14 @@ final class CallKitService: NSObject {
     /// Report that the call has connected (called after RTC room is joined).
     func reportCallConnected() {
         guard let uuid = activeCallUUID else { return }
-        let update = CXCallUpdate()
-        update.hasVideo = false
-        provider.reportCall(with: uuid, updated: update)
+        if isOutgoingCall {
+            provider.reportOutgoingCall(with: uuid, connectedAt: Date())
+        } else {
+            // Incoming call — notify CallKit that audio is connected
+            let update = CXCallUpdate()
+            update.hasVideo = false
+            provider.reportCall(with: uuid, updated: update)
+        }
     }
 
     /// Report that the call has ended from the remote side
@@ -132,6 +140,7 @@ final class CallKitService: NSObject {
         let collectedTranscript = transcript
         let url = serverURL
         let token = authToken
+        let wasOutgoing = isOutgoingCall
 
         // Cleanup RTC
         rtcEngine?.stopAudioCapture()
@@ -142,6 +151,8 @@ final class CallKitService: NSObject {
         rtcRoom = nil
         currentCall = nil
         transcript = []
+        isOutgoingCall = false
+        audioSessionActivated = false
 
         // Format transcript (same format as RtcVoiceService)
         let transcriptText: String? = collectedTranscript.isEmpty ? nil :
@@ -159,8 +170,11 @@ final class CallKitService: NSObject {
             }
         }
 
-        // Notify listener (AppState injects transcript into chat)
-        onCallEnded?(transcriptText, call)
+        // Only inject transcript for outgoing calls (user-initiated from Phone recents).
+        // Incoming calls: agent already gets transcript via --wait, no need to inject.
+        if wasOutgoing {
+            onCallEnded?(transcriptText, call)
+        }
     }
 }
 
@@ -180,6 +194,7 @@ extension CallKitService: CXProviderDelegate {
         }
 
         activeCallUUID = action.callUUID
+        isOutgoingCall = false
         pendingCalls.removeValue(forKey: action.callUUID)
         action.fulfill()
 
@@ -196,9 +211,58 @@ extension CallKitService: CXProviderDelegate {
         action.fulfill()
     }
 
+    func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        let botName = action.handle.value
+        let uuid = action.callUUID
+        print("[CallKit] CXStartCallAction received — botName: \(botName), uuid: \(uuid)")
+        print("[CallKit] serverURL: \(serverURL.isEmpty ? "EMPTY" : serverURL), authToken: \(authToken.isEmpty ? "EMPTY" : "set")")
+
+        // Fulfill immediately to satisfy CallKit's ~10s timeout
+        activeCallUUID = uuid
+        isOutgoingCall = true
+        provider.reportOutgoingCall(with: uuid, startedConnectingAt: Date())
+        action.fulfill()
+
+        // Create RTC room asynchronously
+        startOutgoingCall(uuid: uuid, botName: botName)
+    }
+
+    private func startOutgoingCall(uuid: UUID, botName: String) {
+        guard !serverURL.isEmpty, !authToken.isEmpty else {
+            print("[CallKit] Outgoing call failed: no server credentials")
+            provider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
+            activeCallUUID = nil
+            return
+        }
+
+        let chatId = "callkit_\(uuid.uuidString.prefix(8).lowercased())"
+        let api = RtcAPIService(serverURL: serverURL, token: authToken)
+
+        Task {
+            do {
+                let response = try await api.startCall(botName: botName, chatId: chatId)
+                let call = IncomingVoiceCall(
+                    sessionId: response.sessionId, roomId: response.roomId,
+                    token: response.token, appId: response.appId,
+                    userId: response.userId, aiUserId: response.aiUserId,
+                    chatId: chatId, botName: botName, prompt: nil
+                )
+                await MainActor.run { self.connectRTC(call: call) }
+            } catch {
+                print("[CallKit] Outgoing call failed: \(error)")
+                await MainActor.run {
+                    self.provider.reportCall(with: uuid, endedAt: Date(), reason: .failed)
+                    self.activeCallUUID = nil
+                }
+            }
+        }
+    }
+
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        print("[CallKit] Audio session activated")
-        // Start audio capture now that CallKit has activated the session
+        print("[CallKit] Audio session activated, engine exists: \(rtcEngine != nil)")
+        audioSessionActivated = true
+        // Start audio capture if engine is already ready (incoming calls)
+        // For outgoing calls, engine may not exist yet — startAudioCapture called from onRoomStateChanged
         rtcEngine?.startAudioCapture()
     }
 
@@ -225,7 +289,11 @@ extension CallKitService: ByteRTCEngineDelegate {
 extension CallKitService: ByteRTCRoomDelegate {
     func rtcRoom(_ rtcRoom: ByteRTCRoom, onRoomStateChanged roomId: String, withUid uid: String, state: Int, extraInfo: String) {
         if state == 0 {
-            print("[CallKit RTC] Connected to room")
+            print("[CallKit RTC] Connected to room, audioActivated: \(audioSessionActivated)")
+            // For outgoing calls: audio session was activated before engine existed, start capture now
+            if audioSessionActivated {
+                rtcEngine?.startAudioCapture()
+            }
             reportCallConnected()
         } else if state < 0 {
             print("[CallKit RTC] Room error: \(state)")

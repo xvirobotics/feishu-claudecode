@@ -1,3 +1,5 @@
+import CallKit
+import Intents
 import SwiftUI
 import UserNotifications
 
@@ -12,7 +14,22 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     ) -> Bool {
         // Set delegate early so cold-launch notification taps are handled
         UNUserNotificationCenter.current().delegate = self
+        // Register CallKit provider before iOS delivers any pending CXStartCallAction (cold-launch callback)
+        _ = CallKitService.shared
         return true
+    }
+
+    // Handle callback from Phone app recent calls (INStartCallIntent user activity)
+    func application(
+        _ application: UIApplication,
+        continue userActivity: NSUserActivity,
+        restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void
+    ) -> Bool {
+        let type = userActivity.activityType
+        print("[AppDelegate] continue userActivity: \(type)")
+        print("[AppDelegate] userInfo: \(userActivity.userInfo ?? [:])")
+        // CallKit handles via CXStartCallAction delegate. Accept the activity so iOS doesn't error.
+        return type.contains("StartCall") || type.contains("StartAudio")
     }
 
     func application(
@@ -127,6 +144,15 @@ struct MetaBotApp: App {
                     appState.incomingVoiceCall = Self.parseCallFromUserInfo(info)
                 }
             }
+            // Handle "call back" from Phone app recent calls
+            .onContinueUserActivity("INStartCallIntent") { userActivity in
+                print("[MetaBotApp] INStartCallIntent received")
+                Self.handleStartCallIntent(userActivity)
+            }
+            .onContinueUserActivity("INStartAudioCallIntent") { userActivity in
+                print("[MetaBotApp] INStartAudioCallIntent received")
+                Self.handleStartCallIntent(userActivity)
+            }
             .task {
                 // Cold launch: check if app was opened from a call push notification
                 if let data = AppDelegate.pendingCallData {
@@ -152,6 +178,48 @@ struct MetaBotApp: App {
             botName: info["botName"] as? String ?? "Voice Call",
             prompt: nil
         )
+    }
+
+    /// Handle INStartCallIntent from Phone app recents — extract bot name and trigger CXStartCallAction
+    private static func handleStartCallIntent(_ userActivity: NSUserActivity) {
+        var botName: String?
+
+        // Try to extract from INStartCallIntent
+        if let interaction = userActivity.interaction,
+           let intent = interaction.intent as? INStartCallIntent,
+           let contact = intent.contacts?.first {
+            botName = contact.personHandle?.value
+            print("[MetaBotApp] Intent contact handle: \(botName ?? "nil")")
+        }
+
+        // Fallback: try INStartAudioCallIntent (older iOS)
+        if botName == nil, let interaction = userActivity.interaction,
+           let intent = interaction.intent as? INStartAudioCallIntent,
+           let contact = intent.contacts?.first {
+            botName = contact.personHandle?.value
+        }
+
+        // Fallback: check userInfo
+        if botName == nil {
+            botName = userActivity.userInfo?["handle"] as? String
+        }
+
+        guard let botName, !botName.isEmpty else {
+            print("[MetaBotApp] Could not extract bot name from intent")
+            return
+        }
+
+        print("[MetaBotApp] Starting outgoing call to: \(botName)")
+
+        // Programmatically trigger CXStartCallAction → CallKitService handles it
+        let handle = CXHandle(type: .generic, value: botName)
+        let action = CXStartCallAction(call: UUID(), handle: handle)
+        let transaction = CXTransaction(action: action)
+        CXCallController().request(transaction) { error in
+            if let error {
+                print("[MetaBotApp] CXStartCallAction request failed: \(error)")
+            }
+        }
     }
 
     private static func parseCallFromDict(_ info: [String: String]) -> IncomingVoiceCall {

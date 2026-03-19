@@ -26,6 +26,11 @@
 	<string>MetaBot accesses your photo library to share images in chat.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>MetaBot uses speech recognition to convert your voice to text.</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INStartCallIntent</string>
+		<string>INStartAudioCallIntent</string>
+	</array>
 	<key>UIAppFonts</key>
 	<array>
 		<string>SpaceGrotesk-Regular.ttf</string>

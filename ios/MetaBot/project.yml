@@ -39,6 +39,9 @@ targets:
         NSSpeechRecognitionUsageDescription: "MetaBot uses speech recognition to convert your voice to text."
         NSCameraUsageDescription: "MetaBot uses the camera to capture and share photos."
         NSPhotoLibraryUsageDescription: "MetaBot accesses your photo library to share images in chat."
+        NSUserActivityTypes:
+          - INStartCallIntent
+          - INStartAudioCallIntent
         UILaunchScreen:
           UIColorName: ""
           UIImageName: ""
@@ -63,6 +66,7 @@ targets:
         product: MarkdownUI
       - sdk: AVFoundation.framework
       - sdk: CallKit.framework
+      - sdk: Intents.framework
       - sdk: PushKit.framework
       - sdk: Speech.framework
       - sdk: UserNotifications.framework
