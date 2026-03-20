@@ -286,6 +286,14 @@ export function buildCard(state: CardState): string {
     });
   }
 
+  // Retry info (shown during 403 auto-retry)
+  if (state.retryInfo) {
+    elements.push({
+      tag: 'markdown',
+      content: `⏳ ${state.retryInfo}`,
+    });
+  }
+
   // Error message
   if (state.errorMessage) {
     elements.push({

@@ -42,6 +42,7 @@ export interface CardState {
   costUsd?: number;
   durationMs?: number;
   errorMessage?: string;
+  retryInfo?: string;
   pendingQuestion?: PendingQuestion;
   model?: string;
   thinking?: string;

@@ -80,6 +80,11 @@ function renderCardHtml(state: CardState): string {
     parts.push('<i>\u56DE\u590D\u6570\u5B57\u9009\u62E9\uFF0C\u6216\u76F4\u63A5\u8F93\u5165\u81EA\u5B9A\u4E49\u7B54\u6848</i>');
   }
 
+  // Retry info (shown during 403 auto-retry)
+  if (state.retryInfo) {
+    parts.push(`⏳ ${escapeHtml(state.retryInfo)}`);
+  }
+
   // Error message
   if (state.errorMessage) {
     parts.push('');

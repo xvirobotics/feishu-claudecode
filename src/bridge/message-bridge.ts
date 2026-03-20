@@ -28,6 +28,31 @@ const FINAL_CARD_BASE_DELAY_MS = 2000;
 const TASK_TIMEOUT_MESSAGE = 'Task timed out (24 hour limit)';
 const IDLE_TIMEOUT_MESSAGE = 'Task aborted: no activity for 1 hour';
 
+// Two-tier 403 retry strategy: 3x 1min, then 2x 5min
+const RETRY_TIERS: Array<{ count: number; delayMs: number }> = [
+  { count: 3, delayMs: 60_000 },   // tier 1: 3 retries, 1 min each
+  { count: 2, delayMs: 300_000 },  // tier 2: 2 retries, 5 min each
+];
+
+function is403Error(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as Record<string, unknown>;
+  const msg = String(e.message || '');
+  const status = e.status ?? e.statusCode ?? e.code;
+  return status === 403 || status === '403' || /\b403\b/.test(msg) || /forbidden/i.test(msg) || /rate.limit/i.test(msg);
+}
+
+function getRetryDelay(attempt: number): number | null {
+  let remaining = attempt;
+  for (const tier of RETRY_TIERS) {
+    if (remaining < tier.count) return tier.delayMs;
+    remaining -= tier.count;
+  }
+  return null; // max retries exceeded
+}
+
+const MAX_403_RETRIES = RETRY_TIERS.reduce((sum, t) => sum + t.count, 0);
+
 interface RunningTask {
   abortController: AbortController;
   startTime: number;
@@ -121,9 +146,19 @@ export class MessageBridge {
     if (queue.length === 0) {
       this.messageQueues.delete(chatId);
     }
-    this.executeQuery(next).catch((err) => {
-      this.logger.error({ err, chatId }, 'Error processing queued message');
-    });
+    // If this was a queued API task, route back through executeApiTask
+    const apiResolve = (next as any)._apiTaskResolve as ((r: ApiTaskResult) => void) | undefined;
+    const apiOptions = (next as any)._apiTaskOptions as ApiTaskOptions | undefined;
+    if (apiResolve && apiOptions) {
+      this.executeApiTask(apiOptions).then(apiResolve).catch((err) => {
+        this.logger.error({ err, chatId }, 'Error processing queued API task');
+        apiResolve({ success: false, responseText: '', error: err.message || 'Queue processing error' });
+      });
+    } else {
+      this.executeQuery(next).catch((err) => {
+        this.logger.error({ err, chatId }, 'Error processing queued message');
+      });
+    }
   }
 
   async handleMessage(msg: IncomingMessage): Promise<void> {
@@ -297,7 +332,7 @@ export class MessageBridge {
     const apiContext = { botName: this.config.name, chatId };
 
     // Start multi-turn execution
-    const executionHandle = this.executor.startExecution({
+    let executionHandle = this.executor.startExecution({
       prompt,
       cwd,
       sessionId: session.sessionId,
@@ -350,6 +385,7 @@ export class MessageBridge {
     resetIdleTimer();
 
     let lastState: CardState = initialState;
+    let retryAttempt = 0;
 
     // Periodic timer to update card during thinking/running (shows elapsed time)
     const thinkingTimerId = setInterval(() => {
@@ -360,81 +396,130 @@ export class MessageBridge {
     }, 3000);
 
     try {
-      for await (const message of executionHandle.stream) {
-        if (abortController.signal.aborted) break;
-        resetIdleTimer();
+      // Retry loop for 403 errors (two-tier: 3x1min + 2x5min)
+      let streamDone = false;
+      while (!streamDone) {
+        try {
+          for await (const message of executionHandle.stream) {
+            if (abortController.signal.aborted) { streamDone = true; break; }
+            resetIdleTimer();
 
-        const state = processor.processMessage(message);
-        lastState = state;
+            const state = processor.processMessage(message);
+            lastState = state;
 
-        // Update session ID if discovered
-        const newSessionId = processor.getSessionId();
-        if (newSessionId && newSessionId !== session.sessionId) {
-          this.sessionManager.setSessionId(chatId, newSessionId);
-        }
-
-        // Check if we hit a waiting_for_input state
-        if (state.status === 'waiting_for_input' && state.pendingQuestion) {
-          runningTask.pendingQuestion = state.pendingQuestion;
-
-          await rateLimiter.flush();
-          await this.sender.updateCard(messageId, state);
-
-          runningTask.questionTimeoutId = setTimeout(() => {
-            this.logger.warn({ chatId }, 'Question timeout, auto-answering');
-            const pending = runningTask.pendingQuestion;
-            if (pending) {
-              runningTask.consecutiveAutoAnswers++;
-              if (runningTask.consecutiveAutoAnswers >= MAX_CONSECUTIVE_AUTO_ANSWERS) {
-                this.logger.warn({ chatId, count: runningTask.consecutiveAutoAnswers }, 'Permission loop detected, aborting task');
-                runningTask.pendingQuestion = null;
-                processor.clearPendingQuestion();
-                runningTask.abortReason = 'Permission request loop detected: Claude repeatedly asked for permission without user response. Please try again with a more specific instruction.';
-                executionHandle.finish();
-                abortController.abort();
-                return;
-              }
-              runningTask.pendingQuestion = null;
-              processor.clearPendingQuestion();
-              const sid = processor.getSessionId() || '';
-              const autoAnswer = JSON.stringify({ answers: { _timeout: '用户未及时回复，请自行判断继续' } });
-              executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
+            // Update session ID if discovered
+            const newSessionId = processor.getSessionId();
+            if (newSessionId && newSessionId !== session.sessionId) {
+              this.sessionManager.setSessionId(chatId, newSessionId);
             }
-          }, QUESTION_TIMEOUT_MS);
 
-          continue;
-        }
+            // Check if we hit a waiting_for_input state
+            if (state.status === 'waiting_for_input' && state.pendingQuestion) {
+              runningTask.pendingQuestion = state.pendingQuestion;
 
-        // Auto-respond to interactive tools that don't need user input (ExitPlanMode, etc.)
-        const autoTools = processor.drainAutoRespondTools();
-        for (const tool of autoTools) {
-          const sid = processor.getSessionId() || '';
-          const response = getAutoResponse(tool.name);
-          this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'Auto-responding to interactive tool');
+              await rateLimiter.flush();
+              await this.sender.updateCard(messageId, state);
 
-          // ExitPlanMode: send plan content to user before auto-responding
-          if (tool.name === 'ExitPlanMode') {
-            await this.sendPlanContent(chatId, processor, state);
+              runningTask.questionTimeoutId = setTimeout(() => {
+                this.logger.warn({ chatId }, 'Question timeout, auto-answering');
+                const pending = runningTask.pendingQuestion;
+                if (pending) {
+                  runningTask.consecutiveAutoAnswers++;
+                  if (runningTask.consecutiveAutoAnswers >= MAX_CONSECUTIVE_AUTO_ANSWERS) {
+                    this.logger.warn({ chatId, count: runningTask.consecutiveAutoAnswers }, 'Permission loop detected, aborting task');
+                    runningTask.pendingQuestion = null;
+                    processor.clearPendingQuestion();
+                    runningTask.abortReason = 'Permission request loop detected: Claude repeatedly asked for permission without user response. Please try again with a more specific instruction.';
+                    executionHandle.finish();
+                    abortController.abort();
+                    return;
+                  }
+                  runningTask.pendingQuestion = null;
+                  processor.clearPendingQuestion();
+                  const sid = processor.getSessionId() || '';
+                  const autoAnswer = JSON.stringify({ answers: { _timeout: '用户未及时回复，请自行判断继续' } });
+                  executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
+                }
+              }, QUESTION_TIMEOUT_MS);
+
+              continue;
+            }
+
+            // Auto-respond to interactive tools that don't need user input (ExitPlanMode, etc.)
+            const autoTools = processor.drainAutoRespondTools();
+            for (const tool of autoTools) {
+              const sid = processor.getSessionId() || '';
+              const response = getAutoResponse(tool.name);
+              this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'Auto-responding to interactive tool');
+
+              // ExitPlanMode: send plan content to user before auto-responding
+              if (tool.name === 'ExitPlanMode') {
+                await this.sendPlanContent(chatId, processor, state);
+              }
+
+              executionHandle.sendAnswer(tool.toolUseId, sid, response);
+            }
+
+            // If we just got a message after answering a question, clear timeout state
+            if (runningTask.pendingQuestion === null && runningTask.questionTimeoutId) {
+              clearTimeout(runningTask.questionTimeoutId);
+              runningTask.questionTimeoutId = undefined;
+            }
+
+            // Break on final states
+            if (state.status === 'complete' || state.status === 'error') {
+              streamDone = true;
+              break;
+            }
+
+            // Throttled card update for non-final states
+            rateLimiter.schedule(() => {
+              this.sender.updateCard(messageId, state).catch(() => {});
+            });
           }
+          // Stream ended normally
+          streamDone = true;
+        } catch (streamErr: any) {
+          // 403 auto-retry: update card with retry status, wait, resume session
+          if (is403Error(streamErr) && !abortController.signal.aborted) {
+            const delay = getRetryDelay(retryAttempt);
+            if (delay !== null) {
+              retryAttempt++;
+              const delaySec = Math.round(delay / 1000);
+              const delayLabel = delaySec >= 60 ? `${delaySec / 60}min` : `${delaySec}s`;
+              this.logger.warn({ chatId, retryAttempt, maxRetries: MAX_403_RETRIES, delay: delayLabel }, '403 error, retrying');
 
-          executionHandle.sendAnswer(tool.toolUseId, sid, response);
+              // Update card to show retry countdown (preserve partial content)
+              const retryState: CardState = {
+                ...lastState,
+                status: 'thinking',
+                errorMessage: undefined,
+                retryInfo: `Rate limited — retry ${retryAttempt}/${MAX_403_RETRIES} in ${delayLabel}...`,
+              };
+              await rateLimiter.cancelAndWait();
+              await this.sender.updateCard(messageId, retryState);
+
+              await new Promise((r) => setTimeout(r, delay));
+              if (abortController.signal.aborted) throw streamErr;
+
+              // Resume with existing session or retry fresh
+              const resumeSessionId = processor.getSessionId() || session.sessionId;
+              try { executionHandle.finish(); } catch { /* ignore */ }
+              executionHandle = this.executor.startExecution({
+                prompt: resumeSessionId ? 'continue' : prompt,
+                cwd,
+                sessionId: resumeSessionId,
+                abortController,
+                outputsDir,
+                apiContext,
+              });
+              runningTask.executionHandle = executionHandle;
+              lastState = { ...lastState, retryInfo: undefined };
+              continue; // re-enter while loop with new stream
+            }
+          }
+          throw streamErr; // non-403 or max retries exceeded
         }
-
-        // If we just got a message after answering a question, clear timeout state
-        if (runningTask.pendingQuestion === null && runningTask.questionTimeoutId) {
-          clearTimeout(runningTask.questionTimeoutId);
-          runningTask.questionTimeoutId = undefined;
-        }
-
-        // Break on final states
-        if (state.status === 'complete' || state.status === 'error') {
-          break;
-        }
-
-        // Throttled card update for non-final states
-        rateLimiter.schedule(() => {
-          this.sender.updateCard(messageId, state).catch(() => {});
-        });
       }
 
       await rateLimiter.cancelAndWait();
@@ -537,7 +622,25 @@ export class MessageBridge {
     const { prompt, chatId, userId = 'api', sendCards = false } = options;
 
     if (this.runningTasks.has(chatId)) {
-      return { success: false, responseText: '', error: 'Chat is busy with another task' };
+      // Queue the API task and wait for it to complete instead of rejecting
+      const queue = this.messageQueues.get(chatId) || [];
+      if (queue.length >= MAX_QUEUE_SIZE) {
+        return { success: false, responseText: '', error: `Queue full (${MAX_QUEUE_SIZE} pending). Try again later.` };
+      }
+      this.logger.info({ chatId, userId, queuePos: queue.length + 1 }, 'API task queued (chat busy)');
+      return new Promise<ApiTaskResult>((resolve) => {
+        const queuedMsg: IncomingMessage = {
+          chatId,
+          userId,
+          text: prompt,
+          messageId: `api-${Date.now()}`,
+          _apiTaskResolve: resolve,
+          _apiTaskOptions: options,
+        } as any;
+        queue.push(queuedMsg);
+        this.messageQueues.set(chatId, queue);
+        this.audit.log({ event: 'task_queued', botName: this.config.name, chatId, userId, prompt, meta: { position: queue.length } });
+      });
     }
 
     const session = this.sessionManager.getSession(chatId);
@@ -571,7 +674,7 @@ export class MessageBridge {
 
     const apiContext = { botName: this.config.name, chatId };
 
-    const executionHandle = this.executor.startExecution({
+    let executionHandle = this.executor.startExecution({
       prompt,
       cwd,
       sessionId: session.sessionId,
@@ -624,51 +727,100 @@ export class MessageBridge {
       responseText: '',
       toolCalls: [],
     };
+    let retryAttempt = 0;
 
     try {
-      for await (const message of executionHandle.stream) {
-        if (abortController.signal.aborted) break;
-        resetIdleTimer();
+      // Retry loop for 403 errors (two-tier: 3x1min + 2x5min)
+      let streamDone = false;
+      while (!streamDone) {
+        try {
+          for await (const message of executionHandle.stream) {
+            if (abortController.signal.aborted) { streamDone = true; break; }
+            resetIdleTimer();
 
-        const state = processor.processMessage(message);
-        lastState = state;
+            const state = processor.processMessage(message);
+            lastState = state;
 
-        const newSessionId = processor.getSessionId();
-        if (newSessionId && newSessionId !== session.sessionId) {
-          this.sessionManager.setSessionId(chatId, newSessionId);
-        }
+            const newSessionId = processor.getSessionId();
+            if (newSessionId && newSessionId !== session.sessionId) {
+              this.sessionManager.setSessionId(chatId, newSessionId);
+            }
 
-        if (state.status === 'waiting_for_input' && state.pendingQuestion) {
-          const pending = state.pendingQuestion;
-          processor.clearPendingQuestion();
-          const sid = processor.getSessionId() || '';
-          const autoAnswer = JSON.stringify({ answers: { _auto: 'Please decide on your own and proceed.' } });
-          executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
-          continue;
-        }
+            if (state.status === 'waiting_for_input' && state.pendingQuestion) {
+              const pending = state.pendingQuestion;
+              processor.clearPendingQuestion();
+              const sid = processor.getSessionId() || '';
+              const autoAnswer = JSON.stringify({ answers: { _auto: 'Please decide on your own and proceed.' } });
+              executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
+              continue;
+            }
 
-        // Auto-respond to interactive tools (ExitPlanMode, etc.)
-        const autoTools = processor.drainAutoRespondTools();
-        for (const tool of autoTools) {
-          const sid = processor.getSessionId() || '';
-          const response = getAutoResponse(tool.name);
-          this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'API task: auto-responding to interactive tool');
+            // Auto-respond to interactive tools (ExitPlanMode, etc.)
+            const autoTools = processor.drainAutoRespondTools();
+            for (const tool of autoTools) {
+              const sid = processor.getSessionId() || '';
+              const response = getAutoResponse(tool.name);
+              this.logger.info({ chatId, toolName: tool.name, toolUseId: tool.toolUseId }, 'API task: auto-responding to interactive tool');
 
-          if (tool.name === 'ExitPlanMode' && sendCards) {
-            await this.sendPlanContent(chatId, processor, state);
+              if (tool.name === 'ExitPlanMode' && sendCards) {
+                await this.sendPlanContent(chatId, processor, state);
+              }
+
+              executionHandle.sendAnswer(tool.toolUseId, sid, response);
+            }
+
+            if (state.status === 'complete' || state.status === 'error') {
+              streamDone = true;
+              break;
+            }
+
+            if (sendCards && messageId) {
+              rateLimiter.schedule(() => {
+                this.sender.updateCard(messageId!, state).catch(() => {});
+              });
+            }
           }
+          streamDone = true;
+        } catch (streamErr: any) {
+          // 403 auto-retry for API tasks
+          if (is403Error(streamErr) && !abortController.signal.aborted) {
+            const delay = getRetryDelay(retryAttempt);
+            if (delay !== null) {
+              retryAttempt++;
+              const delaySec = Math.round(delay / 1000);
+              const delayLabel = delaySec >= 60 ? `${delaySec / 60}min` : `${delaySec}s`;
+              this.logger.warn({ chatId, retryAttempt, maxRetries: MAX_403_RETRIES, delay: delayLabel }, 'API task 403, retrying');
 
-          executionHandle.sendAnswer(tool.toolUseId, sid, response);
-        }
+              if (sendCards && messageId) {
+                const retryState: CardState = {
+                  ...lastState,
+                  status: 'thinking',
+                  errorMessage: undefined,
+                  retryInfo: `Rate limited — retry ${retryAttempt}/${MAX_403_RETRIES} in ${delayLabel}...`,
+                };
+                await rateLimiter.cancelAndWait();
+                await this.sender.updateCard(messageId, retryState);
+              }
 
-        if (state.status === 'complete' || state.status === 'error') {
-          break;
-        }
+              await new Promise((r) => setTimeout(r, delay));
+              if (abortController.signal.aborted) throw streamErr;
 
-        if (sendCards && messageId) {
-          rateLimiter.schedule(() => {
-            this.sender.updateCard(messageId!, state).catch(() => {});
-          });
+              const resumeSessionId = processor.getSessionId() || session.sessionId;
+              try { executionHandle.finish(); } catch { /* ignore */ }
+              executionHandle = this.executor.startExecution({
+                prompt: resumeSessionId ? 'continue' : prompt,
+                cwd,
+                sessionId: resumeSessionId,
+                abortController,
+                outputsDir,
+                apiContext,
+              });
+              runningTask.executionHandle = executionHandle;
+              lastState = { ...lastState, retryInfo: undefined };
+              continue;
+            }
+          }
+          throw streamErr;
         }
       }
 
