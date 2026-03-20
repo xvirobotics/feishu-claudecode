@@ -18,6 +18,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as http from 'node:http';
 import type { Logger } from '../utils/logger.js';
+import { proxyFetch } from '../utils/http.js';
 import type { BotRegistry } from './bot-registry.js';
 
 const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB (Doubao flash limit)
@@ -84,7 +85,7 @@ async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger
 
   const requestId = crypto.randomUUID();
   const url = 'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash';
-  const response = await fetch(url, {
+  const response = await proxyFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -168,7 +169,7 @@ export async function elevenlabsTTS(text: string, voiceId: string): Promise<Buff
   if (!apiKey) throw Object.assign(new Error('ELEVENLABS_API_KEY not configured'), { statusCode: 500 });
 
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
-  const response = await fetch(url, {
+  const response = await proxyFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -201,7 +202,7 @@ export async function doubaoTTS(text: string, speaker: string): Promise<Buffer> 
   }
 
   const url = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
-  const response = await fetch(url, {
+  const response = await proxyFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -18,16 +18,17 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.0",
-    "node-edge-tts": "^1.2.10",
     "@larksuiteoapi/node-sdk": "^1.58.0",
     "better-sqlite3": "^12.6.2",
     "cron-parser": "^5.5.0",
     "dotenv": "^16.4.0",
     "grammy": "^1.40.0",
     "https-proxy-agent": "^7.0.6",
+    "node-edge-tts": "^1.2.10",
     "openai": "^6.29.0",
     "pino": "^9.0.0",
-    "pino-pretty": "^11.0.0"
+    "pino-pretty": "^11.0.0",
+    "undici": "^7.24.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
