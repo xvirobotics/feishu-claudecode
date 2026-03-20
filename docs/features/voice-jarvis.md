@@ -234,6 +234,43 @@ Server-side STT (Doubao or Whisper) + Agent execution + optional TTS. Defaults t
 | `ELEVENLABS_API_KEY` | Required for ElevenLabs TTS |
 | `VOICE_MODEL` | Override Claude model for voice mode (optional) |
 
+### POST `/api/tts`
+
+Lightweight text-to-speech endpoint — no STT, no agent. Just text in, audio out.
+
+**Request:**
+
+```bash
+curl -X POST http://localhost:9100/api/tts \
+  -H "Authorization: Bearer YOUR_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello world", "provider": "doubao", "voice": "zh_female_wanqudashu_moon_bigtts"}'
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `text` | Yes | Text to convert to speech |
+| `provider` | No | `doubao`, `openai`, or `elevenlabs` (auto-selects based on available keys) |
+| `voice` | No | Voice/speaker ID (defaults per provider) |
+
+**Response:** `audio/mpeg` binary with headers:
+
+- `X-Text-Length`: original text length
+- `X-Provider`: TTS provider used
+- `X-Voice`: voice/speaker ID used
+
+**CLI shortcut:**
+
+```bash
+mb voice "Hello world"              # generate MP3, print file path
+mb voice "Hello" --play             # generate and play audio
+mb voice "Hello" -o greeting.mp3    # save to specific file
+echo "Long text" | mb voice         # read from stdin
+mb voice "Hello" --provider openai --voice nova  # override provider/voice
+```
+
+See [mb CLI — Voice](../reference/cli-mb.md#voice) for full CLI reference.
+
 ## Limitations
 
 - Each interaction requires saying "Hey Siri, Jarvis" again (no continuous conversation loop)

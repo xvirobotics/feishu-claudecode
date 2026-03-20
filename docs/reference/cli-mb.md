@@ -48,6 +48,24 @@ mb stats                            # cost & usage statistics
 mb health                           # health check
 ```
 
+### Voice
+
+```bash
+mb voice "Hello world"              # generate MP3, print file path
+mb voice "Hello" --play             # generate and play audio
+mb voice "Hello" -o greeting.mp3    # save to specific file
+echo "Long text" | mb voice         # read from stdin
+mb voice "Hello" --provider doubao  # use specific TTS provider
+mb voice "Hello" --voice nova       # use specific voice
+```
+
+| Flag | Description |
+|------|-------------|
+| `--play` | Play audio after generating (macOS: afplay, Linux: mpv/ffplay/play) |
+| `-o FILE` | Save to specific file (default: `/tmp/mb-voice-<timestamp>.mp3`) |
+| `--provider NAME` | TTS provider: `doubao`, `openai`, or `elevenlabs` |
+| `--voice ID` | Voice/speaker ID (provider-specific) |
+
 ### Management
 
 ```bash

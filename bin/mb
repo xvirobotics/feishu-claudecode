@@ -178,12 +178,13 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
     echo "==> Updating skills..."
     SKILLS_DIR="$HOME/.claude/skills"
     if [[ -d "$SKILLS_DIR" ]]; then
-      for skill in metaskill metamemory metabot feishu-doc; do
+      for skill in metaskill metamemory metabot feishu-doc voice; do
         case "$skill" in
           metaskill)  src="$METABOT_SRC/src/skills/metaskill" ;;
           metamemory) src="$METABOT_SRC/src/memory/skill" ;;
           metabot)    src="$METABOT_SRC/src/skills/metabot" ;;
           feishu-doc) src="$METABOT_SRC/src/skills/feishu-doc" ;;
+          voice)      src="$METABOT_SRC/src/skills/voice" ;;
           *)          src="" ;;
         esac
         if [[ -n "$src" && -d "$src" && -d "$SKILLS_DIR/$skill" ]]; then
@@ -229,6 +230,81 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
 
     echo "==> Update complete!"
     ;;
+  # --- Text-to-Speech ---
+  voice|v)
+    _provider=""
+    _voice=""
+    _output=""
+    _play=false
+    _text=""
+
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --provider|-p) _provider="$2"; shift 2 ;;
+        --voice)       _voice="$2"; shift 2 ;;
+        -o|--output)   _output="$2"; shift 2 ;;
+        --play)        _play=true; shift ;;
+        --)            shift; _text="$*"; break ;;
+        -*)            echo "Unknown flag: $1"; exit 1 ;;
+        *)             _text="$*"; break ;;
+      esac
+    done
+
+    # Read from stdin if no text argument
+    if [[ -z "$_text" ]]; then
+      if [[ -t 0 ]]; then
+        echo "Usage: mb voice \"text to speak\" [--play] [-o file.mp3] [--provider doubao|openai|elevenlabs] [--voice <name>]"
+        echo "  Or pipe text: echo 'hello' | mb voice"
+        exit 1
+      fi
+      _text="$(cat)"
+    fi
+
+    # Build JSON body
+    _json_body=$(python3 -c "
+import json, sys
+body = {'text': sys.argv[1]}
+if sys.argv[2]: body['provider'] = sys.argv[2]
+if sys.argv[3]: body['voice'] = sys.argv[3]
+print(json.dumps(body))
+" "$_text" "$_provider" "$_voice")
+
+    # Default output filename
+    if [[ -z "$_output" ]]; then
+      _output="/tmp/mb-voice-$(date +%s).mp3"
+    fi
+
+    # Call API
+    _http_code=$(curl -s -w '%{http_code}' -o "$_output" \
+      -X POST "$METABOT_URL/api/tts" \
+      -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+      -d "$_json_body")
+
+    if [[ "$_http_code" != "200" ]]; then
+      echo "Error: TTS request failed (HTTP $_http_code)"
+      cat "$_output" 2>/dev/null
+      rm -f "$_output"
+      exit 1
+    fi
+
+    echo "$_output"
+
+    # Play if requested
+    if [[ "$_play" == "true" ]]; then
+      if command -v afplay &>/dev/null; then
+        afplay "$_output"
+      elif command -v mpv &>/dev/null; then
+        mpv --no-video "$_output" 2>/dev/null
+      elif command -v ffplay &>/dev/null; then
+        ffplay -nodisp -autoexit "$_output" 2>/dev/null
+      elif command -v play &>/dev/null; then
+        play "$_output" 2>/dev/null
+      else
+        echo "(no audio player found — install mpv, ffplay, or sox to use --play)"
+      fi
+    fi
+    ;;
   # --- Help ---
   *)
     echo "mb - MetaBot API CLI"
@@ -255,6 +331,11 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
     echo "  Monitoring:"
     echo "    mb stats                         - Cost & usage stats (per-bot, per-user)"
     echo "    mb metrics                       - Prometheus metrics"
+    echo ""
+    echo "  Voice:"
+    echo "    mb voice \"text\" [--play] [-o f]  - Text-to-speech (saves MP3)"
+    echo "    mb voice \"text\" --provider doubao - Use specific TTS provider"
+    echo "    echo 'hello' | mb voice           - Read from stdin"
     echo ""
     echo "  System:"
     echo "    mb health                        - Health check"

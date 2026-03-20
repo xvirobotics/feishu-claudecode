@@ -144,7 +144,7 @@ async function whisperTranscribe(audioBuffer: Buffer, ext: string, language: str
 // OpenAI TTS
 // ---------------------------------------------------------------------------
 
-async function openaiTTS(text: string, voice: string): Promise<Buffer> {
+export async function openaiTTS(text: string, voice: string): Promise<Buffer> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw Object.assign(new Error('OPENAI_API_KEY not configured'), { statusCode: 500 });
 
@@ -162,7 +162,7 @@ async function openaiTTS(text: string, voice: string): Promise<Buffer> {
 // ElevenLabs TTS
 // ---------------------------------------------------------------------------
 
-async function elevenlabsTTS(text: string, voiceId: string): Promise<Buffer> {
+export async function elevenlabsTTS(text: string, voiceId: string): Promise<Buffer> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) throw Object.assign(new Error('ELEVENLABS_API_KEY not configured'), { statusCode: 500 });
 
@@ -191,7 +191,7 @@ async function elevenlabsTTS(text: string, voiceId: string): Promise<Buffer> {
 // Doubao (Volcengine) TTS — V3 HTTP Chunked API
 // ---------------------------------------------------------------------------
 
-async function doubaoTTS(text: string, speaker: string): Promise<Buffer> {
+export async function doubaoTTS(text: string, speaker: string): Promise<Buffer> {
   const appId = process.env.VOLCENGINE_TTS_APPID;
   const accessKey = process.env.VOLCENGINE_TTS_ACCESS_KEY;
   const resourceId = process.env.VOLCENGINE_TTS_RESOURCE_ID || 'volc.service_type.10029';
@@ -263,14 +263,14 @@ function resolveSTTProvider(explicit: string): string {
   return 'whisper';
 }
 
-function resolveTTSProvider(explicit: string): string {
+export function resolveTTSProvider(explicit: string): string {
   if (explicit) return explicit;
   // Default to doubao if Volcengine keys exist, otherwise none (no TTS)
   if (process.env.VOLCENGINE_TTS_APPID && process.env.VOLCENGINE_TTS_ACCESS_KEY) return 'doubao';
   return '';
 }
 
-function resolveTTSVoice(explicit: string, ttsProvider: string): string {
+export function resolveTTSVoice(explicit: string, ttsProvider: string): string {
   if (explicit) return explicit;
   // Sensible defaults per provider
   if (ttsProvider === 'doubao') return 'zh_female_wanqudashu_moon_bigtts';

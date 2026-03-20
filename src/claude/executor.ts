@@ -244,13 +244,33 @@ export class ClaudeExecutor {
     const logger = this.logger;
 
     async function* wrapStream(): AsyncGenerator<SDKMessage> {
+      // Race each stream.next() against the abort signal so we exit immediately on /stop
+      const abortPromise = new Promise<never>((_, reject) => {
+        if (abortController.signal.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'));
+          return;
+        }
+        abortController.signal.addEventListener('abort', () => {
+          reject(new DOMException('Aborted', 'AbortError'));
+        }, { once: true });
+      });
+
+      const iterator = stream[Symbol.asyncIterator]();
+
       try {
-        for await (const message of stream) {
-          yield message as SDKMessage;
+        while (true) {
+          const result = await Promise.race([
+            iterator.next(),
+            abortPromise,
+          ]);
+          if (result.done) break;
+          yield result.value as SDKMessage;
         }
       } catch (err: any) {
         if (err.name === 'AbortError' || abortController.signal.aborted) {
           logger.info('Claude execution aborted');
+          // Clean up the underlying iterator (non-blocking)
+          try { iterator.return?.(undefined); } catch { /* ignore */ }
           return;
         }
         throw err;
@@ -303,13 +323,31 @@ export class ClaudeExecutor {
       options: queryOptions as any,
     });
 
+    const abortPromise = new Promise<never>((_, reject) => {
+      if (abortController.signal.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'));
+        return;
+      }
+      abortController.signal.addEventListener('abort', () => {
+        reject(new DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+    });
+
+    const iterator = stream[Symbol.asyncIterator]();
+
     try {
-      for await (const message of stream) {
-        yield message as SDKMessage;
+      while (true) {
+        const result = await Promise.race([
+          iterator.next(),
+          abortPromise,
+        ]);
+        if (result.done) break;
+        yield result.value as SDKMessage;
       }
     } catch (err: any) {
       if (err.name === 'AbortError' || abortController.signal.aborted) {
         this.logger.info('Claude execution aborted');
+        try { iterator.return?.(undefined); } catch { /* ignore */ }
         return;
       }
       throw err;

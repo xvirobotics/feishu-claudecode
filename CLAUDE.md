@@ -105,6 +105,14 @@ Read Feishu documents (standalone docx and wiki pages) and convert them to Markd
 
 **Environment:** `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY` (for Doubao STT + TTS, recommended), `OPENAI_API_KEY` (fallback for Whisper STT + OpenAI TTS), `ELEVENLABS_API_KEY` (optional for ElevenLabs TTS).
 
+### Text-to-Speech API
+
+`POST /api/tts` — Lightweight TTS-only endpoint (no STT, no agent). Accepts JSON `{ text, provider?, voice? }`, returns `audio/mpeg` binary with metadata headers (`X-Text-Length`, `X-Provider`, `X-Voice`). Reuses TTS functions from `voice-handler.ts`.
+
+**CLI:** `mb voice "text" [--play] [-o file.mp3] [--provider doubao|openai|elevenlabs] [--voice <id>]`
+
+**Skill:** `voice` — Global skill teaching Claude agents to use `mb voice` for audio output. Installed to `~/.claude/skills/voice/SKILL.md`.
+
 ### Plan Mode Display
 
 When Claude enters plan mode and writes a plan to `.claude/plans/*.md`, the plan content is automatically sent to the Feishu user as a separate card message when `ExitPlanMode` is triggered. This is handled by `StreamProcessor` tracking plan file paths and `MessageBridge.sendPlanContent()` reading and sending the file.

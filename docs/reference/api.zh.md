@@ -98,6 +98,30 @@ Authorization: Bearer <API_SECRET>
 | `GET` | `/api/sync` | 同步状态 |
 | `POST` | `/api/sync/document` | 按 ID 同步单个文档 |
 
+### 文字转语音
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/api/tts` | 文字转语音（返回 MP3 音频） |
+
+**请求体：**
+
+```json
+{
+  "text": "你好世界",
+  "provider": "doubao",
+  "voice": "zh_female_wanqudashu_moon_bigtts"
+}
+```
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `text` | 是 | 要转换的文本 |
+| `provider` | 否 | `doubao`、`openai` 或 `elevenlabs`（根据已配置密钥自动选择） |
+| `voice` | 否 | 声音/音色 ID（各服务商有默认值） |
+
+**响应：** `audio/mpeg` 二进制数据，附带 `X-Text-Length`、`X-Provider`、`X-Voice` 响应头。
+
 ### 飞书文档
 
 | 方法 | 路径 | 说明 |

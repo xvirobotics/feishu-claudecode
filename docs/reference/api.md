@@ -98,6 +98,30 @@ For one-time tasks, use `delayMs` instead of `cron`:
 | `GET` | `/api/sync` | Sync status |
 | `POST` | `/api/sync/document` | Sync single document by ID |
 
+### Text-to-Speech
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/tts` | Convert text to speech (returns MP3 audio) |
+
+**Request body:**
+
+```json
+{
+  "text": "Hello world",
+  "provider": "doubao",
+  "voice": "zh_female_wanqudashu_moon_bigtts"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `text` | Yes | Text to convert to speech |
+| `provider` | No | `doubao`, `openai`, or `elevenlabs` (auto-selects based on available keys) |
+| `voice` | No | Voice/speaker ID (defaults per provider) |
+
+**Response:** `audio/mpeg` binary with headers `X-Text-Length`, `X-Provider`, `X-Voice`.
+
 ### Feishu Documents
 
 | Method | Path | Description |

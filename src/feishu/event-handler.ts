@@ -115,12 +115,13 @@ export function createEventDispatcher(
           text = '请分析这个文件';
           logger.info({ userId, chatId, chatType, fileKey, fileName }, 'Received file message');
         } else if (msgType === 'post') {
-          // Rich text (post) message: extract plain text from nested structure
+          // Rich text (post) message: extract plain text and images from nested structure
           try {
             const content = JSON.parse(message.content);
             logger.debug({ postContent: JSON.stringify(content).slice(0, 500) }, 'Raw post content');
             text = extractTextFromPost(content);
-            logger.debug({ extractedText: text.slice(0, 200) }, 'Extracted post text');
+            imageKey = extractImageFromPost(content);
+            logger.debug({ extractedText: text.slice(0, 200), imageKey }, 'Extracted post content');
           } catch {
             logger.warn({ content: message.content }, 'Failed to parse post message content');
             return;
@@ -144,12 +145,17 @@ export function createEventDispatcher(
           // Strip Feishu auto-generated markdown links: [text](url) → text
           text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
-          if (!text) {
+          if (!text && !imageKey) {
             logger.debug('Empty message after stripping mentions');
             return;
           }
 
-          logger.info({ userId, chatId, chatType, text: text.slice(0, 100) }, 'Received message');
+          // If text is empty but we have an image (e.g. @bot + image in group chat), set default prompt
+          if (!text && imageKey) {
+            text = '请分析这张图片';
+          }
+
+          logger.info({ userId, chatId, chatType, text: text.slice(0, 100), imageKey }, 'Received message');
         }
 
         onMessage({ messageId, chatId, chatType, userId, text, imageKey, fileKey, fileName });
@@ -160,6 +166,43 @@ export function createEventDispatcher(
   });
 
   return dispatcher;
+}
+
+/**
+ * Extract the first image_key from a Feishu post (rich text) message.
+ * Looks for { tag: "img", image_key: "..." } elements in the post content.
+ */
+function extractImageFromPost(content: Record<string, unknown>): string | undefined {
+  const bodies: Array<Record<string, unknown>> = [];
+
+  if (Array.isArray(content.content)) {
+    bodies.push(content);
+  } else {
+    for (const locale of Object.values(content)) {
+      if (locale && typeof locale === 'object' && !Array.isArray(locale)) {
+        const loc = locale as Record<string, unknown>;
+        if (Array.isArray(loc.content)) {
+          bodies.push(loc);
+        }
+      }
+    }
+  }
+
+  for (const body of bodies) {
+    const paragraphs = body.content as unknown[][];
+    for (const paragraph of paragraphs) {
+      if (!Array.isArray(paragraph)) continue;
+      for (const element of paragraph) {
+        if (!element || typeof element !== 'object') continue;
+        const el = element as Record<string, unknown>;
+        if (el.tag === 'img' && typeof el.image_key === 'string') {
+          return el.image_key;
+        }
+      }
+    }
+  }
+
+  return undefined;
 }
 
 /**

@@ -48,6 +48,24 @@ mb stats                            # 费用与使用统计
 mb health                           # 健康检查
 ```
 
+### 语音
+
+```bash
+mb voice "你好世界"                   # 生成 MP3，输出文件路径
+mb voice "你好" --play               # 生成并播放音频
+mb voice "你好" -o greeting.mp3      # 保存到指定文件
+echo "长文本" | mb voice             # 从标准输入读取
+mb voice "你好" --provider doubao    # 指定 TTS 服务商
+mb voice "你好" --voice nova         # 指定声音
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--play` | 生成后播放（macOS: afplay, Linux: mpv/ffplay/play） |
+| `-o FILE` | 保存到指定文件（默认: `/tmp/mb-voice-<时间戳>.mp3`） |
+| `--provider NAME` | TTS 服务商: `doubao`、`openai`、`elevenlabs` |
+| `--voice ID` | 声音/音色 ID（各服务商不同） |
+
 ### 管理
 
 ```bash

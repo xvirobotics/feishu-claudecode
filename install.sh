@@ -554,6 +554,12 @@ mkdir -p "$SKILLS_DIR/metabot"
 cp "$METABOT_HOME/src/skills/metabot/SKILL.md" "$SKILLS_DIR/metabot/SKILL.md"
 success "metabot skill installed → $SKILLS_DIR/metabot"
 
+# Install voice skill (bundled in src/skills/voice/)
+info "Installing voice skill..."
+mkdir -p "$SKILLS_DIR/voice"
+cp "$METABOT_HOME/src/skills/voice/SKILL.md" "$SKILLS_DIR/voice/SKILL.md"
+success "voice skill installed → $SKILLS_DIR/voice"
+
 # Install contribution workflow skills (bundled in src/skills/)
 for CONTRIB_SKILL in report-bug request-feature fix-issue; do
   info "Installing $CONTRIB_SKILL skill..."
@@ -600,7 +606,7 @@ if [[ -n "${DEPLOY_WORK_DIR:-}" ]]; then
   SKILLS_DEST="$DEPLOY_WORK_DIR/.claude/skills"
 
   # Copy skills (common + feishu-doc if available)
-  DEPLOY_SKILLS="metaskill metamemory metabot"
+  DEPLOY_SKILLS="metaskill metamemory metabot voice"
   [[ "$HAS_FEISHU" == "true" ]] && DEPLOY_SKILLS="$DEPLOY_SKILLS feishu-doc"
   for SKILL in $DEPLOY_SKILLS; do
     if [[ -d "$SKILLS_DIR/$SKILL" ]]; then

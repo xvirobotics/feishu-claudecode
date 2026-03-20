@@ -238,6 +238,43 @@
 | `ELEVENLABS_API_KEY` | ElevenLabs TTS 必需 |
 | `VOICE_MODEL` | 语音模式使用的 Claude 模型（可选覆盖） |
 
+### POST `/api/tts`
+
+轻量级文字转语音端点 — 无 STT，无 Agent 执行。纯文本输入，音频输出。
+
+**请求：**
+
+```bash
+curl -X POST http://localhost:9100/api/tts \
+  -H "Authorization: Bearer YOUR_API_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "你好世界", "provider": "doubao", "voice": "zh_female_wanqudashu_moon_bigtts"}'
+```
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `text` | 是 | 要转换的文本 |
+| `provider` | 否 | `doubao`、`openai` 或 `elevenlabs`（根据已配置密钥自动选择） |
+| `voice` | 否 | 声音/音色 ID（各服务商有默认值） |
+
+**响应：** `audio/mpeg` 二进制数据，附带响应头：
+
+- `X-Text-Length`：原始文本长度
+- `X-Provider`：使用的 TTS 服务商
+- `X-Voice`：使用的声音 ID
+
+**CLI 快捷命令：**
+
+```bash
+mb voice "你好世界"                   # 生成 MP3，输出文件路径
+mb voice "你好" --play               # 生成并播放音频
+mb voice "你好" -o greeting.mp3      # 保存到指定文件
+echo "长文本" | mb voice             # 从标准输入读取
+mb voice "你好" --provider openai --voice nova  # 指定服务商/声音
+```
+
+详见 [mb CLI — 语音](../reference/cli-mb.md#语音) 完整 CLI 参考。
+
 ## 限制
 
 - 每次交互需要重新说 "Hey Siri, Jarvis"（无法持续对话循环）
