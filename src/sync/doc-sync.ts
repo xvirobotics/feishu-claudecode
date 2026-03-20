@@ -6,6 +6,7 @@
  */
 import * as lark from '@larksuiteoapi/node-sdk';
 import type { Logger } from '../utils/logger.js';
+import { proxyFetch } from '../utils/http.js';
 import type { MemoryClient, FolderTreeNode } from '../memory/memory-client.js';
 import { SyncStore } from './sync-store.js';
 import { markdownToBlocks, batchBlocks, contentHash } from './markdown-to-blocks.js';
@@ -577,7 +578,7 @@ export class DocSync {
       if (secret) {
         headers['Authorization'] = `Bearer ${secret}`;
       }
-      const res = await fetch(url, { headers });
+      const res = await proxyFetch(url, { headers });
       if (!res.ok) return null;
       const data = await res.json() as any;
       // Unwrap if nested
