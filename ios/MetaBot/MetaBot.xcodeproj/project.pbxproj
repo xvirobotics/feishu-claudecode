@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 63;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -20,6 +20,7 @@
 		2FFE9DD66E2E96D0BDC0C240 /* PushNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C59F777F89888FA2E3958168 /* PushNotificationService.swift */; };
 		3531CA82D2A449CDB48EABC1 /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B64164D903403FF0495836DC /* LoginView.swift */; };
 		3767ACFA8E09464ADFEE0F0F /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FA9608A65FF1C5EC74F733D /* ChatView.swift */; };
+		3822F210168B683F05A2BD1B /* Intents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D00FB944CD9FA174099E0A27 /* Intents.framework */; };
 		3DBB3535AE31372F7D98DF30 /* TeamDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C49F22C139319953135225E /* TeamDashboardView.swift */; };
 		415DB62721CE904F5F8036C4 /* SpaceGrotesk-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7CCA906148C5B70FC6E02A1F /* SpaceGrotesk-Regular.ttf */; };
 		53B7A6E1ED02E40FF9C34015 /* ChatMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D476196E63BCF77485BFFEE /* ChatMessage.swift */; };
@@ -30,7 +31,6 @@
 		6AE9D15E8612EB10E53E5787 /* ringtone.caf in Resources */ = {isa = PBXBuildFile; fileRef = E03DF025EC87B6A8858A4A45 /* ringtone.caf */; };
 		74F0BA9000FF3B4FDCCCC1AE /* SpaceGrotesk-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = EB73D6910EF7AEFB462CB219 /* SpaceGrotesk-Medium.ttf */; };
 		7B2452C9C4752E350404ABF1 /* VoiceAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E8F2732E75824C3696325CA /* VoiceAPIService.swift */; };
-		811F123C2898B83642CE4555 /* Pods_MetaBot.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 46DBC06E7865EED2B44D79AF /* Pods_MetaBot.framework */; };
 		82B31CBB3E75DDCE89590CB9 /* ToolCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5716A42C48220FD126732314 /* ToolCallView.swift */; };
 		885335E6215BCBB91D38318D /* TeamStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA924F5753637EC39561A02D /* TeamStatus.swift */; };
 		8CA47AE3AF8B44836878052B /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 06EF0474707A437131B4B48F /* AVFoundation.framework */; };
@@ -53,6 +53,7 @@
 		C5D04C1933D45BBC82F2C43D /* CopyCodeButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 526B829D9FB5332345285690 /* CopyCodeButton.swift */; };
 		CBBB2FC3819137F9CC6FAAA6 /* MemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5727A50C20C81A618E50D85 /* MemoryView.swift */; };
 		CC3FF96C236FA6CD9A473B4C /* IncomingCallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 420445C7E3C3609A1FC162E9 /* IncomingCallView.swift */; };
+		CF24F411533A18354AEE65D7 /* Pods_MetaBot.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1AB1CE941462673D5516C073 /* Pods_MetaBot.framework */; };
 		D207A7C77233DEA0FE22247E /* Speech.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 889DC4364696BD0CD26630D8 /* Speech.framework */; };
 		D4150B870D1A55499134F361 /* VoiceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4222E256B4348DD00EAF1A81 /* VoiceService.swift */; };
 		D7D643D41288B8F379A032C6 /* FileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F739A83DCF51D69CFB895EA8 /* FileService.swift */; };
@@ -76,7 +77,9 @@
 		08BC85D88048641FAE153F4D /* BotListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotListView.swift; sourceTree = "<group>"; };
 		0D619E730EF12326C9FFB55D /* BotCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BotCard.swift; sourceTree = "<group>"; };
 		0FB84513CE9D486774083A0D /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		1575C757B6338BC42CA0D89D /* Pods-MetaBot.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MetaBot.release.xcconfig"; path = "Target Support Files/Pods-MetaBot/Pods-MetaBot.release.xcconfig"; sourceTree = "<group>"; };
 		18FA7721DDA8010CF05BA055 /* FileAttachment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileAttachment.swift; sourceTree = "<group>"; };
+		1AB1CE941462673D5516C073 /* Pods_MetaBot.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_MetaBot.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		1C5E10EB62FCEB57BF01C2A6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		200878DC01F311205331BF3B /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
 		23758D958425AC7DC2ADB146 /* MetaBotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaBotApp.swift; sourceTree = "<group>"; };
@@ -89,14 +92,12 @@
 		3C78181DF6BD8CC0A2543C6F /* FilePreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePreviewSheet.swift; sourceTree = "<group>"; };
 		420445C7E3C3609A1FC162E9 /* IncomingCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingCallView.swift; sourceTree = "<group>"; };
 		4222E256B4348DD00EAF1A81 /* VoiceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceService.swift; sourceTree = "<group>"; };
-		46DBC06E7865EED2B44D79AF /* Pods_MetaBot.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_MetaBot.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		52460FD861E537D5779EE6C0 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		526B829D9FB5332345285690 /* CopyCodeButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyCodeButton.swift; sourceTree = "<group>"; };
 		5716A42C48220FD126732314 /* ToolCallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallView.swift; sourceTree = "<group>"; };
 		5FA9608A65FF1C5EC74F733D /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatView.swift; sourceTree = "<group>"; };
 		63585E58EF19D1022A8EB4F5 /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
 		65A8D5CEF00E1802BE8D1B07 /* CallKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallKitService.swift; sourceTree = "<group>"; };
-		661F7C88DD547D0FC7707405 /* Pods-MetaBot.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MetaBot.debug.xcconfig"; path = "Target Support Files/Pods-MetaBot/Pods-MetaBot.debug.xcconfig"; sourceTree = "<group>"; };
 		6C49F22C139319953135225E /* TeamDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamDashboardView.swift; sourceTree = "<group>"; };
 		6E8F2732E75824C3696325CA /* VoiceAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceAPIService.swift; sourceTree = "<group>"; };
 		7CCA906148C5B70FC6E02A1F /* SpaceGrotesk-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SpaceGrotesk-Regular.ttf"; sourceTree = "<group>"; };
@@ -107,9 +108,9 @@
 		889DC4364696BD0CD26630D8 /* Speech.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Speech.framework; path = System/Library/Frameworks/Speech.framework; sourceTree = SDKROOT; };
 		8C1EEA334BA86EC5F592561E /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		8DF0F0189E78FAF6AEBCDB78 /* WebSocketMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketMessages.swift; sourceTree = "<group>"; };
-		8E88EAB3DBFB35474A91EA9B /* MetaBot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MetaBot.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8E88EAB3DBFB35474A91EA9B /* MetaBot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MetaBot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		91AB09CC47CA46ADD61497C1 /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
-		989B118D456BBD061D68CB0F /* Pods-MetaBot.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MetaBot.release.xcconfig"; path = "Target Support Files/Pods-MetaBot/Pods-MetaBot.release.xcconfig"; sourceTree = "<group>"; };
+		9576A7B86EB77DFC27F5F1C5 /* Pods-MetaBot.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-MetaBot.debug.xcconfig"; path = "Target Support Files/Pods-MetaBot/Pods-MetaBot.debug.xcconfig"; sourceTree = "<group>"; };
 		9D476196E63BCF77485BFFEE /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatMessage.swift; sourceTree = "<group>"; };
 		9FB999812A405FA024A0C2CB /* NexusMarkdownTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NexusMarkdownTheme.swift; sourceTree = "<group>"; };
 		A8B3FE8017E195F5D26ED233 /* SpaceGrotesk-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SpaceGrotesk-SemiBold.ttf"; sourceTree = "<group>"; };
@@ -121,11 +122,12 @@
 		C49DEE9EA9A2C2AE521888D8 /* GroupCreateDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupCreateDialog.swift; sourceTree = "<group>"; };
 		C59F777F89888FA2E3958168 /* PushNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationService.swift; sourceTree = "<group>"; };
 		CF2DDBE0CBEC64AEFC3248D3 /* WebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketService.swift; sourceTree = "<group>"; };
+		D00FB944CD9FA174099E0A27 /* Intents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Intents.framework; path = System/Library/Frameworks/Intents.framework; sourceTree = SDKROOT; };
 		D5727A50C20C81A618E50D85 /* MemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryView.swift; sourceTree = "<group>"; };
 		DA924F5753637EC39561A02D /* TeamStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamStatus.swift; sourceTree = "<group>"; };
 		DB58953FC9F57A4D31557F1C /* PushKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PushKit.framework; path = System/Library/Frameworks/PushKit.framework; sourceTree = SDKROOT; };
 		DFE13DA1D3CB8BBD2FE8C279 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
-		E03DF025EC87B6A8858A4A45 /* ringtone.caf */ = {isa = PBXFileReference; path = ringtone.caf; sourceTree = "<group>"; };
+		E03DF025EC87B6A8858A4A45 /* ringtone.caf */ = {isa = PBXFileReference; lastKnownFileType = file; path = ringtone.caf; sourceTree = "<group>"; };
 		EB73D6910EF7AEFB462CB219 /* SpaceGrotesk-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SpaceGrotesk-Medium.ttf"; sourceTree = "<group>"; };
 		F739A83DCF51D69CFB895EA8 /* FileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -138,10 +140,11 @@
 				20DB17EF7E97BBC1772A6C5F /* MarkdownUI in Frameworks */,
 				8CA47AE3AF8B44836878052B /* AVFoundation.framework in Frameworks */,
 				E03ED361CB4C2D02F5275E8E /* CallKit.framework in Frameworks */,
+				3822F210168B683F05A2BD1B /* Intents.framework in Frameworks */,
 				A287DC264B5B5BA4345EBB71 /* PushKit.framework in Frameworks */,
 				D207A7C77233DEA0FE22247E /* Speech.framework in Frameworks */,
 				9CB208CB06A2DC484D8437EB /* UserNotifications.framework in Frameworks */,
-				811F123C2898B83642CE4555 /* Pods_MetaBot.framework in Frameworks */,
+				CF24F411533A18354AEE65D7 /* Pods_MetaBot.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -203,6 +206,16 @@
 			path = BotList;
 			sourceTree = "<group>";
 		};
+		34F581D12944178701659C1C /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				9576A7B86EB77DFC27F5F1C5 /* Pods-MetaBot.debug.xcconfig */,
+				1575C757B6338BC42CA0D89D /* Pods-MetaBot.release.xcconfig */,
+			);
+			name = Pods;
+			path = Pods;
+			sourceTree = "<group>";
+		};
 		35A774414EC80B74049DDD48 /* Services */ = {
 			isa = PBXGroup;
 			children = (
@@ -256,18 +269,8 @@
 				0BF1884F0AEFB69B72FDE5A4 /* Sources */,
 				CC273D94AA83DB4F6D03AD25 /* Frameworks */,
 				A566F4612419205D375F154C /* Products */,
-				86F132B8F1192E577F50AA2C /* Pods */,
+				34F581D12944178701659C1C /* Pods */,
 			);
-			sourceTree = "<group>";
-		};
-		86F132B8F1192E577F50AA2C /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				661F7C88DD547D0FC7707405 /* Pods-MetaBot.debug.xcconfig */,
-				989B118D456BBD061D68CB0F /* Pods-MetaBot.release.xcconfig */,
-			);
-			name = Pods;
-			path = Pods;
 			sourceTree = "<group>";
 		};
 		A566F4612419205D375F154C /* Products */ = {
@@ -292,10 +295,11 @@
 			children = (
 				06EF0474707A437131B4B48F /* AVFoundation.framework */,
 				023F8CB877E3291CC0017961 /* CallKit.framework */,
+				D00FB944CD9FA174099E0A27 /* Intents.framework */,
 				DB58953FC9F57A4D31557F1C /* PushKit.framework */,
 				889DC4364696BD0CD26630D8 /* Speech.framework */,
 				63585E58EF19D1022A8EB4F5 /* UserNotifications.framework */,
-				46DBC06E7865EED2B44D79AF /* Pods_MetaBot.framework */,
+				1AB1CE941462673D5516C073 /* Pods_MetaBot.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -350,11 +354,11 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = D310168E791A420D85649A62 /* Build configuration list for PBXNativeTarget "MetaBot" */;
 			buildPhases = (
-				3AF2253D109619BB974559CC /* [CP] Check Pods Manifest.lock */,
+				B25B0963F92CFA02B9B4209B /* [CP] Check Pods Manifest.lock */,
 				173AFEBF82D0B793780E35F5 /* Sources */,
 				5C1848409FF9DB59DF26F614 /* Resources */,
 				CD8A6879D96E14C0472E9A56 /* Frameworks */,
-				552139E49068DD7562CD33D0 /* [CP] Embed Pods Frameworks */,
+				EA2354758431A4E60E7A888F /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -390,7 +394,6 @@
 			packageReferences = (
 				E8848F890B475594AB6933EA /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 			);
-			preferredProjectObjectVersion = 77;
 			productRefGroup = A566F4612419205D375F154C /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -417,7 +420,7 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		3AF2253D109619BB974559CC /* [CP] Check Pods Manifest.lock */ = {
+		B25B0963F92CFA02B9B4209B /* [CP] Check Pods Manifest.lock */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -439,7 +442,7 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
-		552139E49068DD7562CD33D0 /* [CP] Embed Pods Frameworks */ = {
+		EA2354758431A4E60E7A888F /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -635,12 +638,13 @@
 		};
 		9E639E7148C17D445774F9C9 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 661F7C88DD547D0FC7707405 /* Pods-MetaBot.debug.xcconfig */;
+			baseConfigurationReference = 9576A7B86EB77DFC27F5F1C5 /* Pods-MetaBot.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = MetaBot.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = K522GE93QJ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -659,12 +663,13 @@
 		};
 		A082FDB454382AA7264F1689 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 989B118D456BBD061D68CB0F /* Pods-MetaBot.release.xcconfig */;
+			baseConfigurationReference = 1575C757B6338BC42CA0D89D /* Pods-MetaBot.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = MetaBot.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = K522GE93QJ;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;

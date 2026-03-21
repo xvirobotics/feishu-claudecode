@@ -30,6 +30,9 @@ final class AppState {
     // Team
     var teamStatus: TeamStatus? = nil
 
+    // Server sessions (cross-platform sync) — keyed by botName
+    var serverSessions: [String: [ServerSession]] = [:]
+
     // ASR streaming
     var asrPartialText: String = ""
 
@@ -195,6 +198,8 @@ final class AppState {
             }
             // Request groups list on connect
             webSocket.send(.listGroups)
+            // Request server sessions for cross-platform sync
+            requestServerSessions()
             // Resume any running sessions (recover missed updates after reconnect)
             resumeActiveSessions()
 
@@ -266,6 +271,26 @@ final class AppState {
             if !text.isEmpty {
                 asrPartialText = ""
             }
+
+        case .sessionsList(let botName, let sessions):
+            serverSessions[botName] = sessions
+
+        case .sessionAdopted(let chatId, _, _, let history):
+            // Populate the local session with history messages from the server
+            guard sessions[chatId] != nil else { break }
+            for msg in history {
+                let type: ChatMessageType = msg.role == "user" ? .user : .assistant
+                let chatMsg = ChatMessage(
+                    id: UUID().uuidString, type: type, text: msg.text,
+                    state: nil, attachments: nil, timestamp: msg.timestamp
+                )
+                if sessions[chatId]?.messages.contains(where: { $0.text == msg.text && $0.type == type }) != true {
+                    sessions[chatId]?.messages.append(chatMsg)
+                }
+            }
+
+        case .sessionHistory:
+            break // Not used in current flow
 
         case .pong, .unknown:
             break
@@ -362,6 +387,21 @@ final class AppState {
 
     func createGroupSession(group: ChatGroup) -> String {
         return createSession(botName: group.name, groupId: group.id)
+    }
+
+    // MARK: - Server Session Sync
+
+    /// Request server sessions for all connected bots
+    func requestServerSessions() {
+        for bot in bots {
+            webSocket.send(.listSessions(botName: bot.name))
+        }
+    }
+
+    /// Adopt a server session from another platform into a new local session
+    func adoptSession(registryId: String, botName: String) {
+        let localId = createSession(botName: botName)
+        webSocket.send(.adoptSession(chatId: localId, sessionId: registryId))
     }
 
     // MARK: - Message Management

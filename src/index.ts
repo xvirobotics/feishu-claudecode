@@ -20,6 +20,7 @@ import { MemoryClient } from './memory/memory-client.js';
 
 import { DeviceStore } from './api/device-store.js';
 import { PushService } from './api/push-service.js';
+import { SessionRegistry } from './session/session-registry.js';
 
 interface FeishuBotHandle {
   name: string;
@@ -244,6 +245,14 @@ async function main() {
     logger.info({ keyId: process.env.APNS_KEY_ID, bundleId: process.env.APNS_BUNDLE_ID || 'com.metabot.app' }, 'APNs push notification service initialized');
   }
 
+  // Initialize cross-platform session registry
+  const sessionRegistry = new SessionRegistry(logger);
+  // Inject into all bot bridges
+  for (const info of registry.list()) {
+    const bot = registry.get(info.name);
+    if (bot) bot.bridge.setSessionRegistry(sessionRegistry);
+  }
+
   // Resolve bots config path for API-driven bot CRUD
   const botsConfigPath = process.env.BOTS_CONFIG
     ? path.resolve(process.env.BOTS_CONFIG)
@@ -264,6 +273,7 @@ async function main() {
     memoryAuthToken: appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
     pushService,
     deviceStore,
+    sessionRegistry,
   });
 
   // Graceful shutdown
@@ -280,6 +290,7 @@ async function main() {
     if (docSync) {
       docSync.destroy();
     }
+    sessionRegistry.close();
     if (memoryServer) {
       memoryServer.server.close();
       memoryServer.storage.close();

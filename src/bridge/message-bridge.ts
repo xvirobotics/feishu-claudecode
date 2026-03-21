@@ -17,6 +17,7 @@ import { CommandHandler } from './command-handler.js';
 import { OutputHandler } from './output-handler.js';
 import { CostTracker } from '../utils/cost-tracker.js';
 import { metrics } from '../utils/metrics.js';
+import type { SessionRegistry } from '../session/session-registry.js';
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
@@ -87,6 +88,7 @@ export class MessageBridge {
   private commandHandler: CommandHandler;
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
+  private sessionRegistry?: SessionRegistry;
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
@@ -118,6 +120,16 @@ export class MessageBridge {
   /** Inject the doc sync service for /sync commands. */
   setDocSync(docSync: DocSync): void {
     this.commandHandler.setDocSync(docSync);
+  }
+
+  /** Inject the session registry for cross-platform session sync. */
+  setSessionRegistry(registry: SessionRegistry): void {
+    this.sessionRegistry = registry;
+  }
+
+  /** Expose session manager for cross-platform session linking. */
+  getSessionManager(): SessionManager {
+    return this.sessionManager;
   }
 
   isBusy(chatId: string): boolean {
@@ -662,6 +674,9 @@ export class MessageBridge {
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
+      // Record in cross-platform session registry
+      this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
+
       // Send completion notification for long-running tasks (>10s) so user gets a Feishu push
       await this.sendCompletionNotice(chatId, lastState, durationMs);
 
@@ -707,6 +722,7 @@ export class MessageBridge {
           metrics.incCounter('metabot_tasks_total');
           metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
+          this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
           await this.sendCompletionNotice(chatId, lastState, durationMs);
           await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
           return; // skip the normal error handling below
@@ -976,6 +992,9 @@ export class MessageBridge {
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
+      // Record in cross-platform session registry
+      this.recordSession(chatId, prompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
+
       return {
         success: lastState.status === 'complete',
         responseText: lastState.responseText,
@@ -1136,6 +1155,25 @@ export class MessageBridge {
    * Card updates don't trigger Feishu mobile push notifications, but new messages do.
    * Only sends for tasks that took longer than 10 seconds.
    */
+  /** Record session and messages in the cross-platform registry. */
+  private recordSession(chatId: string, prompt: string, responseText: string | undefined, claudeSessionId: string | undefined, costUsd: number | undefined, durationMs: number | undefined): void {
+    if (!this.sessionRegistry) return;
+    try {
+      this.sessionRegistry.createOrUpdate({
+        chatId,
+        botName: this.config.name,
+        claudeSessionId,
+        workingDirectory: this.sessionManager.getSession(chatId).workingDirectory,
+        prompt,
+        responseText,
+        costUsd,
+        durationMs,
+      });
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'Failed to record session in registry');
+    }
+  }
+
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
     // Only notify for tasks that took a while — quick tasks don't need it
     if (durationMs < 10_000) return;

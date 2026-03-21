@@ -26,9 +26,8 @@ struct ChatView: View {
             if let session = appState.activeSession, !session.messages.isEmpty {
                 messageList(session.messages)
             } else {
-                EmptyStateView { hint in
-                    appState.sendMessage(text: hint)
-                }
+                EmptyStateView(botName: appState.activeBotName)
+                    .frame(maxHeight: .infinity)
             }
 
             InputBar()
@@ -40,7 +39,8 @@ struct ChatView: View {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 1) {
                     Text(appState.activeSession?.displayTitle ?? "Chat")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(NexusTypography.body)
+                        .fontWeight(.semibold)
                         .foregroundStyle(NexusColors.text0)
                         .lineLimit(1)
                     if let bot = appState.activeBotName {
@@ -188,6 +188,7 @@ struct ChatView: View {
                         MessageBubble(
                             message: msg,
                             serverURL: appState.serverURL,
+                            botName: appState.activeBotName,
                             onFilePreview: { file in
                                 previewFile = file
                             },

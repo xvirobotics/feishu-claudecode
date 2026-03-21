@@ -18,6 +18,7 @@ import { VoiceMeetingService } from './voice-meeting.js';
 import { VoiceIdentityStore } from './voice-identity.js';
 import { RtcVoiceChatService } from './rtc-voice-chat.js';
 import { metrics } from '../utils/metrics.js';
+import type { SessionRegistry } from '../session/session-registry.js';
 import {
   jsonResponse,
   handleVoiceRoutes,
@@ -27,6 +28,7 @@ import {
   handleBotRoutes,
   handleSyncRoutes,
   handleRtcRoutes,
+  handleSessionRoutes,
 } from './routes/index.js';
 import type { RouteContext } from './routes/index.js';
 
@@ -47,6 +49,7 @@ interface ApiServerOptions {
   circuitBreaker?: CircuitBreaker;
   budgetManager?: BudgetManager;
   teamManager?: TeamManager;
+  sessionRegistry?: SessionRegistry;
 }
 
 const startTime = Date.now();
@@ -80,6 +83,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     teamManager, meetingService, voiceIdentityStore,
     rtcService: rtcService.isConfigured() ? rtcService : undefined,
     ws,
+    sessionRegistry: options.sessionRegistry,
   };
 
   // Route handlers in priority order
@@ -91,6 +95,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     handleBotRoutes,
     handleSyncRoutes,
     handleRtcRoutes,
+    handleSessionRoutes,
   ];
 
   const server = http.createServer(async (req, res) => {
@@ -144,7 +149,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   });
 
   // Set up WebSocket server for Web UI streaming
-  ws.handle = setupWebSocketServer(server, registry, logger, secret, peerManager, pushService);
+  ws.handle = setupWebSocketServer(server, registry, logger, secret, peerManager, pushService, options.sessionRegistry);
 
   // Wire WebSocket handle to scheduler so scheduled tasks stream updates to clients
   scheduler.setWebSocketHandle(ws.handle);

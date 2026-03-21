@@ -81,82 +81,89 @@ struct MessageBubble: View {
     // MARK: - Assistant Bubble (full-width, no box)
 
     private var assistantBubble: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Bot name label (group chats only)
-            if isGroupChat, let name = botName, !name.isEmpty {
-                Text("@\(name)")
-                    .font(NexusTypography.jetBrainsMono(size: 11))
-                    .fontWeight(.semibold)
-                    .foregroundStyle(NexusColors.accentText)
-                    .padding(.bottom, 6)
-            }
+        HStack(alignment: .top, spacing: 8) {
+            // Bot avatar
+            GradientAvatar(name: botName ?? "AI", size: 24)
+                .padding(.top, 2)
 
-            // Status header (only for non-complete states)
-            statusHeader
+            VStack(alignment: .leading, spacing: 0) {
+                // Bot name label (group chats only)
+                if isGroupChat, let name = botName, !name.isEmpty {
+                    Text("@\(name)")
+                        .font(NexusTypography.jetBrainsMono(size: 11))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(NexusColors.accentText)
+                        .padding(.bottom, 6)
+                }
 
-            // Tool calls
-            if let tools = message.state?.toolCalls, !tools.isEmpty {
-                ToolCallView(toolCalls: tools)
-                    .padding(.top, 4)
-            }
+                // Status header (only for non-complete states)
+                statusHeader
 
-            // Error block
-            if message.state?.status == .error, let errorMsg = message.state?.errorMessage {
-                errorBlock(errorMsg)
+                // Tool calls
+                if let tools = message.state?.toolCalls, !tools.isEmpty {
+                    ToolCallView(toolCalls: tools)
+                        .padding(.top, 4)
+                }
 
-                // Inline retry button
-                if let prompt = message.state?.userPrompt, !prompt.isEmpty {
-                    Button {
-                        onRetry?()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: NexusFontScale.scaled(12)))
-                            Text("Retry")
-                                .font(NexusTypography.jetBrainsMono(size: NexusFontScale.scaled(12)))
+                // Error block
+                if message.state?.status == .error, let errorMsg = message.state?.errorMessage {
+                    errorBlock(errorMsg)
+
+                    // Inline retry button
+                    if let prompt = message.state?.userPrompt, !prompt.isEmpty {
+                        Button {
+                            onRetry?()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: NexusFontScale.scaled(12)))
+                                Text("Retry")
+                                    .font(NexusTypography.jetBrainsMono(size: NexusFontScale.scaled(12)))
+                            }
+                            .foregroundStyle(NexusColors.text2)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(NexusColors.surface2)
+                            .clipShape(Capsule())
+                            .overlay(Capsule().stroke(NexusColors.glassBorder))
                         }
-                        .foregroundStyle(NexusColors.text2)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(NexusColors.surface2)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(NexusColors.glassBorder))
+                        .buttonStyle(.plain)
+                        .padding(.top, 8)
                     }
-                    .buttonStyle(.plain)
+                }
+
+                // Pending question
+                if message.state?.status == .waitingForInput, let q = message.state?.pendingQuestion {
+                    PendingQuestionView(question: q)
+                        .padding(.top, 8)
+                }
+
+                // Markdown content
+                if !message.text.isEmpty {
+                    Markdown(message.text)
+                        .markdownTheme(.nexus)
+                        .textSelection(.enabled)
+                        .padding(.top, 4)
+                }
+
+                // Stats footer
+                if message.state?.status == .complete {
+                    statsFooter
+                        .padding(.top, 6)
+                }
+
+                // Output file attachments
+                if let attachments = message.attachments, !attachments.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(attachments) { file in
+                            FileCardView(file: file, serverURL: serverURL, compact: true)
+                                .onTapGesture { onFilePreview?(file) }
+                        }
+                    }
                     .padding(.top, 8)
                 }
             }
-
-            // Pending question
-            if message.state?.status == .waitingForInput, let q = message.state?.pendingQuestion {
-                PendingQuestionView(question: q)
-                    .padding(.top, 8)
-            }
-
-            // Markdown content
-            if !message.text.isEmpty {
-                Markdown(message.text)
-                    .markdownTheme(.nexus)
-                    .textSelection(.enabled)
-                    .padding(.top, 4)
-            }
-
-            // Stats footer
-            if message.state?.status == .complete {
-                statsFooter
-                    .padding(.top, 6)
-            }
-
-            // Output file attachments
-            if let attachments = message.attachments, !attachments.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(attachments) { file in
-                        FileCardView(file: file, serverURL: serverURL, compact: true)
-                            .onTapGesture { onFilePreview?(file) }
-                    }
-                }
-                .padding(.top, 8)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)
         .contextMenu {

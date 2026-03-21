@@ -38,6 +38,10 @@ struct BotListView: View {
                             .filter { $0.botName == bot.name && $0.groupId == nil }
                             .sorted(by: { $0.updatedAt > $1.updatedAt })
 
+                        let crossPlatformSessions = (appState.serverSessions[bot.name] ?? [])
+                            .filter { $0.platform != "ios" }
+                            .sorted(by: { $0.updatedAt > $1.updatedAt })
+
                         BotCard(
                             bot: bot,
                             sessions: botSessions,
@@ -59,6 +63,10 @@ struct BotListView: View {
                             },
                             onDeleteSession: { id in
                                 appState.deleteSession(id)
+                            },
+                            serverSessions: crossPlatformSessions,
+                            onAdoptSession: { registryId, botName in
+                                appState.adoptSession(registryId: registryId, botName: botName)
                             }
                         )
                     }
@@ -152,10 +160,11 @@ struct BotListView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(group.name)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(NexusTypography.body)
+                    .fontWeight(.semibold)
                     .foregroundStyle(NexusColors.text0)
                 Text(group.members.joined(separator: ", "))
-                    .font(.system(size: 12.5))
+                    .font(NexusTypography.caption)
                     .foregroundStyle(NexusColors.text2)
                     .lineLimit(1)
             }

@@ -1,16 +1,8 @@
 import SwiftUI
 
 struct EmptyStateView: View {
-    let onHintTap: (String) -> Void
-
+    var botName: String?
     @State private var ringScale: CGFloat = 1.0
-
-    private let hints = [
-        "Explain how this project works",
-        "Find and fix bugs in my code",
-        "Write tests for the main module",
-        "Refactor this function for clarity",
-    ]
 
     var body: some View {
         VStack(spacing: NexusSpacing.xl) {
@@ -34,13 +26,13 @@ struct EmptyStateView: View {
                 Circle()
                     .fill(NexusColors.accentSoft)
                     .frame(width: 72, height: 72)
-                Text("M")
+                Text(String((botName ?? "MetaBot").prefix(1)).uppercased())
                     .font(.system(size: 32, weight: .bold, design: .rounded))
                     .foregroundStyle(NexusColors.accent)
             }
 
             VStack(spacing: NexusSpacing.sm) {
-                Text("MetaBot")
+                Text(botName ?? "MetaBot")
                     .font(NexusTypography.heading)
                     .foregroundStyle(NexusColors.text0)
                 Text("Ask anything to get started")
@@ -48,47 +40,9 @@ struct EmptyStateView: View {
                     .foregroundStyle(NexusColors.text2)
             }
 
-            // Hint buttons
-            VStack(spacing: NexusSpacing.sm) {
-                ForEach(hints, id: \.self) { hint in
-                    HintButton(text: hint) {
-                        onHintTap(hint)
-                    }
-                }
-            }
-            .padding(.horizontal, NexusSpacing.xl)
-
             Spacer()
         }
         .frame(maxWidth: 500)
         .frame(maxWidth: .infinity)
-    }
-}
-
-/// Hint button with press scale animation
-private struct HintButton: View {
-    let text: String
-    let action: () -> Void
-
-    @State private var isPressed = false
-
-    var body: some View {
-        Button(action: action) {
-            Text(text)
-                .font(NexusTypography.body)
-                .foregroundStyle(NexusColors.text1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, NexusSpacing.lg)
-                .padding(.vertical, NexusSpacing.md)
-                .background(NexusColors.surface1)
-                .clipShape(RoundedRectangle(cornerRadius: NexusRadius.md))
-                .nexusGlassBorder(radius: NexusRadius.md)
-                .scaleEffect(isPressed ? 0.98 : 1.0)
-                .animation(NexusMotion.fast, value: isPressed)
-        }
-        .buttonStyle(.plain)
-        .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
-            isPressed = pressing
-        }, perform: {})
     }
 }

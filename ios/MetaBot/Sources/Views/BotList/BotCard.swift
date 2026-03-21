@@ -10,9 +10,12 @@ struct BotCard: View {
     let onNewSession: () -> Void
     let onSelectSession: (String) -> Void
     let onDeleteSession: (String) -> Void
+    let serverSessions: [ServerSession]
+    let onAdoptSession: (String, String) -> Void
 
     @State private var isPressed = false
     @State private var isExpanded = false
+    @State private var isServerExpanded = false
     @State private var sessionToDelete: String? = nil
 
     var body: some View {
@@ -27,7 +30,8 @@ struct BotCard: View {
                     // Name + relative time
                     HStack {
                         Text(bot.name)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(NexusTypography.body)
+                            .fontWeight(.semibold)
                             .foregroundStyle(NexusColors.text0)
                             .lineLimit(1)
                         Spacer()
@@ -43,7 +47,7 @@ struct BotCard: View {
                     HStack(spacing: 4) {
                         if let platform = bot.platform {
                             Text(platform.capitalized)
-                                .font(.system(size: 8, weight: .bold))
+                                .font(.system(size: NexusFontScale.scaled(8), weight: .bold))
                                 .foregroundStyle(NexusColors.accentText)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 1)
@@ -53,7 +57,7 @@ struct BotCard: View {
                         Spacer()
                         Button(action: onNewSession) {
                             Image(systemName: "plus")
-                                .font(.system(size: 12))
+                                .font(NexusTypography.caption)
                                 .foregroundStyle(NexusColors.text2)
                                 .frame(width: 28, height: 28)
                         }
@@ -88,7 +92,7 @@ struct BotCard: View {
                             .font(NexusTypography.jetBrainsMono(size: 11))
                             .foregroundStyle(NexusColors.text2)
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: NexusFontScale.scaled(9), weight: .medium))
                             .foregroundStyle(NexusColors.text2)
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
                             .animation(NexusMotion.base, value: isExpanded)
@@ -110,6 +114,45 @@ struct BotCard: View {
                 .padding(.leading, 68)
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
+
+            // Cross-platform sessions from server
+            if !serverSessions.isEmpty {
+                Button {
+                    withAnimation(NexusMotion.base) { isServerExpanded.toggle() }
+                    Haptics.selection()
+                } label: {
+                    HStack(spacing: 6) {
+                        Rectangle()
+                            .fill(NexusColors.glassBorder)
+                            .frame(width: 1, height: 12)
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: NexusFontScale.scaled(9), weight: .medium))
+                            .foregroundStyle(NexusColors.text2)
+                        Text("\(serverSessions.count) cross-platform")
+                            .font(NexusTypography.jetBrainsMono(size: 11))
+                            .foregroundStyle(NexusColors.text2)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: NexusFontScale.scaled(9), weight: .medium))
+                            .foregroundStyle(NexusColors.text2)
+                            .rotationEffect(.degrees(isServerExpanded ? 90 : 0))
+                            .animation(NexusMotion.base, value: isServerExpanded)
+                    }
+                    .padding(.leading, 68)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+
+                if isServerExpanded {
+                    VStack(spacing: 0) {
+                        ForEach(serverSessions) { session in
+                            serverSessionRow(session)
+                        }
+                    }
+                    .padding(.leading, 68)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
         }
         .onLongPressGesture(minimumDuration: .infinity, pressing: { pressing in
             isPressed = pressing
@@ -126,7 +169,7 @@ struct BotCard: View {
                 .frame(width: 12, height: 1)
 
             Text(session.displayTitle)
-                .font(.system(size: 12))
+                .font(NexusTypography.caption)
                 .foregroundStyle(isActiveSession ? NexusColors.text0 : NexusColors.text1)
                 .fontWeight(isActiveSession ? .medium : .regular)
                 .lineLimit(1)
@@ -141,7 +184,7 @@ struct BotCard: View {
                 sessionToDelete = session.id
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: NexusFontScale.scaled(9), weight: .medium))
                     .foregroundStyle(NexusColors.text3)
                     .frame(width: 18, height: 18)
             }
@@ -162,6 +205,45 @@ struct BotCard: View {
                 sessionToDelete = nil
             }
             Button("Cancel", role: .cancel) { sessionToDelete = nil }
+        }
+    }
+
+    // MARK: - Server Session Row
+
+    private func serverSessionRow(_ session: ServerSession) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: platformIcon(session.platform))
+                .font(.system(size: NexusFontScale.scaled(10)))
+                .foregroundStyle(NexusColors.text2)
+                .frame(width: 12)
+
+            Text(session.title.isEmpty ? (session.lastMessagePreview ?? "Session") : session.title)
+                .font(NexusTypography.caption)
+                .foregroundStyle(NexusColors.text1)
+                .lineLimit(1)
+
+            Spacer()
+
+            Text(relativeTime(Date(timeIntervalSince1970: session.updatedAt / 1000)))
+                .font(NexusTypography.jetBrainsMono(size: 10))
+                .foregroundStyle(NexusColors.text3)
+        }
+        .padding(.vertical, 5)
+        .padding(.trailing, 12)
+        .clipShape(RoundedRectangle(cornerRadius: NexusRadius.sm))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onAdoptSession(session.id, session.botName)
+            Haptics.impact(.light)
+        }
+    }
+
+    private func platformIcon(_ platform: String) -> String {
+        switch platform {
+        case "feishu": return "bubble.left.fill"
+        case "telegram": return "paperplane.fill"
+        case "web": return "globe"
+        default: return "desktopcomputer"
         }
     }
 
@@ -193,13 +275,13 @@ struct BotCard: View {
                             .scaleEffect(0.6)
                             .tint(.blue)
                         Text("Running...")
-                            .font(.system(size: 12.5))
+                            .font(NexusTypography.caption)
                             .foregroundStyle(NexusColors.text2)
                             .lineLimit(1)
                     }
                 case .error:
                     Text(last.state?.errorMessage ?? "Error")
-                        .font(.system(size: 12.5))
+                        .font(NexusTypography.caption)
                         .foregroundStyle(NexusColors.red)
                         .lineLimit(1)
                 default:

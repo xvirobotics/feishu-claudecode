@@ -17,6 +17,7 @@ import type { VoiceMeetingService } from '../voice-meeting.js';
 import type { VoiceIdentityStore } from '../voice-identity.js';
 import type { RtcVoiceChatService } from '../rtc-voice-chat.js';
 import type { WebSocketHandle } from '../../web/ws-server.js';
+import type { SessionRegistry } from '../../session/session-registry.js';
 
 export interface RouteContext {
   registry: BotRegistry;
@@ -39,6 +40,7 @@ export interface RouteContext {
   voiceIdentityStore: VoiceIdentityStore;
   rtcService?: RtcVoiceChatService;
   ws: { handle?: WebSocketHandle };
+  sessionRegistry?: SessionRegistry;
 }
 
 /**

@@ -11,6 +11,9 @@ enum ClientMessage: Encodable {
     case deleteGroup(groupId: String)
     case listGroups
     case resume(chatIds: [String])
+    case listSessions(botName: String)
+    case adoptSession(chatId: String, sessionId: String)
+    case getSessionHistory(sessionId: String, since: Double?)
     case ping
 
     func encode(to encoder: Encoder) throws {
@@ -48,6 +51,17 @@ enum ClientMessage: Encodable {
         case .resume(let chatIds):
             try container.encode("resume", forKey: .key("type"))
             try container.encode(chatIds, forKey: .key("chatIds"))
+        case .listSessions(let botName):
+            try container.encode("list_sessions", forKey: .key("type"))
+            try container.encode(botName, forKey: .key("botName"))
+        case .adoptSession(let chatId, let sessionId):
+            try container.encode("adopt_session", forKey: .key("type"))
+            try container.encode(chatId, forKey: .key("chatId"))
+            try container.encode(sessionId, forKey: .key("sessionId"))
+        case .getSessionHistory(let sessionId, let since):
+            try container.encode("get_session_history", forKey: .key("type"))
+            try container.encode(sessionId, forKey: .key("sessionId"))
+            if let since { try container.encode(since, forKey: .key("since")) }
         case .ping:
             try container.encode("ping", forKey: .key("type"))
         }
@@ -68,10 +82,37 @@ enum ServerMessage {
     case groupCreated(group: ChatGroup)
     case groupDeleted(groupId: String)
     case groupsList(groups: [ChatGroup])
+    case sessionsList(botName: String, sessions: [ServerSession])
+    case sessionAdopted(chatId: String, sessionId: String, claudeSessionId: String?, history: [ServerSessionMessage])
+    case sessionHistory(sessionId: String, messages: [ServerSessionMessage])
     case asrPartial(text: String)
     case asrFinal(text: String)
     case pong
     case unknown(type: String)
+}
+
+/// Server session record from session registry
+struct ServerSession: Codable, Identifiable {
+    let id: String
+    let botName: String
+    let claudeSessionId: String?
+    let workingDirectory: String
+    let title: String
+    let platform: String
+    let chatId: String
+    let createdAt: Double
+    let updatedAt: Double
+    let lastMessagePreview: String?
+}
+
+/// A message from a server session's history
+struct ServerSessionMessage: Codable {
+    let role: String
+    let text: String
+    let timestamp: Double
+    let platform: String
+    let costUsd: Double?
+    let durationMs: Double?
 }
 
 /// Incoming RTC voice call info pushed from server via WebSocket
@@ -151,6 +192,20 @@ extension ServerMessage: Decodable {
                 prompt: try container.decodeIfPresent(String.self, forKey: .key("prompt"))
             )
             self = .voiceCall(call)
+        case "sessions_list":
+            let botName = try container.decode(String.self, forKey: .key("botName"))
+            let sessions = try container.decode([ServerSession].self, forKey: .key("sessions"))
+            self = .sessionsList(botName: botName, sessions: sessions)
+        case "session_adopted":
+            let chatId = try container.decode(String.self, forKey: .key("chatId"))
+            let sessionId = try container.decode(String.self, forKey: .key("sessionId"))
+            let claudeSessionId = try container.decodeIfPresent(String.self, forKey: .key("claudeSessionId"))
+            let history = try container.decodeIfPresent([ServerSessionMessage].self, forKey: .key("history")) ?? []
+            self = .sessionAdopted(chatId: chatId, sessionId: sessionId, claudeSessionId: claudeSessionId, history: history)
+        case "session_history":
+            let sessionId = try container.decode(String.self, forKey: .key("sessionId"))
+            let messages = try container.decodeIfPresent([ServerSessionMessage].self, forKey: .key("messages")) ?? []
+            self = .sessionHistory(sessionId: sessionId, messages: messages)
         case "asr_partial":
             let text = try container.decode(String.self, forKey: .key("text"))
             self = .asrPartial(text: text)

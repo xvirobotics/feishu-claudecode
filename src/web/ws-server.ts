@@ -11,6 +11,7 @@ import { ChatSubscriptionManager } from './chat-subscriptions.js';
 import { GroupManager, type ChatGroup } from './group-manager.js';
 import type { PushService } from '../api/push-service.js';
 import { StreamingASRSession, createStreamingASRSession, isStreamingASRAvailable } from '../api/streaming-asr.js';
+import type { SessionRegistry, SessionRecord, SessionMessage } from '../session/session-registry.js';
 
 // ─── Client → Server messages ──────────────────────────────────────────────
 
@@ -24,6 +25,9 @@ type ClientMessage =
   | { type: 'list_groups' }
   | { type: 'subscribe_group'; groupId: string; chatId: string }
   | { type: 'resume'; chatIds: string[] }
+  | { type: 'list_sessions'; botName: string }
+  | { type: 'adopt_session'; chatId: string; sessionId: string }
+  | { type: 'get_session_history'; sessionId: string; since?: number }
   | { type: 'start_asr' }
   | { type: 'stop_asr' }
   | { type: 'ping' };
@@ -41,6 +45,9 @@ type ServerMessage =
   | { type: 'group_created'; group: ChatGroup }
   | { type: 'group_deleted'; groupId: string }
   | { type: 'groups_list'; groups: ChatGroup[] }
+  | { type: 'sessions_list'; botName: string; sessions: SessionRecord[] }
+  | { type: 'session_adopted'; chatId: string; sessionId: string; claudeSessionId?: string; history: SessionMessage[] }
+  | { type: 'session_history'; sessionId: string; messages: SessionMessage[] }
   | { type: 'asr_started' }
   | { type: 'asr_transcript'; text: string; isFinal: boolean }
   | { type: 'asr_error'; error: string }
@@ -107,6 +114,7 @@ export function setupWebSocketServer(
   secret?: string,
   peerManager?: PeerManager,
   pushService?: PushService,
+  sessionRegistry?: SessionRegistry,
 ): WebSocketHandle {
   const wsLogger = logger.child({ module: 'ws' });
 
@@ -287,6 +295,47 @@ export function setupWebSocketServer(
               wsLogger.debug({ chatId: cid, type: cached.type }, 'Sent cached state on resume');
             }
           }
+          break;
+        }
+
+        case 'list_sessions': {
+          if (!sessionRegistry) {
+            sendMessage(ws, { type: 'error', chatId: '', error: 'Session sync not available' });
+            break;
+          }
+          const sessions = sessionRegistry.listSessions(msg.botName);
+          sendMessage(ws, { type: 'sessions_list', botName: msg.botName, sessions });
+          break;
+        }
+
+        case 'adopt_session': {
+          if (!sessionRegistry) {
+            sendMessage(ws, { type: 'error', chatId: msg.chatId, error: 'Session sync not available' });
+            break;
+          }
+          const claudeSessionId = sessionRegistry.linkChatId(msg.sessionId, msg.chatId);
+          // Set the Claude session ID in the bot's SessionManager so future messages resume the conversation
+          if (claudeSessionId) {
+            const session = sessionRegistry.getSession(msg.sessionId);
+            if (session) {
+              const bot = registry.get(session.botName);
+              if (bot) {
+                bot.bridge.getSessionManager().setSessionId(msg.chatId, claudeSessionId);
+              }
+            }
+          }
+          const history = sessionRegistry.getMessages(msg.sessionId);
+          sendMessage(ws, { type: 'session_adopted', chatId: msg.chatId, sessionId: msg.sessionId, claudeSessionId, history });
+          break;
+        }
+
+        case 'get_session_history': {
+          if (!sessionRegistry) {
+            sendMessage(ws, { type: 'error', chatId: '', error: 'Session sync not available' });
+            break;
+          }
+          const messages = sessionRegistry.getMessages(msg.sessionId, msg.since);
+          sendMessage(ws, { type: 'session_history', sessionId: msg.sessionId, messages });
           break;
         }
 
