@@ -34,6 +34,13 @@ export interface TelegramBotConfig extends BotConfigBase {
   };
 }
 
+/** WeChat bot config (extends base with iLink credentials). */
+export interface WeChatBotConfig extends BotConfigBase {
+  wechat: {
+    botToken: string;
+  };
+}
+
 export interface PeerConfig {
   name: string;
   url: string;
@@ -43,6 +50,7 @@ export interface PeerConfig {
 export interface AppConfig {
   feishuBots: BotConfig[];
   telegramBots: TelegramBotConfig[];
+  wechatBots: WeChatBotConfig[];
   /** Dedicated Feishu service app for wiki sync & doc reader (independent of chat bots). */
   feishuService?: {
     appId: string;
@@ -132,6 +140,33 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
   };
 }
 
+// --- WeChat JSON entry (used in bots.json) ---
+
+export interface WeChatBotJsonEntry {
+  name: string;
+  description?: string;
+  wechatBotToken: string;
+  defaultWorkingDirectory: string;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  model?: string;
+  thinking?: Record<string, unknown>;
+  effort?: 'low' | 'medium' | 'high' | 'max';
+  outputsBaseDir?: string;
+  downloadsDir?: string;
+}
+
+function wechatBotFromJson(entry: WeChatBotJsonEntry): WeChatBotConfig {
+  return {
+    name: entry.name,
+    ...(entry.description ? { description: entry.description } : {}),
+    wechat: {
+      botToken: entry.wechatBotToken,
+    },
+    claude: buildClaudeConfig(entry),
+  };
+}
+
 // --- Shared Claude config builder ---
 
 function buildClaudeConfig(entry: {
@@ -197,6 +232,25 @@ function telegramBotFromEnv(): TelegramBotConfig {
   };
 }
 
+function wechatBotFromEnv(): WeChatBotConfig {
+  return {
+    name: 'wechat-default',
+    wechat: {
+      botToken: required('WECHAT_BOT_TOKEN'),
+    },
+    claude: {
+      defaultWorkingDirectory: required('CLAUDE_DEFAULT_WORKING_DIRECTORY'),
+      maxTurns: process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined,
+      maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
+      model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
+      thinking: { type: 'adaptive' },
+      effort: 'max',
+      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), 'metabot-outputs'),
+      downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), 'metabot-downloads'),
+    },
+  };
+}
+
 // --- New bots.json format ---
 
 export interface PeerJsonEntry {
@@ -208,6 +262,7 @@ export interface PeerJsonEntry {
 export interface BotsJsonNewFormat {
   feishuBots?: FeishuBotJsonEntry[];
   telegramBots?: TelegramBotJsonEntry[];
+  wechatBots?: WeChatBotJsonEntry[];
   peers?: PeerJsonEntry[];
 }
 
@@ -216,6 +271,7 @@ export function loadAppConfig(): AppConfig {
 
   let feishuBots: BotConfig[] = [];
   let telegramBots: TelegramBotConfig[] = [];
+  let wechatBots: WeChatBotConfig[] = [];
   let parsedConfig: unknown;
 
   if (botsConfigPath) {
@@ -239,7 +295,10 @@ export function loadAppConfig(): AppConfig {
       if (cfg.telegramBots) {
         telegramBots = cfg.telegramBots.map(telegramBotFromJson);
       }
-      if (feishuBots.length === 0 && telegramBots.length === 0) {
+      if (cfg.wechatBots) {
+        wechatBots = cfg.wechatBots.map(wechatBotFromJson);
+      }
+      if (feishuBots.length === 0 && telegramBots.length === 0 && wechatBots.length === 0) {
         throw new Error(`BOTS_CONFIG file must define at least one bot: ${resolved}`);
       }
     } else {
@@ -253,8 +312,11 @@ export function loadAppConfig(): AppConfig {
     if (process.env.TELEGRAM_BOT_TOKEN) {
       telegramBots = [telegramBotFromEnv()];
     }
-    if (feishuBots.length === 0 && telegramBots.length === 0) {
-      throw new Error('No bot configured. Set FEISHU_APP_ID/FEISHU_APP_SECRET or TELEGRAM_BOT_TOKEN, or use BOTS_CONFIG for multi-bot mode.');
+    if (process.env.WECHAT_BOT_TOKEN) {
+      wechatBots = [wechatBotFromEnv()];
+    }
+    if (feishuBots.length === 0 && telegramBots.length === 0 && wechatBots.length === 0) {
+      throw new Error('No bot configured. Set FEISHU_APP_ID/FEISHU_APP_SECRET, TELEGRAM_BOT_TOKEN, WECHAT_BOT_TOKEN, or use BOTS_CONFIG for multi-bot mode.');
     }
   }
 
@@ -316,6 +378,7 @@ export function loadAppConfig(): AppConfig {
   return {
     feishuBots,
     telegramBots,
+    wechatBots,
     feishuService,
     log: {
       level: process.env.LOG_LEVEL || 'info',

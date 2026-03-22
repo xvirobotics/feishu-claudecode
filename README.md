@@ -16,7 +16,7 @@
 
 Claude Code is the most capable AI coding agent — but it's trapped in your laptop terminal.
 
-MetaBot sets it free. It gives every agent a Claude Code brain, persistent shared memory, the ability to create new agents, and a communication bus. All accessible from Feishu or Telegram on your phone.
+MetaBot sets it free. It gives every agent a Claude Code brain, persistent shared memory, the ability to create new agents, and a communication bus. All accessible from Feishu, Telegram, or WeChat on your phone.
 
 We built MetaBot to run [XVI Robotics](https://xvirobotics.com) as an **agent-native company** — a small team of humans supervising an organization of self-improving AI agents. This is the infrastructure that makes it possible.
 
@@ -28,8 +28,8 @@ We built MetaBot to run [XVI Robotics](https://xvirobotics.com) as an **agent-na
 │                                                          │
 │  ┌──────────┐ ┌───────────┐ ┌──────────┐ ┌───────────┐  │
 │  │ MetaSkill│ │MetaMemory │ │IM Bridge │ │ Scheduler │  │
-│  │  Agent   │ │  Shared   │ │ Feishu + │ │   Cron    │  │
-│  │ Factory  │ │ Knowledge │ │ Telegram │ │   Tasks   │  │
+│  │  Agent   │ │  Shared   │ │Feishu/TG/│ │   Cron    │  │
+│  │ Factory  │ │ Knowledge │ │  WeChat  │ │   Tasks   │  │
 │  └────┬─────┘ └─────┬─────┘ └────┬─────┘ └─────┬─────┘  │
 │       └──────────────┴────────────┴─────────────┘        │
 │                       ↕                                  │
@@ -45,7 +45,7 @@ We built MetaBot to run [XVI Robotics](https://xvirobotics.com) as an **agent-na
 
 | Pillar | Component | What it does |
 |--------|-----------|-------------|
-| **Supervised** | IM Bridge | Real-time streaming cards show every tool call. Humans see everything agents do. Access control via Feishu/Telegram platform settings. |
+| **Supervised** | IM Bridge | Real-time streaming cards show every tool call. Humans see everything agents do. Access control via Feishu/Telegram/WeChat platform settings. |
 | **Self-Improving** | MetaMemory | Shared knowledge store. Agents write what they learn, other agents retrieve it. The organization gets smarter every day without retraining. |
 | **Agent Organization** | MetaSkill + Scheduler + Agent Bus | One command generates a full agent team. Agents delegate tasks to each other. Scheduled tasks run autonomously. Agents can create new agents. |
 
@@ -57,7 +57,7 @@ We built MetaBot to run [XVI Robotics](https://xvirobotics.com) as an **agent-na
 | **MetaSkill** | Agent factory. `/metaskill ios app` generates a complete `.claude/` agent team (orchestrator + specialists + code-reviewer) after researching best practices. Uses MetaMemory for shared knowledge across agents. |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. Shared by all agents. Auto-syncs to Feishu Wiki when changes occur (debounced). Web UI: `http://localhost:8100?token=YOUR_TOKEN` (token shown in startup logs). |
 | **Feishu Doc Reader** | Read Feishu documents and wiki pages as Markdown. `fd read <url>` from CLI, or Claude auto-reads when users share Feishu URLs. Available as the `feishu-doc` skill. |
-| **IM Bridge** | Chat with any agent from Feishu/Lark or Telegram (including mobile). Streaming cards with color-coded status and tool call tracking. |
+| **IM Bridge** | Chat with any agent from Feishu/Lark, Telegram, or WeChat (including mobile). Streaming cards/messages with color-coded status and tool call tracking. |
 | **Agent Bus** | REST API on port 9100. Agents talk to each other via `mb talk`. Create/remove bots at runtime. Exposed as the `/metabot` skill — loaded on demand, not injected into every prompt. |
 | **Peers** | Federation system for cross-instance bot discovery and task routing. Configure `METABOT_PEERS` to connect multiple MetaBot instances — same machine or remote. `mb talk alice/backend-bot` routes automatically. |
 | **Task Scheduler** | One-time delays and recurring cron jobs. `0 8 * * 1-5` = weekday 8am news briefing. Timezone-aware (default: Asia/Shanghai). Persists across restarts, auto-retries when busy. |
@@ -113,6 +113,11 @@ Prerequisites: Node.js 20+, [Claude Code CLI](https://github.com/anthropics/clau
 **Telegram** (30 seconds):
 1. Message [@BotFather](https://t.me/BotFather) → `/newbot` → copy token
 2. Add to `bots.json` → done (long polling, no webhooks)
+
+**WeChat** (via iLink):
+1. Get a bot token from the iLink QR code login flow
+2. Add `WECHAT_BOT_TOKEN=your-token` to `.env`, or add to `wechatBots` in `bots.json`
+3. DM-only (no group chats). Messages stream with typing indicators.
 
 **Feishu/Lark**:
 1. Create app at [open.feishu.cn](https://open.feishu.cn/) → add Bot capability
@@ -237,6 +242,7 @@ checks service health, reviews overnight error logs, and posts a summary.
 | `defaultWorkingDirectory` | Yes | — | Working directory for Claude |
 | `feishuAppId` / `feishuAppSecret` | Feishu | — | Feishu app credentials |
 | `telegramBotToken` | Telegram | — | Telegram bot token |
+| `wechatBotToken` | WeChat | — | iLink bot token |
 | `maxTurns` / `maxBudgetUsd` | No | unlimited | Execution limits |
 | `model` | No | SDK default | Claude model |
 

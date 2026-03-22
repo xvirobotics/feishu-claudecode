@@ -26,6 +26,13 @@
       "defaultWorkingDirectory": "/home/user/project"
     }
   ],
+  "wechatBots": [
+    {
+      "name": "wechat-assistant",
+      "wechatBotToken": "your-ilink-bot-token",
+      "defaultWorkingDirectory": "/home/user/project"
+    }
+  ],
   "peers": [
     {
       "name": "alice",

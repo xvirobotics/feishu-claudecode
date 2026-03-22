@@ -9,6 +9,7 @@ import { MessageBridge } from './bridge/message-bridge.js';
 import type { IMessageSender } from './bridge/message-sender.interface.js';
 import type { BotConfigBase } from './config.js';
 import { startTelegramBot } from './telegram/telegram-bot.js';
+import { startWeChatBot, type WeChatBotHandle } from './wechat/wechat-bot.js';
 import { BotRegistry } from './api/bot-registry.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
@@ -103,7 +104,8 @@ async function main() {
 
   const feishuCount = appConfig.feishuBots.length;
   const telegramCount = appConfig.telegramBots.length;
-  logger.info({ feishuBots: feishuCount, telegramBots: telegramCount, memoryServerUrl: appConfig.memoryServerUrl }, 'Starting MetaBot bridge...');
+  const wechatCount = appConfig.wechatBots.length;
+  logger.info({ feishuBots: feishuCount, telegramBots: telegramCount, wechatBots: wechatCount, memoryServerUrl: appConfig.memoryServerUrl }, 'Starting MetaBot bridge...');
 
   // Create bot registry
   const registry = new BotRegistry();
@@ -125,6 +127,15 @@ async function main() {
       (bot) => startTelegramBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
       logger,
       'telegram',
+    )
+    : [];
+
+  const wechatHandles: WeChatBotHandle[] = wechatCount > 0
+    ? await startBotsSafely(
+      appConfig.wechatBots,
+      (bot) => startWeChatBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
+      logger,
+      'wechat',
     )
     : [];
 
@@ -150,7 +161,17 @@ async function main() {
     });
   }
 
-  const allNames = [...feishuHandles.map((h) => h.name), ...telegramHandles.map((h) => h.name)];
+  for (const handle of wechatHandles) {
+    registry.register({
+      name: handle.name,
+      platform: 'wechat',
+      config: handle.config,
+      bridge: handle.bridge,
+      sender: handle.sender,
+    });
+  }
+
+  const allNames = [...feishuHandles.map((h) => h.name), ...telegramHandles.map((h) => h.name), ...wechatHandles.map((h) => h.name)];
   logger.info({ bots: allNames }, 'All bots started');
 
   // WebSocket heartbeat: detect silent disconnects via active API probe.
@@ -308,6 +329,10 @@ async function main() {
       destroyPromises.push(handle.bridge.destroy());
       handle.bot.stop();
     }
+    for (const handle of wechatHandles) {
+      destroyPromises.push(handle.bridge.destroy());
+      handle.stop();
+    }
     await Promise.race([
       Promise.all(destroyPromises),
       new Promise<void>((r) => setTimeout(r, 5000)),
@@ -323,7 +348,7 @@ async function startBotsSafely<TConfig extends BotConfigBase, THandle>(
   bots: TConfig[],
   starter: (bot: TConfig) => Promise<THandle>,
   logger: Logger,
-  platform: 'feishu' | 'telegram',
+  platform: 'feishu' | 'telegram' | 'wechat',
 ): Promise<THandle[]> {
   const results = await Promise.allSettled(bots.map((bot) => starter(bot)));
   const handles: THandle[] = [];

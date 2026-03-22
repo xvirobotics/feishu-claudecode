@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode since there's no terminal for interactive approval.
+MetaBot — A bridge service that connects IM bots (Feishu/Lark, Telegram, WeChat) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu, Telegram, or WeChat (including mobile), with real-time streaming updates via interactive cards or text messages. Runs Claude in `bypassPermissions` mode since there's no terminal for interactive approval.
 
 ## Commands
 
@@ -45,6 +45,9 @@ Feishu WSClient → EventHandler (parse, @mention filter) → MessageBridge → 
 - **`src/feishu/message-sender.ts`** — Feishu API wrapper for sending/updating cards, uploading/downloading images, sending text.
 - **`src/bridge/rate-limiter.ts`** — Throttles card updates to avoid Feishu API rate limits (default 1.5s interval). Keeps only the latest pending update.
 - **`src/api/peer-manager.ts`** — Manages cross-instance bot discovery and task forwarding. Polls peer MetaBot instances every 30s, caches their bot lists, supports qualified name routing (`peerName/botName`). Anti-loop via `X-MetaBot-Origin` header.
+- **`src/wechat/ilink-client.ts`** — HTTP client for Tencent's iLink API (`ilinkai.weixin.qq.com`). Implements long-polling (`getupdates`), message sending, CDN upload/download with AES-128-ECB encryption, QR code login, and typing indicators.
+- **`src/wechat/wechat-sender.ts`** — WeChat `IMessageSender` implementation. Renders `CardState` to plain text (WeChat has no rich cards). Uses iLink's streaming message states (NEW/GENERATING/FINISH) for progressive updates. Tracks `context_token` per chat for reply routing.
+- **`src/wechat/wechat-bot.ts`** — WeChat bot startup and long-poll event loop. Converts iLink messages to `IncomingMessage`, persists sync buffer to disk for restart resilience, handles error backoff.
 
 ### Outputs Directory Pattern
 
@@ -142,6 +145,30 @@ Per-bot config fields (JSON array entries):
 When `BOTS_CONFIG` is set, `FEISHU_APP_ID` / `FEISHU_APP_SECRET` env vars are ignored. Other env vars (`CLAUDE_MAX_TURNS`, `LOG_LEVEL`, etc.) still serve as defaults for any bot field not specified in JSON.
 
 Sessions are isolated per `chatId` with no collision between bots since each bot has its own Feishu app and receives only its own messages.
+
+### WeChat Bot (via iLink)
+
+WeChat bots use Tencent's official **iLink API** to operate under a personal WeChat account. The user logs in by scanning a QR code, after which the bot receives and sends DMs as that account.
+
+**Single-bot mode:** Set `WECHAT_BOT_TOKEN` in `.env`.
+
+**Multi-bot mode:** Add entries to `wechatBots` array in `bots.json`:
+```json
+{
+  "wechatBots": [{
+    "name": "wechat-assistant",
+    "wechatBotToken": "your-ilink-bot-token",
+    "defaultWorkingDirectory": "/path/to/project"
+  }]
+}
+```
+
+**Key differences from Feishu/Telegram:**
+- **DM only** — iLink only supports direct messages, no group chats
+- **No message editing** — uses iLink streaming states (NEW → GENERATING → FINISH) instead
+- **AES-128-ECB media** — all CDN uploads/downloads are encrypted
+- **Long-polling** — uses HTTP long-poll (35s cycles) instead of WebSocket
+- **Sync buffer persistence** — poll cursor saved to `~/.metabot/wechat-syncbuf-<name>.txt` for restart resilience
 
 ### MetaMemory Integration
 
