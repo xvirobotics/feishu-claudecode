@@ -1,9 +1,0 @@
-${PODS_ROOT}/Target Support Files/Pods-MetaBot/Pods-MetaBot-frameworks.sh
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/BMF/bmf_mods_shared.framework/bmf_mods_shared
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/ByteRTCVideoDenoiseExtension/ByteRTCVideoDenoiseExtension.framework/ByteRTCVideoDenoiseExtension
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/ByteRTCVideoSRExtension/ByteRTCVideoSRExtension.framework/ByteRTCVideoSRExtension
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/ByteRTCVideoSharpenExtension/ByteRTCVideoSharpenExtension.framework/ByteRTCVideoSharpenExtension
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/CVByteNN/bytenn.framework/bytenn
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/Core/VolcEngineRTC.framework/VolcEngineRTC
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/RTCFFmpeg/RTCFFmpeg.framework/RTCFFmpeg
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/RealXBase/RealXBase.framework/RealXBase

@@ -1,6 +1,0 @@
-framework module Pods_MetaBot {
-  umbrella header "Pods-MetaBot-umbrella.h"
-
-  export *
-  module * { export * }
-}

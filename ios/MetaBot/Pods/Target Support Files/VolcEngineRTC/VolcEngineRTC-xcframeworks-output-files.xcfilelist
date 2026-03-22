@@ -1,8 +1,0 @@
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/BMF/bmf_mods_shared.framework
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/ByteRTCVideoDenoiseExtension/ByteRTCVideoDenoiseExtension.framework
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/ByteRTCVideoSRExtension/ByteRTCVideoSRExtension.framework
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/ByteRTCVideoSharpenExtension/ByteRTCVideoSharpenExtension.framework
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/CVByteNN/bytenn.framework
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/Core/VolcEngineRTC.framework
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/RTCFFmpeg/RTCFFmpeg.framework
-${PODS_XCFRAMEWORKS_BUILD_DIR}/VolcEngineRTC/RealXBase/RealXBase.framework

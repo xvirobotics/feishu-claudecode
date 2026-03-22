@@ -1,9 +1,0 @@
-${PODS_ROOT}/Target Support Files/VolcEngineRTC/VolcEngineRTC-xcframeworks.sh
-${PODS_ROOT}/VolcEngineRTC/bmf_mods_shared.xcframework
-${PODS_ROOT}/VolcEngineRTC/ByteRTCVideoDenoiseExtension.xcframework
-${PODS_ROOT}/VolcEngineRTC/ByteRTCVideoSRExtension.xcframework
-${PODS_ROOT}/VolcEngineRTC/ByteRTCVideoSharpenExtension.xcframework
-${PODS_ROOT}/VolcEngineRTC/bytenn.xcframework
-${PODS_ROOT}/VolcEngineRTC/VolcEngineRTC.xcframework
-${PODS_ROOT}/VolcEngineRTC/RTCFFmpeg.xcframework
-${PODS_ROOT}/VolcEngineRTC/RealXBase.xcframework

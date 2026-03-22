@@ -1,6 +1,0 @@
-framework module VolcEngineRTC {
-  umbrella header "VolcEngineRTC.h"
-
-  export *
-  module * { export * }
-}
