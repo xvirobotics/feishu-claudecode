@@ -58,7 +58,7 @@ export class PushService {
     let body = state.responseText || (state.status === 'error' ? (state.errorMessage || 'Task failed') : 'Task completed');
     if (body.length > 200) body = body.slice(0, 197) + '...';
     // Strip markdown for cleaner notification text
-    body = body.replace(/[*_`#\[\]]/g, '').replace(/\n{2,}/g, '\n').trim();
+    body = body.replace(/[*_`#[\]]/g, '').replace(/\n{2,}/g, '\n').trim();
 
     const results = await Promise.allSettled(
       tokens.map((token) => this.sendNotification(token, { title, body, chatId, botName })),

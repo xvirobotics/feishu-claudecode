@@ -100,7 +100,8 @@ export class RtcVoiceChatService {
       throw new Error('VOLC_ACCESS_KEY_ID and VOLC_SECRET_KEY are required for RTC');
     }
 
-    const Svc = (ServiceModule as any).default ?? ServiceModule; // eslint-disable-line @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const Svc = (ServiceModule as any).default ?? ServiceModule;
     this.rtcService = new Svc({
       serviceName: 'rtc',
       host: 'rtc.volcengineapi.com',

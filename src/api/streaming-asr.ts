@@ -89,7 +89,7 @@ function parseServerFrame(data: Buffer): { type: 'response' | 'error'; payload: 
   const headerSize = data[0] & 0x0f;
   const msgType = (data[1] >> 4) & 0x0f;
   const flags = data[1] & 0x0f;
-  const serialization = (data[2] >> 4) & 0x0f;
+  const _serialization = (data[2] >> 4) & 0x0f;
   const compression = data[2] & 0x0f;
 
   let payload = data.subarray(headerSize * 4);

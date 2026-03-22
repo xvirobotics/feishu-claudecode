@@ -17,7 +17,7 @@ import { TeamManager } from './team-manager.js';
 import { VoiceMeetingService } from './voice-meeting.js';
 import { VoiceIdentityStore } from './voice-identity.js';
 import { RtcVoiceChatService } from './rtc-voice-chat.js';
-import { metrics } from '../utils/metrics.js';
+import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
 import {
   jsonResponse,

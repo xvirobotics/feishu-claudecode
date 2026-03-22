@@ -104,7 +104,7 @@ export class TeamManager {
   }
 
   getGroupMembers(groupId: string): string[] {
-    const rows = this.db.prepare('SELECT bot_name FROM group_memberships WHERE group_id = ?').all() as any[];
+    const rows = this.db.prepare('SELECT bot_name FROM group_memberships WHERE group_id = ?').all(groupId) as any[];
     return rows.map(r => r.bot_name);
   }
 
