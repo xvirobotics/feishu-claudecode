@@ -102,10 +102,10 @@ export class WechatSender implements IMessageSender {
 
   async sendImageFile(chatId: string, filePath: string): Promise<boolean> {
     try {
-      const result = await this.client.uploadMedia(filePath, 2); // 2 = image
+      const result = await this.client.uploadMedia(filePath, 1, chatId); // 1=IMAGE
       if (!result) return false;
       await this.client.sendMessage(chatId, [
-        { type: 2, image_item: { aes_key: result.aesKey, cdn_ref: result.cdnRef, url: '' } },
+        { type: 2, image_item: { aes_key: result.aesKey, encrypt_query_param: result.encryptQueryParam } },
       ]);
       return true;
     } catch (err) {
@@ -116,10 +116,10 @@ export class WechatSender implements IMessageSender {
 
   async sendLocalFile(chatId: string, filePath: string, fileName: string): Promise<boolean> {
     try {
-      const result = await this.client.uploadMedia(filePath, 3); // 3 = file
+      const result = await this.client.uploadMedia(filePath, 3, chatId); // 3=FILE
       if (!result) return false;
       await this.client.sendMessage(chatId, [
-        { type: 4, file_item: { aes_key: result.aesKey, cdn_ref: result.cdnRef, filename: fileName } },
+        { type: 4, file_item: { aes_key: result.aesKey, encrypt_query_param: result.encryptQueryParam, filename: fileName } },
       ]);
       return true;
     } catch (err) {
@@ -129,16 +129,16 @@ export class WechatSender implements IMessageSender {
   }
 
   async downloadImage(_messageId: string, imageKey: string, savePath: string): Promise<boolean> {
-    // imageKey is "aesKey|cdnUrl"
-    const [aesKey, cdnUrl] = imageKey.split('|', 2);
-    if (!aesKey || !cdnUrl) return false;
-    return this.client.downloadMedia(cdnUrl, aesKey, savePath);
+    // imageKey is "aesKey|encryptQueryParam"
+    const [aesKey, encryptQueryParam] = imageKey.split('|', 2);
+    if (!aesKey || !encryptQueryParam) return false;
+    return this.client.downloadMedia(encryptQueryParam, aesKey, savePath);
   }
 
   async downloadFile(_messageId: string, fileKey: string, savePath: string): Promise<boolean> {
-    const [aesKey, cdnUrl] = fileKey.split('|', 2);
-    if (!aesKey || !cdnUrl) return false;
-    return this.client.downloadMedia(cdnUrl, aesKey, savePath);
+    const [aesKey, encryptQueryParam] = fileKey.split('|', 2);
+    if (!aesKey || !encryptQueryParam) return false;
+    return this.client.downloadMedia(encryptQueryParam, aesKey, savePath);
   }
 
   // --- Rendering ---

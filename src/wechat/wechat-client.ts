@@ -1,36 +1,50 @@
 import * as fs from 'node:fs';
+import * as crypto from 'node:crypto';
 import * as path from 'node:path';
 import { generateWechatUin, encryptMedia, decryptMedia } from './wechat-crypto.js';
 import type { Logger } from '../utils/logger.js';
 
 const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com';
-const CHANNEL_VERSION = '1.0.2';
 const POLL_TIMEOUT_S = 35;
 
-// --- Types ---
+// --- Types (matching official @tencent-weixin/openclaw-weixin) ---
+
+/** CDN media reference used in image/voice/file/video items. */
+export interface CDNMedia {
+  encrypt_query_param?: string;
+  aes_key?: string; // base64 encoded AES-128 key
+}
 
 export interface ILinkMessageItem {
-  type: number; // 1=text, 2=image, 3=voice, 4=file, 5=video
+  type: number; // 1=TEXT, 2=IMAGE, 3=VOICE, 4=FILE, 5=VIDEO
   text_item?: { text: string };
-  image_item?: { aes_key: string; cdn_ref: string; url: string };
-  voice_item?: { aes_key: string; cdn_ref: string; transcription?: string };
-  file_item?: { aes_key: string; cdn_ref: string; filename: string };
-  video_item?: { aes_key: string; cdn_ref: string; thumb_cdn_ref?: string };
+  image_item?: CDNMedia;
+  voice_item?: CDNMedia & { transcription?: string };
+  file_item?: CDNMedia & { filename?: string };
+  video_item?: CDNMedia & { thumb?: CDNMedia };
+  ref_msg?: { message_id?: number; from_user_id?: string; item_list?: ILinkMessageItem[] };
 }
 
 export interface ILinkMessage {
-  from_user_id: string;
-  to_user_id: string;
-  message_type: number;
-  context_token: string;
-  item_list: ILinkMessageItem[];
-  timestamp: number;
-  message_id?: string;
+  seq?: number;
+  message_id?: number;
+  from_user_id?: string;
+  to_user_id?: string;
+  create_time_ms?: number;
+  session_id?: string;
+  message_type?: number; // 1=USER, 2=BOT
+  message_state?: number; // 0=NEW, 1=GENERATING, 2=FINISH
+  item_list?: ILinkMessageItem[];
+  context_token?: string;
 }
 
 interface GetUpdatesResponse {
-  message_list?: ILinkMessage[];
+  ret?: number;
+  errcode?: number;
+  errmsg?: string;
+  msgs?: ILinkMessage[];
   get_updates_buf?: string;
+  longpolling_timeout_ms?: number;
 }
 
 interface QrCodeResponse {
@@ -46,16 +60,13 @@ interface QrStatusResponse {
 }
 
 interface GetConfigResponse {
+  ret?: number;
   typing_ticket?: string;
 }
 
 interface UploadUrlResponse {
-  upload_param?: {
-    url: string;
-    upload_key: string;
-    headers?: Record<string, string>;
-  };
-  cdn_ref?: string;
+  upload_param?: string; // encrypted upload param
+  thumb_upload_param?: string;
 }
 
 interface TokenStore {
@@ -86,6 +97,11 @@ export class WechatClient {
     this.botToken = token;
   }
 
+  /** Set typing ticket directly (from persisted store). */
+  setTypingTicket(ticket: string): void {
+    this.typingTicket = ticket;
+  }
+
   /** Get the latest context_token for a chat. */
   getContextToken(chatId: string): string | undefined {
     return this.contextTokens.get(chatId);
@@ -101,6 +117,11 @@ export class WechatClient {
     const qrId = qrRes.qrcode_id;
 
     this.logger.info({ qrUrl, qrId }, 'QR code generated — scan with WeChat');
+
+    // Print QR URL for terminal access
+    console.log('\n=== WeChat QR Login ===');
+    console.log(`Open this URL or scan the QR code: ${qrUrl}`);
+    console.log('Waiting for scan...\n');
 
     // Poll for scan status
     let token: string | undefined;
@@ -119,6 +140,10 @@ export class WechatClient {
           this.baseUrl = statusRes.baseurl;
         }
         break;
+      }
+
+      if (statusRes.status === 'scanned') {
+        this.logger.info('QR code scanned, waiting for confirmation...');
       }
 
       if (statusRes.status === 'expired') {
@@ -141,11 +166,13 @@ export class WechatClient {
     return { botToken: token, qrUrl };
   }
 
-  private async fetchConfig(): Promise<void> {
+  async fetchConfig(userId?: string): Promise<void> {
     try {
-      const res = await this.request<GetConfigResponse>('POST', '/ilink/bot/getconfig', {
-        base_info: { channel_version: CHANNEL_VERSION },
-      });
+      const body: Record<string, unknown> = {};
+      if (userId) {
+        body.ilink_user_id = userId;
+      }
+      const res = await this.request<GetConfigResponse>('POST', '/ilink/bot/getconfig', body);
       if (res.typing_ticket) {
         this.typingTicket = res.typing_ticket;
       }
@@ -158,25 +185,31 @@ export class WechatClient {
 
   async getUpdates(timeoutS: number = POLL_TIMEOUT_S): Promise<ILinkMessage[]> {
     const body: Record<string, unknown> = {
-      base_info: { channel_version: CHANNEL_VERSION },
+      get_updates_buf: this.cursor || '',
     };
-    if (this.cursor) {
-      body.get_updates_buf = this.cursor;
-    }
 
     const res = await this.request<GetUpdatesResponse>('POST', '/ilink/bot/getupdates', body, true, timeoutS * 1000 + 5000);
+
+    // Check for errors
+    if (res.ret !== undefined && res.ret !== 0) {
+      if (res.errcode === -14) {
+        // Session timeout, just continue polling
+        this.logger.debug('iLink session timeout, continuing...');
+      } else {
+        this.logger.warn({ ret: res.ret, errcode: res.errcode, errmsg: res.errmsg }, 'iLink getupdates error');
+      }
+    }
 
     // Update cursor
     if (res.get_updates_buf) {
       this.cursor = res.get_updates_buf;
     }
 
-    const messages = res.message_list || [];
+    const messages = res.msgs || [];
 
     // Track context tokens
     for (const msg of messages) {
       if (msg.context_token && msg.from_user_id) {
-        // Key by from_user_id for private chats
         this.contextTokens.set(msg.from_user_id, msg.context_token);
       }
     }
@@ -187,13 +220,14 @@ export class WechatClient {
   async sendMessage(toUserId: string, items: ILinkMessageItem[]): Promise<void> {
     const contextToken = this.contextTokens.get(toUserId);
 
-    const body: Record<string, unknown> = {
-      to_user_id: toUserId,
-      item_list: items,
+    // Official API wraps in { msg: { ... } }
+    const body = {
+      msg: {
+        to_user_id: toUserId,
+        ...(contextToken ? { context_token: contextToken } : {}),
+        item_list: items,
+      },
     };
-    if (contextToken) {
-      body.context_token = contextToken;
-    }
 
     await this.request('POST', '/ilink/bot/sendmessage', body);
   }
@@ -204,12 +238,13 @@ export class WechatClient {
     ]);
   }
 
-  async sendTyping(toUserId: string): Promise<void> {
+  async sendTyping(toUserId: string, cancel = false): Promise<void> {
     if (!this.typingTicket) return;
     try {
       await this.request('POST', '/ilink/bot/sendtyping', {
-        to_user_id: toUserId,
+        ilink_user_id: toUserId,
         typing_ticket: this.typingTicket,
+        status: cancel ? 2 : 1, // 1 = typing, 2 = cancel
       });
     } catch {
       // Typing is best-effort
@@ -218,38 +253,54 @@ export class WechatClient {
 
   // --- Media ---
 
-  async uploadMedia(filePath: string, mediaType: number): Promise<{ cdnRef: string; aesKey: string } | undefined> {
+  async uploadMedia(
+    filePath: string,
+    mediaType: number, // 1=IMAGE, 2=VIDEO, 3=FILE
+    toUserId: string,
+  ): Promise<{ encryptQueryParam: string; aesKey: string } | undefined> {
     const fileData = fs.readFileSync(filePath);
-    const fileSize = fileData.length;
-
-    // Get upload URL
-    const uploadRes = await this.request<UploadUrlResponse>('POST', '/ilink/bot/getuploadurl', {
-      media_type: mediaType,
-      file_size: fileSize,
-    });
-
-    if (!uploadRes.upload_param?.url || !uploadRes.cdn_ref) {
-      this.logger.error('Failed to get upload URL from iLink');
-      return undefined;
-    }
+    const rawSize = fileData.length;
+    const rawMd5 = crypto.createHash('md5').update(fileData).digest('hex');
 
     // Encrypt
     const { encrypted, key } = encryptMedia(fileData);
+    const encryptedSize = encrypted.length;
+    const aesKeyBase64 = key.toString('base64');
 
-    // Upload to CDN
-    const uploadUrl = uploadRes.upload_param.url;
-    const headers: Record<string, string> = {
-      ...this.buildHeaders(),
-      ...(uploadRes.upload_param.headers || {}),
-      'Content-Type': 'application/octet-stream',
+    // Build upload request
+    const filekey = `metabot_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const uploadReqBody: Record<string, unknown> = {
+      filekey,
+      media_type: mediaType,
+      to_user_id: toUserId,
+      rawsize: rawSize,
+      rawfilemd5: rawMd5,
+      filesize: encryptedSize,
     };
-    if (uploadRes.upload_param.upload_key) {
-      headers['X-Upload-Key'] = uploadRes.upload_param.upload_key;
+
+    // For images/videos, generate a simple thumbnail (just use same file for now)
+    if (mediaType === 1 || mediaType === 2) {
+      uploadReqBody.thumb_rawsize = rawSize;
+      uploadReqBody.thumb_rawfilemd5 = rawMd5;
+      uploadReqBody.thumb_filesize = encryptedSize;
     }
 
-    const uploadResp = await fetch(uploadUrl, {
-      method: 'PUT',
-      headers,
+    const uploadRes = await this.request<UploadUrlResponse>('POST', '/ilink/bot/getuploadurl', uploadReqBody);
+
+    if (!uploadRes.upload_param) {
+      this.logger.error('Failed to get upload_param from iLink');
+      return undefined;
+    }
+
+    // The upload_param is an encrypted string used as CDN upload URL query param
+    // Upload encrypted file to CDN
+    const cdnUrl = `https://novac2c.cdn.weixin.qq.com/c2c?${uploadRes.upload_param}`;
+    const uploadResp = await fetch(cdnUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(encryptedSize),
+      },
       body: new Uint8Array(encrypted),
     });
 
@@ -259,14 +310,15 @@ export class WechatClient {
     }
 
     return {
-      cdnRef: uploadRes.cdn_ref,
-      aesKey: key.toString('base64'),
+      encryptQueryParam: uploadRes.upload_param,
+      aesKey: aesKeyBase64,
     };
   }
 
-  async downloadMedia(cdnUrl: string, aesKeyBase64: string, savePath: string): Promise<boolean> {
+  async downloadMedia(encryptQueryParam: string, aesKeyBase64: string, savePath: string): Promise<boolean> {
     try {
-      const resp = await fetch(cdnUrl, { headers: this.buildHeaders() });
+      const cdnUrl = `https://novac2c.cdn.weixin.qq.com/c2c?${encryptQueryParam}`;
+      const resp = await fetch(cdnUrl);
       if (!resp.ok) return false;
 
       const encryptedBuf = Buffer.from(await resp.arrayBuffer());
@@ -276,7 +328,7 @@ export class WechatClient {
       fs.writeFileSync(savePath, decrypted);
       return true;
     } catch (err) {
-      this.logger.error({ err, cdnUrl }, 'Failed to download WeChat media');
+      this.logger.error({ err }, 'Failed to download WeChat media');
       return false;
     }
   }

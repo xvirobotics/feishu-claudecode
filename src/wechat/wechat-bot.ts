@@ -33,12 +33,18 @@ export async function startWechatBot(
 
   if (saved) {
     client.setToken(saved.botToken);
+    if (saved.typingTicket) {
+      client.setTypingTicket(saved.typingTicket);
+    }
     botLogger.info('Loaded persisted WeChat token');
   } else if (config.wechat.botToken) {
     client.setToken(config.wechat.botToken);
     botLogger.info('Using WeChat token from config');
+    // Fetch typing ticket
+    await client.fetchConfig();
+    client.saveToken(dataDir, config.name);
   } else {
-    // QR login
+    // QR login (handles fetchConfig internally)
     const { qrUrl } = await client.login();
     botLogger.info({ qrUrl }, 'WeChat QR login completed');
     client.saveToken(dataDir, config.name);
@@ -87,6 +93,8 @@ async function pollLoop(
       for (const msg of messages) {
         // Only process user messages (type 1), skip bot echo (type 2)
         if (msg.message_type === 2) continue;
+        // Skip generating/partial messages
+        if (msg.message_state === 1) continue;
 
         const incoming = mapToIncomingMessage(msg);
         if (incoming) {
@@ -113,12 +121,13 @@ async function pollLoop(
 
 function mapToIncomingMessage(msg: ILinkMessage): IncomingMessage | undefined {
   if (!msg.item_list || msg.item_list.length === 0) return undefined;
+  if (!msg.from_user_id) return undefined;
 
   const firstItem = msg.item_list[0];
   const chatId = msg.from_user_id; // For private chats, reply to sender
 
   const base: IncomingMessage = {
-    messageId: msg.message_id || `${msg.from_user_id}:${msg.timestamp}`,
+    messageId: msg.message_id != null ? String(msg.message_id) : `${msg.from_user_id}:${msg.create_time_ms || Date.now()}`,
     chatId,
     chatType: 'private', // iLink currently sends private messages
     userId: msg.from_user_id,
@@ -133,7 +142,7 @@ function mapToIncomingMessage(msg: ILinkMessage): IncomingMessage | undefined {
     base.extraMedia = [];
     for (let i = 1; i < msg.item_list.length; i++) {
       const item = msg.item_list[i];
-      const extra: IncomingMessage['extraMedia'] extends (infer T)[] | undefined ? T : never = {
+      const extra: { messageId: string; imageKey?: string; fileKey?: string; fileName?: string } = {
         messageId: base.messageId + `:${i}`,
       };
       applyItemToExtra(extra, item);
@@ -146,6 +155,11 @@ function mapToIncomingMessage(msg: ILinkMessage): IncomingMessage | undefined {
   return base;
 }
 
+/** Encode CDN media ref as "aesKey|encryptQueryParam" for download later. */
+function encodeCdnRef(media: { aes_key?: string; encrypt_query_param?: string }): string {
+  return `${media.aes_key || ''}|${media.encrypt_query_param || ''}`;
+}
+
 function applyItem(msg: IncomingMessage, item: ILinkMessageItem, isFirst: boolean): void {
   switch (item.type) {
     case 1: // Text
@@ -155,17 +169,16 @@ function applyItem(msg: IncomingMessage, item: ILinkMessageItem, isFirst: boolea
       break;
     case 2: // Image
       if (item.image_item) {
-        msg.imageKey = `${item.image_item.aes_key}|${item.image_item.url || item.image_item.cdn_ref}`;
+        msg.imageKey = encodeCdnRef(item.image_item);
         if (!msg.text) msg.text = '请分析这张图片';
       }
       break;
     case 3: // Voice
       if (item.voice_item) {
-        // Use transcription if available, otherwise set as file
         if (item.voice_item.transcription) {
           msg.text = item.voice_item.transcription;
         } else {
-          msg.fileKey = `${item.voice_item.aes_key}|${item.voice_item.cdn_ref}`;
+          msg.fileKey = encodeCdnRef(item.voice_item);
           msg.fileName = 'voice.silk';
           if (!msg.text) msg.text = '请分析这条语音消息';
         }
@@ -173,14 +186,14 @@ function applyItem(msg: IncomingMessage, item: ILinkMessageItem, isFirst: boolea
       break;
     case 4: // File
       if (item.file_item) {
-        msg.fileKey = `${item.file_item.aes_key}|${item.file_item.cdn_ref}`;
+        msg.fileKey = encodeCdnRef(item.file_item);
         msg.fileName = item.file_item.filename || 'file';
         if (!msg.text) msg.text = '请分析这个文件';
       }
       break;
     case 5: // Video
       if (item.video_item) {
-        msg.fileKey = `${item.video_item.aes_key}|${item.video_item.cdn_ref}`;
+        msg.fileKey = encodeCdnRef(item.video_item);
         msg.fileName = 'video.mp4';
         if (!msg.text) msg.text = '请分析这个视频';
       }
@@ -195,18 +208,18 @@ function applyItemToExtra(
   switch (item.type) {
     case 2:
       if (item.image_item) {
-        extra.imageKey = `${item.image_item.aes_key}|${item.image_item.url || item.image_item.cdn_ref}`;
+        extra.imageKey = encodeCdnRef(item.image_item);
       }
       break;
     case 4:
       if (item.file_item) {
-        extra.fileKey = `${item.file_item.aes_key}|${item.file_item.cdn_ref}`;
+        extra.fileKey = encodeCdnRef(item.file_item);
         extra.fileName = item.file_item.filename || 'file';
       }
       break;
     case 5:
       if (item.video_item) {
-        extra.fileKey = `${item.video_item.aes_key}|${item.video_item.cdn_ref}`;
+        extra.fileKey = encodeCdnRef(item.video_item);
         extra.fileName = 'video.mp4';
       }
       break;
