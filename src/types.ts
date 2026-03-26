@@ -27,6 +27,12 @@ export interface CardState {
   durationMs?: number;
   errorMessage?: string;
   pendingQuestion?: PendingQuestion;
+  /** Primary model used (e.g. "claude-opus-4-6") */
+  model?: string;
+  /** Total input+output tokens consumed */
+  totalTokens?: number;
+  /** Context window size of the primary model */
+  contextWindow?: number;
 }
 
 export interface IncomingMessage {

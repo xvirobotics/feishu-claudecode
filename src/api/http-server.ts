@@ -479,8 +479,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           jsonResponse(res, 400, { error: 'Missing required fields: platform, name' });
           return;
         }
-        if (platform !== 'feishu' && platform !== 'telegram') {
-          jsonResponse(res, 400, { error: 'platform must be "feishu" or "telegram"' });
+        if (platform !== 'feishu' && platform !== 'telegram' && platform !== 'wechat') {
+          jsonResponse(res, 400, { error: 'platform must be "feishu", "telegram", or "wechat"' });
           return;
         }
 
@@ -503,7 +503,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
             ...(body.model ? { model: body.model } : {}),
           };
-        } else {
+        } else if (platform === 'telegram') {
           const token = body.telegramBotToken as string;
           const workDir = body.defaultWorkingDirectory as string;
           if (!token || !workDir) {
@@ -514,6 +514,23 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             name,
             ...(body.description ? { description: body.description } : {}),
             telegramBotToken: token,
+            defaultWorkingDirectory: workDir,
+            ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
+            ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
+            ...(body.model ? { model: body.model } : {}),
+          };
+        } else {
+          // wechat
+          const workDir = body.defaultWorkingDirectory as string;
+          if (!workDir) {
+            jsonResponse(res, 400, { error: 'WeChat bot requires: defaultWorkingDirectory' });
+            return;
+          }
+          entry = {
+            name,
+            ...(body.description ? { description: body.description } : {}),
+            ...(body.wechatBotToken ? { wechatBotToken: body.wechatBotToken } : {}),
+            ...(body.ilinkBaseUrl ? { ilinkBaseUrl: body.ilinkBaseUrl } : {}),
             defaultWorkingDirectory: workDir,
             ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
             ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -531,7 +548,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
           // Optionally install skills
           if (body.installSkills) {
-            installSkillsToWorkDir(workDir, logger, { platform: platform as 'feishu' | 'telegram' });
+            installSkillsToWorkDir(workDir, logger, { platform: platform as 'feishu' | 'telegram' | 'wechat' });
           }
 
           jsonResponse(res, 201, {

@@ -383,15 +383,22 @@ API_TIMEOUT_MS=600000"
   echo -e "${BOLD}IM Bot Platform:${NC}"
   echo "  1) Feishu/Lark"
   echo "  2) Telegram"
-  echo "  3) Both"
+  echo "  3) WeChat ClawBot"
+  echo "  4) Feishu + Telegram"
+  echo "  5) Feishu + WeChat"
+  echo "  6) All"
   prompt_choice PLATFORM_CHOICE "1"
 
   SETUP_FEISHU=false
   SETUP_TELEGRAM=false
+  SETUP_WECHAT=false
   case "$PLATFORM_CHOICE" in
     1) SETUP_FEISHU=true ;;
     2) SETUP_TELEGRAM=true ;;
-    3) SETUP_FEISHU=true; SETUP_TELEGRAM=true ;;
+    3) SETUP_WECHAT=true ;;
+    4) SETUP_FEISHU=true; SETUP_TELEGRAM=true ;;
+    5) SETUP_FEISHU=true; SETUP_WECHAT=true ;;
+    6) SETUP_FEISHU=true; SETUP_TELEGRAM=true; SETUP_WECHAT=true ;;
     *) SETUP_FEISHU=true ;;
   esac
 
@@ -415,6 +422,13 @@ API_TIMEOUT_MS=600000"
     if [[ -z "$TELEGRAM_BOT_TOKEN" ]]; then
       error "Telegram Bot Token is required."; exit 1
     fi
+  fi
+
+  if [[ "$SETUP_WECHAT" == "true" ]]; then
+    echo ""
+    echo -e "  ${BOLD}WeChat ClawBot:${NC}"
+    info "No credentials needed — you'll scan a QR code after installation."
+    info "Requires WeChat ClawBot beta access (apply at ilinkai.weixin.qq.com)."
   fi
 
   # ------ 4d: Bot name + auto-generated settings ------
@@ -479,6 +493,7 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
   BOTS_JSON="$METABOT_HOME/bots.json"
   FEISHU_BOTS_JSON="[]"
   TELEGRAM_BOTS_JSON="[]"
+  WECHAT_BOTS_JSON="[]"
 
   if [[ "$SETUP_FEISHU" == "true" ]]; then
     FEISHU_BOTS_JSON=$(node -e "
@@ -503,14 +518,28 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
     " "$TG_NAME" "$TELEGRAM_BOT_TOKEN" "$WORK_DIR")
   fi
 
+  if [[ "$SETUP_WECHAT" == "true" ]]; then
+    WX_NAME="$BOT_NAME"
+    # Append suffix if other platforms are also configured
+    [[ "$SETUP_FEISHU" == "true" || "$SETUP_TELEGRAM" == "true" ]] && WX_NAME="${BOT_NAME}-wechat"
+    WECHAT_BOTS_JSON=$(node -e "
+      console.log(JSON.stringify([{
+        name: process.argv[1],
+        defaultWorkingDirectory: process.argv[2]
+      }], null, 2))
+    " "$WX_NAME" "$WORK_DIR")
+  fi
+
   node -e "
     const config = {};
     const feishu = JSON.parse(process.argv[1]);
     const telegram = JSON.parse(process.argv[2]);
+    const wechat = JSON.parse(process.argv[3]);
     if (feishu.length > 0) config.feishuBots = feishu;
     if (telegram.length > 0) config.telegramBots = telegram;
+    if (wechat.length > 0) config.wechatBots = wechat;
     console.log(JSON.stringify(config, null, 2));
-  " "$FEISHU_BOTS_JSON" "$TELEGRAM_BOTS_JSON" > "$BOTS_JSON"
+  " "$FEISHU_BOTS_JSON" "$TELEGRAM_BOTS_JSON" "$WECHAT_BOTS_JSON" > "$BOTS_JSON"
   chmod 600 "$BOTS_JSON"
 
   # Validate generated JSON
@@ -585,7 +614,7 @@ else
     DEPLOY_WORK_DIR=$(node -e "
       const fs = require('fs');
       const cfg = JSON.parse(fs.readFileSync('$METABOT_HOME/bots.json','utf-8'));
-      const bots = [...(cfg.feishuBots||[]),...(cfg.telegramBots||[])];
+      const bots = [...(cfg.feishuBots||[]),...(cfg.telegramBots||[]),...(cfg.wechatBots||[])];
       if (bots[0]) console.log(bots[0].defaultWorkingDirectory);
     " 2>/dev/null || echo "")
   else
@@ -861,6 +890,48 @@ pm2 start ecosystem.config.cjs
 pm2 save --force 2>/dev/null || true
 success "MetaBot is running!"
 
+# --- WeChat QR login: wait for URL and display it ---
+HAS_WECHAT_BOT=false
+if [[ "$SKIP_CONFIG" == "false" && "${SETUP_WECHAT:-false}" == "true" ]]; then
+  HAS_WECHAT_BOT=true
+elif [[ "$SKIP_CONFIG" == "true" && -f "$METABOT_HOME/bots.json" ]]; then
+  if node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_HOME/bots.json','utf-8')); process.exit((c.wechatBots||[]).length>0?0:1)" 2>/dev/null; then
+    HAS_WECHAT_BOT=true
+  fi
+fi
+
+if [[ "$HAS_WECHAT_BOT" == "true" ]]; then
+  echo ""
+  info "WeChat ClawBot detected — waiting for QR login URL..."
+  WX_QR_URL=""
+  LOG_FILE="$METABOT_HOME/logs/out.log"
+  for i in $(seq 1 15); do
+    sleep 2
+    if [[ -f "$LOG_FILE" ]]; then
+      WX_QR_URL=$(grep -oP 'Open this URL or scan the QR code: \K\S+' "$LOG_FILE" 2>/dev/null | tail -1 || true)
+      if [[ -n "$WX_QR_URL" ]]; then
+        break
+      fi
+    fi
+  done
+
+  if [[ -n "$WX_QR_URL" ]]; then
+    echo ""
+    echo -e "  ${GREEN}${BOLD}╔══════════════════════════════════════════════╗${NC}"
+    echo -e "  ${GREEN}${BOLD}║  WeChat ClawBot — Scan QR Code to bind      ║${NC}"
+    echo -e "  ${GREEN}${BOLD}╚══════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${CYAN}${WX_QR_URL}${NC}"
+    echo ""
+    echo "  Open the URL above in your browser, then scan the QR code with WeChat."
+    echo "  The bot will automatically connect after scanning."
+    echo ""
+  else
+    warn "QR URL not yet available. Check logs to get it:"
+    echo "    pm2 logs metabot --lines 30"
+  fi
+fi
+
 # ============================================================================
 # Phase 9: Summary
 # ============================================================================
@@ -909,6 +980,12 @@ if [[ "${SKIP_CONFIG}" == "false" ]]; then
   fi
   if [[ "${SETUP_TELEGRAM:-false}" == "true" ]]; then
     echo "    ${STEP_NUM}. Open Telegram and message your bot — it's ready now!"
+    STEP_NUM=$((STEP_NUM + 1))
+  fi
+  if [[ "${SETUP_WECHAT:-false}" == "true" ]]; then
+    echo "    ${STEP_NUM}. Scan the WeChat QR code shown above (or check pm2 logs metabot)"
+    STEP_NUM=$((STEP_NUM + 1))
+    echo "    ${STEP_NUM}. Send a message to your ClawBot in WeChat"
     STEP_NUM=$((STEP_NUM + 1))
   fi
   echo "    ${STEP_NUM}. Check logs: pm2 logs metabot"

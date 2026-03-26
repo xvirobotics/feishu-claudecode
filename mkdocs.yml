@@ -1,6 +1,6 @@
 site_name: MetaBot
 site_url: https://xvirobotics.com/metabot
-site_description: Infrastructure for building a supervised, self-improving agent organization
+site_description: 构建受监督的、自我进化的 Agent 组织的基础设施
 repo_url: https://github.com/xvirobotics/metabot
 repo_name: xvirobotics/metabot
 edit_uri: edit/main/docs/
@@ -50,104 +50,107 @@ markdown_extensions:
 plugins:
   - search
   - i18n:
+      default_language: zh
       languages:
-        - locale: en
-          default: true
-          name: English
-          build: true
         - locale: zh
+          default: true
           name: 中文
           build: true
+        - locale: en
+          name: English
+          build: true
           nav:
-            - 首页: index.md
-            - 快速开始:
-              - 安装: getting-started/installation.md
-              - 快速配置: getting-started/quick-setup.md
-              - 飞书应用配置: getting-started/feishu-app-setup.md
-            - 核心概念:
-              - 架构: concepts/architecture.md
-              - 会话隔离: concepts/session-isolation.md
-              - 安全: concepts/security.md
-            - 功能:
+            - Home: index.md
+            - Getting Started:
+              - Installation: getting-started/installation.md
+              - Quick Setup: getting-started/quick-setup.md
+              - Feishu App Setup: getting-started/feishu-app-setup.md
+            - Concepts:
+              - Architecture: concepts/architecture.md
+              - Session Isolation: concepts/session-isolation.md
+              - Security: concepts/security.md
+            - Features:
               - MetaSkill: features/metaskill.md
               - MetaMemory: features/metamemory.md
-              - Peers 联邦: features/peers.md
-              - 任务调度: features/scheduler.md
-              - Wiki 同步: features/wiki-sync.md
-              - 飞书文档阅读: features/feishu-doc-reader.md
-              - 语音助手: features/voice-jarvis.md
+              - Peers Federation: features/peers.md
+              - Task Scheduler: features/scheduler.md
+              - Wiki Sync: features/wiki-sync.md
+              - Feishu Doc Reader: features/feishu-doc-reader.md
+              - WeChat: features/wechat.md
+              - Voice Assistant: features/voice-jarvis.md
               - Web UI: features/web-ui.md
-              - 输出文件: features/outputs.md
-            - 配置:
-              - 环境变量: configuration/environment-variables.md
-              - 多 Bot 模式: configuration/multi-bot.md
-            - 使用:
-              - 聊天命令: usage/chat-commands.md
-              - 示例提示词: usage/example-prompts.md
-              - 使用场景: usage/use-cases.md
-            - 参考:
+              - Output Files: features/outputs.md
+            - Configuration:
+              - Environment Variables: configuration/environment-variables.md
+              - Multi-Bot Mode: configuration/multi-bot.md
+            - Usage:
+              - Chat Commands: usage/chat-commands.md
+              - Example Prompts: usage/example-prompts.md
+              - Use Cases: usage/use-cases.md
+            - Reference:
               - REST API: reference/api.md
               - mb CLI (Agent Bus): reference/cli-mb.md
               - mm CLI (MetaMemory): reference/cli-mm.md
-              - fd CLI (飞书文档): reference/cli-fd.md
+              - fd CLI (Feishu Docs): reference/cli-fd.md
               - metabot CLI: reference/cli-metabot.md
-            - 部署:
-              - 生产部署: deployment/production.md
-            - 开发:
-              - 贡献指南: development/contributing.md
-              - 项目结构: development/project-structure.md
-            - 故障排除: troubleshooting.md
-            - 关于: about.md
+            - Deployment:
+              - Production: deployment/production.md
+            - Development:
+              - Contributing: development/contributing.md
+              - Project Structure: development/project-structure.md
+            - Troubleshooting: troubleshooting.md
+            - About: about.md
 
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/xvirobotics/metabot
   alternate:
-    - name: English
-      link: /metabot/
-      lang: en
     - name: 中文
-      link: /metabot/zh/
+      link: /metabot/
       lang: zh
+    - name: English
+      link: /metabot/en/
+      lang: en
 
 nav:
-  - Home: index.md
-  - Getting Started:
-    - Installation: getting-started/installation.md
-    - Quick Setup: getting-started/quick-setup.md
-    - Feishu App Setup: getting-started/feishu-app-setup.md
-  - Concepts:
-    - Architecture: concepts/architecture.md
-    - Session Isolation: concepts/session-isolation.md
-    - Security: concepts/security.md
-  - Features:
+  - 首页: index.md
+  - 快速开始:
+    - 安装: getting-started/installation.md
+    - 快速配置: getting-started/quick-setup.md
+    - 飞书应用配置: getting-started/feishu-app-setup.md
+  - 核心概念:
+    - 架构: concepts/architecture.md
+    - 会话隔离: concepts/session-isolation.md
+    - 安全: concepts/security.md
+  - 功能:
     - MetaSkill: features/metaskill.md
     - MetaMemory: features/metamemory.md
-    - Peers Federation: features/peers.md
-    - Task Scheduler: features/scheduler.md
-    - Wiki Sync: features/wiki-sync.md
-    - Feishu Doc Reader: features/feishu-doc-reader.md
-    - Voice Assistant: features/voice-jarvis.md
+    - Peers 联邦: features/peers.md
+    - 任务调度: features/scheduler.md
+    - Wiki 同步: features/wiki-sync.md
+    - 飞书文档阅读: features/feishu-doc-reader.md
+    - 微信接入: features/wechat.md
+    - 语音助手: features/voice-jarvis.md
     - Web UI: features/web-ui.md
-    - Output Files: features/outputs.md
-  - Configuration:
-    - Environment Variables: configuration/environment-variables.md
-    - Multi-Bot Mode: configuration/multi-bot.md
-  - Usage:
-    - Chat Commands: usage/chat-commands.md
-    - Example Prompts: usage/example-prompts.md
-    - Use Cases: usage/use-cases.md
-  - Reference:
+    - 输出文件: features/outputs.md
+  - 配置:
+    - 环境变量: configuration/environment-variables.md
+    - 多 Bot 模式: configuration/multi-bot.md
+  - 使用:
+    - 聊天命令: usage/chat-commands.md
+    - 示例提示词: usage/example-prompts.md
+    - 使用场景: usage/use-cases.md
+  - 参考:
     - REST API: reference/api.md
     - mb CLI (Agent Bus): reference/cli-mb.md
     - mm CLI (MetaMemory): reference/cli-mm.md
-    - fd CLI (Feishu Docs): reference/cli-fd.md
+    - fd CLI (飞书文档): reference/cli-fd.md
     - metabot CLI: reference/cli-metabot.md
-  - Deployment:
-    - Production: deployment/production.md
-  - Development:
-    - Contributing: development/contributing.md
-    - Project Structure: development/project-structure.md
-  - Troubleshooting: troubleshooting.md
-  - About: about.md
+  - 部署:
+    - 生产部署: deployment/production.md
+  - 开发:
+    - 贡献指南: development/contributing.md
+    - 项目结构: development/project-structure.md
+  - 故障排除: troubleshooting.md
+  - 关于: about.md

@@ -89,6 +89,8 @@ export type SDKMessage = {
   is_error?: boolean;
   num_turns?: number;
   errors?: string[];
+  // Model usage from result message (per-model breakdown)
+  modelUsage?: Record<string, { inputTokens: number; outputTokens: number; contextWindow: number; costUSD: number }>;
   // Stream event fields
   event?: {
     type: string;

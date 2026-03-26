@@ -28,4 +28,7 @@ export interface IMessageSender {
 
   /** Download a user-sent file to a local path. */
   downloadFile(messageId: string, fileKey: string, savePath: string): Promise<boolean>;
+
+  /** If true, the bridge will not send a separate "Task completed" text after the card update. */
+  skipCompletionNotice?: boolean;
 }

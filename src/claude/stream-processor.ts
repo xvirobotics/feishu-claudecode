@@ -27,6 +27,9 @@ export class StreamProcessor {
   private _pendingQuestion: PendingQuestion | null = null;
   private _sdkHandledTools: DetectedTool[] = [];
   private _planFilePath: string | null = null;
+  private _model: string | undefined;
+  private _totalTokens: number | undefined;
+  private _contextWindow: number | undefined;
 
   constructor(private userPrompt: string) {}
 
@@ -133,6 +136,26 @@ export class StreamProcessor {
     this.costUsd = message.total_cost_usd;
     this.durationMs = message.duration_ms;
 
+    // Extract model usage info (per-model breakdown from SDK)
+    if (message.modelUsage) {
+      const models = Object.keys(message.modelUsage);
+      if (models.length > 0) {
+        // Primary model is the one with highest cost
+        const primaryModel = models.reduce((a, b) =>
+          (message.modelUsage![a].costUSD ?? 0) >= (message.modelUsage![b].costUSD ?? 0) ? a : b
+        );
+        const mu = message.modelUsage[primaryModel];
+        this._model = primaryModel;
+        this._contextWindow = mu.contextWindow;
+        // Sum tokens across all models
+        let totalTokens = 0;
+        for (const m of models) {
+          totalTokens += (message.modelUsage![m].inputTokens ?? 0) + (message.modelUsage![m].outputTokens ?? 0);
+        }
+        this._totalTokens = totalTokens;
+      }
+    }
+
     // Mark all tools as done
     for (const tool of this.toolCalls) {
       tool.status = 'done';
@@ -153,6 +176,9 @@ export class StreamProcessor {
       errorMessage: isError
         ? (message.errors?.join('; ') || `Ended with: ${message.subtype}`)
         : isApiError ? resultText : undefined,
+      model: this._model,
+      totalTokens: this._totalTokens,
+      contextWindow: this._contextWindow,
     };
   }
 
