@@ -177,10 +177,9 @@ async function main() {
   // WebSocket heartbeat: detect silent disconnects via active API probe.
   // Only reconnect when API is healthy but WS has been idle too long,
   // indicating a silent WS disconnect (not just quiet hours with no messages).
-  const WS_CHECK_INTERVAL_MS = 60_000;     // Probe every 60 seconds
-  const WS_IDLE_THRESHOLD_MS = 30 * 60_000; // Only consider reconnect after 30 min idle
+  const WS_CHECK_INTERVAL_MS = 60_000;    // Probe every 60 seconds
+  const WS_IDLE_THRESHOLD_MS = 5 * 60_000; // Reconnect after 5 min idle
   const wsReconnecting = new Set<string>();
-  let lastProbeHadMessage = new Map<string, boolean>(); // track if probe detected activity
 
   const wsHeartbeatInterval = setInterval(async () => {
     const now = Date.now();
@@ -197,7 +196,7 @@ async function main() {
         continue;
       }
 
-      // API works but no WS activity for 30+ min — WS is likely dead
+      // API works but no WS activity for 5+ min — WS is likely dead
       wsReconnecting.add(handle.name);
       const idleMin = Math.round(idleMs / 60_000);
       logger.warn({ bot: handle.name, idleMinutes: idleMin }, 'WS silent disconnect detected (API healthy, no WS activity), forcing reconnect');
