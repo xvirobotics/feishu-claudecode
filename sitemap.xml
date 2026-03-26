@@ -1,0 +1,451 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
+    <url>
+        <loc>https://xvirobotics.com/metabot/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/about/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/about/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/about/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/troubleshooting/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/troubleshooting/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/troubleshooting/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/concepts/architecture/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/concepts/architecture/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/concepts/architecture/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/concepts/security/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/concepts/security/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/concepts/security/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/concepts/session-isolation/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/concepts/session-isolation/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/concepts/session-isolation/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/configuration/environment-variables/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/configuration/environment-variables/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/configuration/environment-variables/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/configuration/multi-bot/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/configuration/multi-bot/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/configuration/multi-bot/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/deployment/production/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/deployment/production/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/deployment/production/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/development/contributing/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/development/contributing/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/development/contributing/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/development/project-structure/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/development/project-structure/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/development/project-structure/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/feishu-doc-reader/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/feishu-doc-reader/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/feishu-doc-reader/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/metamemory/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/metamemory/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/metamemory/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/metaskill/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/metaskill/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/metaskill/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/outputs/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/outputs/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/outputs/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/peers/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/peers/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/peers/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/scheduler/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/scheduler/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/scheduler/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/voice-jarvis/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/voice-jarvis/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/voice-jarvis/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/web-ui/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/web-ui/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/web-ui/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/wechat/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/wechat/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/wechat/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/features/wiki-sync/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/wiki-sync/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/wiki-sync/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/getting-started/feishu-app-setup/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/getting-started/feishu-app-setup/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/getting-started/feishu-app-setup/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/getting-started/installation/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/getting-started/installation/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/getting-started/installation/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/getting-started/quick-setup/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/getting-started/quick-setup/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/getting-started/quick-setup/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/reference/api/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/api/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/api/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/reference/cli-fd/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/cli-fd/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/cli-fd/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/reference/cli-mb/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/cli-mb/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/cli-mb/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/reference/cli-metabot/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/cli-metabot/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/cli-metabot/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/reference/cli-mm/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/cli-mm/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/cli-mm/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/usage/chat-commands/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/usage/chat-commands/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/usage/chat-commands/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/usage/example-prompts/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/usage/example-prompts/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/usage/example-prompts/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/usage/use-cases/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/usage/use-cases/"/>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/usage/use-cases/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/about/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/about/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/about/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/troubleshooting/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/troubleshooting/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/troubleshooting/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/concepts/architecture/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/concepts/architecture/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/concepts/architecture/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/concepts/security/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/concepts/security/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/concepts/security/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/concepts/session-isolation/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/concepts/session-isolation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/concepts/session-isolation/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/configuration/environment-variables/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/configuration/environment-variables/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/configuration/environment-variables/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/configuration/multi-bot/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/configuration/multi-bot/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/configuration/multi-bot/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/deployment/production/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/deployment/production/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/deployment/production/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/development/contributing/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/development/contributing/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/development/contributing/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/development/project-structure/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/development/project-structure/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/development/project-structure/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/feishu-doc-reader/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/feishu-doc-reader/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/feishu-doc-reader/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/metamemory/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/metamemory/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/metamemory/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/metaskill/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/metaskill/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/metaskill/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/outputs/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/outputs/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/outputs/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/peers/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/peers/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/peers/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/scheduler/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/scheduler/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/scheduler/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/voice-jarvis/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/voice-jarvis/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/voice-jarvis/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/web-ui/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/web-ui/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/web-ui/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/wechat/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/wechat/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/wechat/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/features/wiki-sync/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/features/wiki-sync/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/features/wiki-sync/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/getting-started/feishu-app-setup/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/getting-started/feishu-app-setup/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/getting-started/feishu-app-setup/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/getting-started/installation/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/getting-started/installation/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/getting-started/installation/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/getting-started/quick-setup/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/getting-started/quick-setup/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/getting-started/quick-setup/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/reference/api/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/api/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/api/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/reference/cli-fd/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/cli-fd/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/cli-fd/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/reference/cli-mb/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/cli-mb/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/cli-mb/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/reference/cli-metabot/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/cli-metabot/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/cli-metabot/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/reference/cli-mm/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/reference/cli-mm/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/reference/cli-mm/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/usage/chat-commands/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/usage/chat-commands/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/usage/chat-commands/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/usage/example-prompts/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/usage/example-prompts/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/usage/example-prompts/"/>
+    </url>
+    <url>
+        <loc>https://xvirobotics.com/metabot/zh/usage/use-cases/</loc>
+        <lastmod>2026-03-26</lastmod>
+        <changefreq>daily</changefreq>
+        <xhtml:link rel="alternate" hreflang="zh" href="https://xvirobotics.com/metabot/zh/usage/use-cases/"/>
+        <xhtml:link rel="alternate" hreflang="en" href="https://xvirobotics.com/metabot/usage/use-cases/"/>
+    </url>
+</urlset>
