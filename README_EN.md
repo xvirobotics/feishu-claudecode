@@ -56,12 +56,12 @@ We built MetaBot to run [XVI Robotics](https://xvirobotics.com) as an **agent-na
 | **Claude Code Kernel** | Every bot is a full Claude Code instance — Read, Write, Edit, Bash, Glob, Grep, WebSearch, MCP, and more. `bypassPermissions` mode for autonomous operation. |
 | **MetaSkill** | Agent factory. `/metaskill ios app` generates a complete `.claude/` agent team (orchestrator + specialists + code-reviewer) after researching best practices. Uses MetaMemory for shared knowledge across agents. |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. Shared by all agents. Auto-syncs to Feishu Wiki when changes occur (debounced). Web UI: `http://localhost:8100?token=YOUR_TOKEN` (token shown in startup logs). |
-| **Feishu Doc Reader** | Read Feishu documents and wiki pages as Markdown. `fd read <url>` from CLI, or Claude auto-reads when users share Feishu URLs. Available as the `feishu-doc` skill. |
+| **Feishu Lark CLI** | Integrates the official Feishu CLI (`lark-cli`) with 200+ commands covering docs, messaging, calendar, tasks, and 8 more domains. 19 AI Agent Skills are auto-installed so Claude can read/write docs, send messages, manage calendars, and more. |
 | **IM Bridge** | Chat with any agent from Feishu/Lark, Telegram, or WeChat (including mobile). Streaming cards with color-coded status and tool call tracking. WeChat integration via ClawBot plugin (iLink API). |
 | **Agent Bus** | REST API on port 9100. Agents talk to each other via `mb talk`. Create/remove bots at runtime. Exposed as the `/metabot` skill — loaded on demand, not injected into every prompt. |
 | **Peers** | Federation system for cross-instance bot discovery and task routing. Configure `METABOT_PEERS` to connect multiple MetaBot instances — same machine or remote. `mb talk alice/backend-bot` routes automatically. |
 | **Task Scheduler** | One-time delays and recurring cron jobs. `0 8 * * 1-5` = weekday 8am news briefing. Timezone-aware (default: Asia/Shanghai). Persists across restarts, auto-retries when busy. |
-| **CLI Tools** | `metabot`, `mm`, `mb`, and `fd` commands installed to `~/.local/bin/`. `metabot update` to pull/rebuild/restart. `mm` for MetaMemory, `mb` for Agent Bus, `fd` for Feishu docs. |
+| **CLI Tools** | `metabot`, `mm`, `mb` commands installed to `~/.local/bin/`. `metabot update` to pull/rebuild/restart. `mm` for MetaMemory, `mb` for Agent Bus. Feishu bots also get `lark-cli`. |
 
 ## Install
 
@@ -410,10 +410,11 @@ echo '# Updated' | mm update DOC_ID
 mm mkdir "new-folder"               # create folder
 mm delete DOC_ID                    # delete document
 
-# Feishu Document Reader (Feishu bots only)
-fd read <feishu-url>                # read document by URL (docx or wiki)
-fd read-id <docId>                  # read document by ID
-fd info <feishu-url>                # get document metadata
+# Feishu Lark CLI (Feishu bots only, auto-installed and configured)
+lark-cli docs +fetch --doc <feishu-url>                       # read document
+lark-cli docs +create --title "Title" --markdown "Content"    # create document
+lark-cli im +messages-send --chat-id oc_xxx --text "Hi"       # send message
+lark-cli calendar +agenda --as user                           # view calendar
 
 # Agent Bus
 mb bots                             # list all bots (local + peer)

@@ -589,7 +589,7 @@ mkdir -p "$SKILLS_DIR/voice"
 cp "$METABOT_HOME/src/skills/voice/SKILL.md" "$SKILLS_DIR/voice/SKILL.md"
 success "voice skill installed → $SKILLS_DIR/voice"
 
-# Install feishu-doc skill (bundled in src/skills/feishu-doc/) — only when Feishu is configured
+# Detect Feishu bots
 HAS_FEISHU=false
 if [[ "$SKIP_CONFIG" == "false" && "$SETUP_FEISHU" == "true" ]]; then
   HAS_FEISHU=true
@@ -599,11 +599,54 @@ elif [[ "$SKIP_CONFIG" == "true" && -f "$METABOT_HOME/bots.json" ]]; then
     HAS_FEISHU=true
   fi
 fi
-if [[ "$HAS_FEISHU" == "true" && -f "$METABOT_HOME/src/skills/feishu-doc/SKILL.md" ]]; then
-  info "Installing feishu-doc skill..."
-  mkdir -p "$SKILLS_DIR/feishu-doc"
-  cp "$METABOT_HOME/src/skills/feishu-doc/SKILL.md" "$SKILLS_DIR/feishu-doc/SKILL.md"
-  success "feishu-doc skill installed → $SKILLS_DIR/feishu-doc"
+
+# Install lark-cli and AI Agent skills — only when Feishu is configured
+if [[ "$HAS_FEISHU" == "true" ]]; then
+  info "Installing lark-cli (Feishu official CLI)..."
+  if command -v lark-cli &>/dev/null; then
+    success "lark-cli already installed ($(lark-cli --version 2>/dev/null || echo 'unknown'))"
+  else
+    # Try global install, fall back to user-local prefix
+    if npm install -g @larksuite/cli 2>/dev/null; then
+      success "lark-cli installed globally"
+    else
+      mkdir -p "$HOME/.npm-global"
+      npm config set prefix "$HOME/.npm-global"
+      npm install -g @larksuite/cli 2>/dev/null
+      # Ensure ~/.npm-global/bin is in PATH
+      if ! echo "$PATH" | grep -q "$HOME/.npm-global/bin"; then
+        export PATH="$HOME/.npm-global/bin:$PATH"
+        echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> "$HOME/.bashrc"
+        info "Added ~/.npm-global/bin to PATH in ~/.bashrc"
+      fi
+      success "lark-cli installed to ~/.npm-global/bin"
+    fi
+  fi
+
+  # Configure lark-cli with first Feishu bot credentials
+  if [[ ! -f "$HOME/.lark-cli/config.json" && -f "$METABOT_HOME/bots.json" ]]; then
+    FEISHU_APP_ID=$(node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_HOME/bots.json','utf-8')); console.log((c.feishuBots||[])[0]?.feishuAppId||'')" 2>/dev/null)
+    FEISHU_APP_SECRET=$(node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_HOME/bots.json','utf-8')); console.log((c.feishuBots||[])[0]?.feishuAppSecret||'')" 2>/dev/null)
+    if [[ -n "$FEISHU_APP_ID" && -n "$FEISHU_APP_SECRET" ]]; then
+      echo "$FEISHU_APP_SECRET" | lark-cli config init --app-id "$FEISHU_APP_ID" --app-secret-stdin --brand feishu 2>/dev/null && \
+        success "lark-cli configured with app $FEISHU_APP_ID" || \
+        warn "lark-cli config failed — you can run manually: lark-cli config init"
+    fi
+  fi
+
+  # Install lark-cli AI Agent skills for Claude Code
+  info "Installing lark-cli AI Agent skills..."
+  if npx skills add larksuite/cli --all -y -g 2>/dev/null; then
+    success "lark-cli AI Agent skills installed (19 skills)"
+  else
+    warn "lark-cli skills install failed — you can run manually: npx skills add larksuite/cli --all -y -g"
+  fi
+
+  # Clean up old feishu-doc skill if present
+  if [[ -d "$SKILLS_DIR/feishu-doc" ]]; then
+    rm -rf "$SKILLS_DIR/feishu-doc"
+    info "Removed legacy feishu-doc skill (replaced by lark-cli skills)"
+  fi
 fi
 
 # Determine working directory
@@ -626,9 +669,13 @@ fi
 if [[ -n "${DEPLOY_WORK_DIR:-}" ]]; then
   SKILLS_DEST="$DEPLOY_WORK_DIR/.claude/skills"
 
-  # Copy skills (common + feishu-doc if available)
+  # Copy skills (common + lark-cli skills if Feishu)
   DEPLOY_SKILLS="metaskill metamemory metabot voice"
-  [[ "$HAS_FEISHU" == "true" ]] && DEPLOY_SKILLS="$DEPLOY_SKILLS feishu-doc"
+  if [[ "$HAS_FEISHU" == "true" ]]; then
+    for lark_skill in lark-base lark-calendar lark-contact lark-doc lark-drive lark-event lark-im lark-mail lark-minutes lark-openapi-explorer lark-shared lark-sheets lark-skill-maker lark-task lark-vc lark-whiteboard lark-wiki lark-workflow-meeting-summary lark-workflow-standup-report; do
+      [[ -d "$SKILLS_DIR/$lark_skill" ]] && DEPLOY_SKILLS="$DEPLOY_SKILLS $lark_skill"
+    done
+  fi
   for SKILL in $DEPLOY_SKILLS; do
     if [[ -d "$SKILLS_DIR/$SKILL" ]]; then
       mkdir -p "$SKILLS_DEST/$SKILL"
@@ -851,23 +898,20 @@ source "$BASH_ALIASES" 2>/dev/null || true
 LOCAL_BIN="$HOME/.local/bin"
 mkdir -p "$LOCAL_BIN"
 CLI_TOOLS="mm mb metabot"
-[[ "$HAS_FEISHU" == "true" ]] && CLI_TOOLS="$CLI_TOOLS fd"
 for cli in $CLI_TOOLS; do
   if [[ -f "$METABOT_HOME/bin/$cli" ]]; then
     cp "$METABOT_HOME/bin/$cli" "$LOCAL_BIN/$cli"
     chmod +x "$LOCAL_BIN/$cli"
   fi
 done
+# Clean up legacy fd CLI if present
+[[ -f "$LOCAL_BIN/fd" ]] && rm -f "$LOCAL_BIN/fd"
 # Ensure ~/.local/bin is in PATH (most distros include it, but not all)
 if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
   echo "export PATH=\"$LOCAL_BIN:\$PATH\"" >> "$HOME/.bashrc"
   info "Added ~/.local/bin to PATH in ~/.bashrc"
 fi
-if [[ "$HAS_FEISHU" == "true" ]]; then
-  success "mm/mb/metabot/fd CLI tools installed to $LOCAL_BIN"
-else
-  success "mm/mb/metabot CLI tools installed to $LOCAL_BIN"
-fi
+success "mm/mb/metabot CLI tools installed to $LOCAL_BIN"
 
 # ============================================================================
 # Phase 8: Build + Start MetaBot with PM2
