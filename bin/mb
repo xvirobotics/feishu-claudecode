@@ -160,7 +160,7 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
 
     echo "==> Updating CLI tools..."
     mkdir -p "$LOCAL_BIN"
-    for cli in mb mm metabot fd; do
+    for cli in mb mm metabot; do
       src="$METABOT_SRC/bin/$cli"
       dst="$LOCAL_BIN/$cli"
       if [[ -f "$src" ]]; then
@@ -174,37 +174,103 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
 
     echo "==> Updating skills..."
     SKILLS_DIR="$HOME/.claude/skills"
-    if [[ -d "$SKILLS_DIR" ]]; then
-      for skill in metaskill metamemory metabot feishu-doc voice; do
-        case "$skill" in
-          metaskill)  src="$METABOT_SRC/src/skills/metaskill" ;;
-          metamemory) src="$METABOT_SRC/src/memory/skill" ;;
-          metabot)    src="$METABOT_SRC/src/skills/metabot" ;;
-          feishu-doc) src="$METABOT_SRC/src/skills/feishu-doc" ;;
-          voice)      src="$METABOT_SRC/src/skills/voice" ;;
-          *)          src="" ;;
-        esac
-        if [[ -n "$src" && -d "$src" && -d "$SKILLS_DIR/$skill" ]]; then
-          cp -r "$src/." "$SKILLS_DIR/$skill/"
-          echo "    Updated: $skill"
+    mkdir -p "$SKILLS_DIR"
+    for skill in metaskill metamemory metabot voice; do
+      case "$skill" in
+        metaskill)  src="$METABOT_SRC/src/skills/metaskill" ;;
+        metamemory) src="$METABOT_SRC/src/memory/skill" ;;
+        metabot)    src="$METABOT_SRC/src/skills/metabot" ;;
+        voice)      src="$METABOT_SRC/src/skills/voice" ;;
+        *)          src="" ;;
+      esac
+      if [[ -n "$src" && -d "$src" ]]; then
+        mkdir -p "$SKILLS_DIR/$skill"
+        cp -r "$src/." "$SKILLS_DIR/$skill/"
+        echo "    Updated: $skill"
+      fi
+    done
+    # Clean up legacy feishu-doc skill
+    if [[ -d "$SKILLS_DIR/feishu-doc" ]]; then
+      rm -rf "$SKILLS_DIR/feishu-doc"
+      echo "    Removed legacy: feishu-doc"
+    fi
+
+    # Detect Feishu bots and install/update lark-cli skills
+    has_feishu=false
+    if [[ -f "$METABOT_SRC/bots.json" ]] && command -v node &>/dev/null; then
+      if node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_SRC/bots.json','utf-8')); process.exit((c.feishuBots||[]).length>0?0:1)" 2>/dev/null; then
+        has_feishu=true
+      fi
+    fi
+
+    if [[ "$has_feishu" == "true" ]]; then
+      # Install lark-cli if not present
+      if ! command -v lark-cli &>/dev/null; then
+        echo "    Installing lark-cli..."
+        if npm install -g @larksuite/cli 2>/dev/null; then
+          echo "    lark-cli installed globally"
+        else
+          mkdir -p "$HOME/.npm-global"
+          npm config set prefix "$HOME/.npm-global" 2>/dev/null || true
+          npm install -g @larksuite/cli 2>/dev/null && \
+            echo "    lark-cli installed to ~/.npm-global/bin" || \
+            echo "    lark-cli install failed — run: npm install -g @larksuite/cli"
+          if ! echo "$PATH" | grep -q "$HOME/.npm-global/bin"; then
+            export PATH="$HOME/.npm-global/bin:$PATH"
+          fi
         fi
-      done
-      # Also update workspace skills if bots.json exists
-      if [[ -f "$METABOT_SRC/bots.json" ]] && command -v node &>/dev/null; then
-        work_dir=$(node -e "
-          const c=JSON.parse(require('fs').readFileSync('$METABOT_SRC/bots.json','utf-8'));
-          const b=[...(c.feishuBots||[]),...(c.telegramBots||[])];
-          if(b[0])console.log(b[0].defaultWorkingDirectory);
-        " 2>/dev/null || true)
-        if [[ -n "${work_dir:-}" && -d "$work_dir/.claude/skills" ]]; then
-          for skill in metaskill metamemory metabot feishu-doc; do
-            if [[ -d "$SKILLS_DIR/$skill" && -d "$work_dir/.claude/skills/$skill" ]]; then
-              cp -r "$SKILLS_DIR/$skill/." "$work_dir/.claude/skills/$skill/"
+      fi
+
+      # Configure lark-cli if not configured
+      if [[ ! -f "$HOME/.lark-cli/config.json" && -f "$METABOT_SRC/bots.json" ]]; then
+        app_id=$(node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_SRC/bots.json','utf-8')); console.log((c.feishuBots||[])[0]?.feishuAppId||'')" 2>/dev/null)
+        app_secret=$(node -e "const c=JSON.parse(require('fs').readFileSync('$METABOT_SRC/bots.json','utf-8')); console.log((c.feishuBots||[])[0]?.feishuAppSecret||'')" 2>/dev/null)
+        if [[ -n "${app_id:-}" && -n "${app_secret:-}" ]]; then
+          echo "$app_secret" | lark-cli config init --app-id "$app_id" --app-secret-stdin --brand feishu 2>/dev/null && \
+            echo "    lark-cli configured" || true
+        fi
+      fi
+
+      # Install lark-cli AI Agent skills if missing
+      if [[ ! -d "$SKILLS_DIR/lark-doc" ]]; then
+        echo "    Installing lark-cli AI Agent skills..."
+        npx skills add larksuite/cli --all -y -g 2>/dev/null && \
+          echo "    lark-cli skills installed" || \
+          echo "    lark-cli skills failed — run: npx skills add larksuite/cli --all -y -g"
+      fi
+    fi
+
+    # Update workspace skills if bots.json exists
+    if [[ -f "$METABOT_SRC/bots.json" ]] && command -v node &>/dev/null; then
+      work_dir=$(node -e "
+        const c=JSON.parse(require('fs').readFileSync('$METABOT_SRC/bots.json','utf-8'));
+        const b=[...(c.feishuBots||[]),...(c.telegramBots||[]),...(c.wechatBots||[])];
+        if(b[0])console.log(b[0].defaultWorkingDirectory);
+      " 2>/dev/null || true)
+      if [[ -n "${work_dir:-}" ]]; then
+        ws_skills_dir="$work_dir/.claude/skills"
+        mkdir -p "$ws_skills_dir"
+        for skill in metaskill metamemory metabot voice; do
+          if [[ -d "$SKILLS_DIR/$skill" ]]; then
+            mkdir -p "$ws_skills_dir/$skill"
+            cp -r "$SKILLS_DIR/$skill/." "$ws_skills_dir/$skill/"
+          fi
+        done
+        # Copy lark-cli skills for Feishu
+        if [[ "${has_feishu:-false}" == "true" ]]; then
+          for lark_skill in lark-base lark-calendar lark-contact lark-doc lark-drive lark-event lark-im lark-mail lark-minutes lark-openapi-explorer lark-shared lark-sheets lark-skill-maker lark-task lark-vc lark-whiteboard lark-wiki lark-workflow-meeting-summary lark-workflow-standup-report; do
+            if [[ -d "$SKILLS_DIR/$lark_skill" ]]; then
+              mkdir -p "$ws_skills_dir/$lark_skill"
+              cp -r "$SKILLS_DIR/$lark_skill/." "$ws_skills_dir/$lark_skill/"
             fi
           done
-          if [[ -f "$METABOT_SRC/src/workspace/CLAUDE.md" ]]; then
-            cp "$METABOT_SRC/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
-          fi
+        fi
+        # Clean up legacy feishu-doc in workspace
+        if [[ -d "$ws_skills_dir/feishu-doc" ]]; then
+          rm -rf "$ws_skills_dir/feishu-doc"
+        fi
+        if [[ -f "$METABOT_SRC/src/workspace/CLAUDE.md" ]]; then
+          cp "$METABOT_SRC/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
         fi
       fi
     fi
