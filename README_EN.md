@@ -12,6 +12,12 @@
 
 ![MetaBot Architecture](resources/metabot.png)
 
+### Demo
+
+> Setting up a daily 9 AM scheduled task in Feishu — auto-search AI news from Hacker News & TechCrunch, summarize Top 5, save to MetaMemory. Watch the full flow: Thinking → Running → Complete with real-time streaming.
+
+![MetaBot Demo](resources/metabot-demo.gif)
+
 ## Why
 
 Claude Code is the most capable AI coding agent — but it's trapped in your laptop terminal.

@@ -12,6 +12,12 @@
 
 ![MetaBot 架构图](resources/metabot.png)
 
+### 效果演示
+
+> 在飞书中设定一个每天早上9点自动搜索 AI 新闻并保存到 MetaMemory 的定时任务 — Thinking → Running → Complete，全程流式展示。
+
+![MetaBot Demo](resources/metabot-demo.gif)
+
 ## 为什么做 MetaBot
 
 Claude Code 是最强的 AI 编码 Agent —— 但它被锁在笔记本终端里。
