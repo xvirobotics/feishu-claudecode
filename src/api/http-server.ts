@@ -8,9 +8,8 @@ import type { DocSync } from '../sync/doc-sync.js';
 import { addBot, removeBot, getBotEntry } from './bots-config-writer.js';
 import { installSkillsToWorkDir } from './skills-installer.js';
 import { metrics } from '../utils/metrics.js';
-import { FeishuDocReader } from '../feishu/doc-reader.js';
 import type { PeerManager } from './peer-manager.js';
-import { handleVoiceRequest, doubaoTTS, openaiTTS, elevenlabsTTS, resolveTTSProvider, resolveTTSVoice } from './voice-handler.js';
+import { handleVoiceRequest, doubaoTTS, openaiTTS, elevenlabsTTS, edgeTTS, resolveTTSProvider, resolveTTSVoice } from './voice-handler.js';
 
 interface ApiServerOptions {
   port: number;
@@ -121,6 +120,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           audioBuffer = await elevenlabsTTS(ttsText, voice);
         } else if (provider === 'doubao') {
           audioBuffer = await doubaoTTS(ttsText, voice);
+        } else if (provider === 'edge') {
+          audioBuffer = await edgeTTS(ttsText, voice);
         } else {
           audioBuffer = await openaiTTS(ttsText, voice);
         }
@@ -477,8 +478,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
           jsonResponse(res, 400, { error: 'Missing required fields: platform, name' });
           return;
         }
-        if (platform !== 'feishu' && platform !== 'telegram') {
-          jsonResponse(res, 400, { error: 'platform must be "feishu" or "telegram"' });
+        if (platform !== 'feishu' && platform !== 'telegram' && platform !== 'wechat') {
+          jsonResponse(res, 400, { error: 'platform must be "feishu", "telegram", or "wechat"' });
           return;
         }
 
@@ -501,7 +502,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
             ...(body.model ? { model: body.model } : {}),
           };
-        } else {
+        } else if (platform === 'telegram') {
           const token = body.telegramBotToken as string;
           const workDir = body.defaultWorkingDirectory as string;
           if (!token || !workDir) {
@@ -512,6 +513,23 @@ export function startApiServer(options: ApiServerOptions): http.Server {
             name,
             ...(body.description ? { description: body.description } : {}),
             telegramBotToken: token,
+            defaultWorkingDirectory: workDir,
+            ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
+            ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
+            ...(body.model ? { model: body.model } : {}),
+          };
+        } else {
+          // wechat
+          const workDir = body.defaultWorkingDirectory as string;
+          if (!workDir) {
+            jsonResponse(res, 400, { error: 'WeChat bot requires: defaultWorkingDirectory' });
+            return;
+          }
+          entry = {
+            name,
+            ...(body.description ? { description: body.description } : {}),
+            ...(body.wechatBotToken ? { wechatBotToken: body.wechatBotToken } : {}),
+            ...(body.ilinkBaseUrl ? { ilinkBaseUrl: body.ilinkBaseUrl } : {}),
             defaultWorkingDirectory: workDir,
             ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
             ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -529,7 +547,11 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
           // Optionally install skills
           if (body.installSkills) {
-            installSkillsToWorkDir(workDir, logger, { platform: platform as 'feishu' | 'telegram' });
+            installSkillsToWorkDir(workDir, logger, {
+              platform: platform as 'feishu' | 'telegram' | 'wechat',
+              feishuAppId: body.feishuAppId as string | undefined,
+              feishuAppSecret: body.feishuAppSecret as string | undefined,
+            });
           }
 
           jsonResponse(res, 201, {
@@ -693,59 +715,6 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         }
         const result = await docSync.syncDocument(docId);
         jsonResponse(res, result.success ? 200 : 500, result);
-        return;
-      }
-
-      // Route: GET /api/feishu/document — read a Feishu document
-      if (method === 'GET' && url.startsWith('/api/feishu/document')) {
-        const queryStr = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
-        const params = new URLSearchParams(queryStr);
-        const docUrl = params.get('url');
-        const docId = params.get('docId');
-        const botName = params.get('botName');
-
-        if (!docUrl && !docId) {
-          jsonResponse(res, 400, { error: 'Provide either url or docId query parameter' });
-          return;
-        }
-
-        // Find a Feishu client to use: specific bot > service client > first bot fallback
-        let clientForDoc: lark.Client | undefined;
-        if (botName) {
-          const bot = registry.getByPlatform(botName, 'feishu');
-          clientForDoc = bot?.feishuClient;
-          if (!clientForDoc) {
-            jsonResponse(res, 404, { error: `Feishu bot not found: ${botName}` });
-            return;
-          }
-        } else {
-          clientForDoc = feishuServiceClient;
-          if (!clientForDoc) {
-            const feishuBots = registry.listByPlatform('feishu');
-            clientForDoc = feishuBots[0]?.feishuClient;
-          }
-        }
-        if (!clientForDoc) {
-          jsonResponse(res, 400, { error: 'No Feishu service app or bots configured' });
-          return;
-        }
-
-        const reader = new FeishuDocReader(clientForDoc, logger);
-        let result;
-
-        if (docUrl) {
-          result = await reader.readByUrl(docUrl);
-        } else if (docId) {
-          // Try as document ID first
-          result = await reader.readDocument(docId);
-        }
-
-        if (!result) {
-          jsonResponse(res, 404, { error: 'Document not found or unreadable' });
-          return;
-        }
-
-        jsonResponse(res, 200, result);
         return;
       }
 

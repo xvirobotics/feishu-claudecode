@@ -1,4 +1,5 @@
 import type { Logger } from '../utils/logger.js';
+import { proxyFetch } from '../utils/http.js';
 
 export interface FolderTreeNode {
   id: string;
@@ -58,7 +59,7 @@ export class MemoryClient {
     if (this.secret) {
       headers['Authorization'] = `Bearer ${this.secret}`;
     }
-    const res = await fetch(url, {
+    const res = await proxyFetch(url, {
       headers: { ...headers, ...options?.headers },
       ...options,
     });

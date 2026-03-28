@@ -23,6 +23,13 @@
       "defaultWorkingDirectory": "/home/user/project"
     }
   ],
+  "wechatBots": [
+    {
+      "name": "wechat-assistant",
+      "description": "WeChat AI assistant via iLink",
+      "defaultWorkingDirectory": "/home/user/project"
+    }
+  ],
   "peers": [
     {
       "name": "alice",

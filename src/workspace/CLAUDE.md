@@ -38,6 +38,20 @@ mb health                                  # Health check
 
 For full API (create bots, update tasks, sendCards), use the `/metabot` skill.
 
+### Feishu / Lark CLI (Feishu bots only)
+
+`lark-cli` is the official Feishu CLI tool with 200+ commands covering 11 business domains. It is pre-installed and configured for Feishu bots.
+
+```bash
+lark-cli docs +create --title "..." --markdown "..."    # Create document
+lark-cli docs +fetch --doc "<url>"                       # Read document
+lark-cli im +messages-send --chat-id oc_xxx --text "Hi"  # Send message
+lark-cli calendar +agenda --as user                      # View calendar
+lark-cli base records list ...                           # Query bitable
+```
+
+19 AI Agent Skills are installed (lark-doc, lark-im, lark-calendar, lark-sheets, lark-base, lark-task, lark-drive, lark-mail, lark-wiki, etc.) providing structured guidance for each domain.
+
 ## Guidelines
 
 - **Search before creating** — always check if a file or document already exists before creating new ones.

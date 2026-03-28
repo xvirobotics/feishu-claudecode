@@ -83,8 +83,22 @@ export function buildCard(state: CardState): string {
   // Stats note
   if (state.status === 'complete' || state.status === 'error') {
     const parts: string[] = [];
+    if (state.model) {
+      parts.push(state.model.replace(/^claude-/, ''));
+    }
     if (state.durationMs !== undefined) {
-      parts.push(`Duration: ${(state.durationMs / 1000).toFixed(1)}s`);
+      parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+    }
+    if (state.costUsd !== undefined) {
+      parts.push(`$${state.costUsd.toFixed(2)}`);
+    }
+    if (state.totalTokens && state.contextWindow) {
+      const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
+      const tokensK = state.totalTokens >= 1000
+        ? `${(state.totalTokens / 1000).toFixed(1)}k`
+        : `${state.totalTokens}`;
+      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
+      parts.push(`${tokensK}/${ctxK} (${pct}%)`);
     }
     if (parts.length > 0) {
       elements.push({

@@ -13,10 +13,12 @@
 
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
+import * as fsp from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as http from 'node:http';
 import type { Logger } from '../utils/logger.js';
+import { proxyFetch } from '../utils/http.js';
 import type { BotRegistry } from './bot-registry.js';
 
 const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB (Doubao flash limit)
@@ -83,7 +85,7 @@ async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger
 
   const requestId = crypto.randomUUID();
   const url = 'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash';
-  const response = await fetch(url, {
+  const response = await proxyFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -167,7 +169,7 @@ export async function elevenlabsTTS(text: string, voiceId: string): Promise<Buff
   if (!apiKey) throw Object.assign(new Error('ELEVENLABS_API_KEY not configured'), { statusCode: 500 });
 
   const url = `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`;
-  const response = await fetch(url, {
+  const response = await proxyFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -200,7 +202,7 @@ export async function doubaoTTS(text: string, speaker: string): Promise<Buffer> 
   }
 
   const url = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
-  const response = await fetch(url, {
+  const response = await proxyFetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -253,6 +255,20 @@ export async function doubaoTTS(text: string, speaker: string): Promise<Buffer> 
 }
 
 // ---------------------------------------------------------------------------
+// Edge TTS (Microsoft Edge, free, no API key needed)
+// ---------------------------------------------------------------------------
+
+export async function edgeTTS(text: string, voice: string): Promise<Buffer> {
+  const { EdgeTTS } = await import('node-edge-tts');
+  const tmpFile = `/tmp/mb-edge-tts-${Date.now()}.mp3`;
+  const tts = new EdgeTTS({ voice: voice || 'zh-CN-XiaoyiNeural', lang: 'zh-CN' });
+  await tts.ttsPromise(text, tmpFile);
+  const buf = await fsp.readFile(tmpFile);
+  await fsp.unlink(tmpFile).catch(() => {});
+  return buf;
+}
+
+// ---------------------------------------------------------------------------
 // Resolve defaults: prefer Doubao when keys are configured, fall back to OpenAI
 // ---------------------------------------------------------------------------
 
@@ -265,9 +281,9 @@ function resolveSTTProvider(explicit: string): string {
 
 export function resolveTTSProvider(explicit: string): string {
   if (explicit) return explicit;
-  // Default to doubao if Volcengine keys exist, otherwise none (no TTS)
+  // Default to doubao if Volcengine keys exist, otherwise edge (free, no key needed)
   if (process.env.VOLCENGINE_TTS_APPID && process.env.VOLCENGINE_TTS_ACCESS_KEY) return 'doubao';
-  return '';
+  return 'edge';
 }
 
 export function resolveTTSVoice(explicit: string, ttsProvider: string): string {
@@ -275,6 +291,7 @@ export function resolveTTSVoice(explicit: string, ttsProvider: string): string {
   // Sensible defaults per provider
   if (ttsProvider === 'doubao') return 'zh_female_wanqudashu_moon_bigtts';
   if (ttsProvider === 'elevenlabs') return 'EXAVITQu4vr4xnSDxMaL'; // Bella
+  if (ttsProvider === 'edge') return 'zh-CN-XiaoyiNeural';
   return 'alloy'; // OpenAI
 }
 
@@ -360,6 +377,8 @@ export async function handleVoiceRequest(
         audioOut = await elevenlabsTTS(ttsText, ttsVoice);
       } else if (ttsProvider === 'doubao') {
         audioOut = await doubaoTTS(ttsText, ttsVoice);
+      } else if (ttsProvider === 'edge') {
+        audioOut = await edgeTTS(ttsText, ttsVoice);
       } else {
         audioOut = await openaiTTS(ttsText, ttsVoice);
       }

@@ -40,6 +40,10 @@ interface RunningTask {
   startTime: number;
   executionHandle: ExecutionHandle;
   pendingQuestion: PendingQuestion | null;
+  /** Index of the question currently being displayed within pendingQuestion.questions */
+  currentQuestionIndex: number;
+  /** Accumulated answers keyed by question header (for multi-question calls) */
+  collectedAnswers: Record<string, string>;
   cardMessageId: string;
   questionTimeoutId?: ReturnType<typeof setTimeout>;
   processor: StreamProcessor;
@@ -244,49 +248,139 @@ export class MessageBridge {
     }
 
     const trimmed = text.trim();
-    const firstQuestion = pending.questions[0];
-    let answerText: string;
+    const currentQuestion = pending.questions[task.currentQuestionIndex];
+    if (!currentQuestion) return;
 
-    if (firstQuestion) {
-      const num = parseInt(trimmed, 10);
-      if (num >= 1 && num <= firstQuestion.options.length) {
-        answerText = firstQuestion.options[num - 1].label;
-      } else {
-        answerText = trimmed;
-      }
+    // Parse answer for the current question
+    let answerText: string;
+    const num = parseInt(trimmed, 10);
+    if (num >= 1 && num <= currentQuestion.options.length) {
+      answerText = currentQuestion.options[num - 1].label;
     } else {
       answerText = trimmed;
     }
 
-    const answers: Record<string, string> = {};
-    if (firstQuestion) {
-      for (const q of pending.questions) {
-        answers[q.header] = answerText;
+    // Store answer for this question
+    task.collectedAnswers[currentQuestion.header] = answerText;
+
+    this.logger.info(
+      { chatId, answer: answerText, questionIndex: task.currentQuestionIndex, total: pending.questions.length, toolUseId: pending.toolUseId },
+      'User answered question',
+    );
+
+    // Check if more questions remain in this AskUserQuestion call
+    if (task.currentQuestionIndex + 1 < pending.questions.length) {
+      task.currentQuestionIndex++;
+      // Reset question timeout for the next question
+      if (task.questionTimeoutId) {
+        clearTimeout(task.questionTimeoutId);
       }
+      task.questionTimeoutId = setTimeout(() => {
+        this.autoAnswerRemainingQuestions(task);
+      }, QUESTION_TIMEOUT_MS);
+
+      // Update card to show next question
+      const currentState = task.processor.getCurrentState();
+      const nextQ = pending.questions[task.currentQuestionIndex];
+      const displayQuestion: PendingQuestion = {
+        toolUseId: pending.toolUseId,
+        questions: [nextQ],
+      };
+      const progress = `(${task.currentQuestionIndex + 1}/${pending.questions.length})`;
+      await this.sender.updateCard(task.cardMessageId, {
+        ...currentState,
+        status: 'waiting_for_input',
+        responseText: currentState.responseText
+          ? currentState.responseText + `\n\n> **Reply ${progress}:** ${answerText}`
+          : `> **Reply:** ${answerText}`,
+        pendingQuestion: displayQuestion,
+      });
+      return;
     }
-    const answerJson = JSON.stringify({ answers });
+
+    // All questions in this call answered — send combined result
+    const answerJson = JSON.stringify({ answers: task.collectedAnswers });
 
     if (task.questionTimeoutId) {
       clearTimeout(task.questionTimeoutId);
       task.questionTimeoutId = undefined;
     }
     task.pendingQuestion = null;
+    task.currentQuestionIndex = 0;
+    task.collectedAnswers = {};
     task.processor.clearPendingQuestion();
 
     const sessionId = task.processor.getSessionId() || '';
     task.executionHandle.sendAnswer(pending.toolUseId, sessionId, answerJson);
 
-    this.logger.info({ chatId, answer: answerText, toolUseId: pending.toolUseId }, 'Sent user answer to Claude');
+    this.logger.info({ chatId, answers: task.collectedAnswers, toolUseId: pending.toolUseId }, 'Sent all answers to Claude');
 
-    // Update the card: remove question UI, show "running" with answer confirmation
+    // Check if there are more queued AskUserQuestion calls
+    const nextPending = task.processor.getPendingQuestion();
+    if (nextPending) {
+      task.pendingQuestion = nextPending;
+      task.currentQuestionIndex = 0;
+      task.collectedAnswers = {};
+
+      // Show next question call
+      const currentState = task.processor.getCurrentState();
+      const displayQuestion: PendingQuestion = {
+        toolUseId: nextPending.toolUseId,
+        questions: [nextPending.questions[0]],
+      };
+      const progress = nextPending.questions.length > 1 ? ` (1/${nextPending.questions.length})` : '';
+      task.questionTimeoutId = setTimeout(() => {
+        this.autoAnswerRemainingQuestions(task);
+      }, QUESTION_TIMEOUT_MS);
+
+      await this.sender.updateCard(task.cardMessageId, {
+        ...currentState,
+        status: 'waiting_for_input',
+        responseText: currentState.responseText
+          ? currentState.responseText + `\n\n> **Reply:** ${answerText}\n\n_Next question${progress}..._`
+          : `> **Reply:** ${answerText}\n\n_Next question${progress}..._`,
+        pendingQuestion: displayQuestion,
+      });
+      return;
+    }
+
+    // No more questions — resume normal execution
+    const answerSummary = Object.values(task.collectedAnswers).length > 0
+      ? Object.values(task.collectedAnswers).join(', ')
+      : answerText;
     const currentState = task.processor.getCurrentState();
     await this.sender.updateCard(task.cardMessageId, {
       ...currentState,
       status: 'running',
       responseText: currentState.responseText
-        ? currentState.responseText + `\n\n> **Reply:** ${answerText}\n\n_Continuing..._`
-        : `> **Reply:** ${answerText}\n\n_Continuing..._`,
+        ? currentState.responseText + `\n\n> **Reply:** ${answerSummary}\n\n_Continuing..._`
+        : `> **Reply:** ${answerSummary}\n\n_Continuing..._`,
     });
+  }
+
+  /** Auto-answer remaining questions when timeout fires. */
+  private autoAnswerRemainingQuestions(task: RunningTask): void {
+    const pending = task.pendingQuestion;
+    if (!pending) return;
+
+    this.logger.warn({ chatId: task.chatId, toolUseId: pending.toolUseId }, 'Question timeout, auto-answering remaining questions');
+
+    // Fill remaining unanswered questions with timeout message
+    for (let i = task.currentQuestionIndex; i < pending.questions.length; i++) {
+      const q = pending.questions[i];
+      if (!task.collectedAnswers[q.header]) {
+        task.collectedAnswers[q.header] = '用户未及时回复，请自行判断继续';
+      }
+    }
+
+    const answerJson = JSON.stringify({ answers: task.collectedAnswers });
+    task.pendingQuestion = null;
+    task.currentQuestionIndex = 0;
+    task.collectedAnswers = {};
+    task.processor.clearPendingQuestion();
+
+    const sid = task.processor.getSessionId() || '';
+    task.executionHandle.sendAnswer(pending.toolUseId, sid, answerJson);
   }
 
   /** Check if message is a media message with default (auto-generated) text. */
@@ -463,6 +557,8 @@ export class MessageBridge {
       startTime,
       executionHandle,
       pendingQuestion: null,
+      currentQuestionIndex: 0,
+      collectedAnswers: {},
       cardMessageId: messageId,
       processor,
       rateLimiter,
@@ -514,21 +610,40 @@ export class MessageBridge {
 
         // Check if we hit a waiting_for_input state
         if (state.status === 'waiting_for_input' && state.pendingQuestion) {
-          runningTask.pendingQuestion = state.pendingQuestion;
+          // Only initialize tracking when we see a NEW question call
+          if (!runningTask.pendingQuestion || runningTask.pendingQuestion.toolUseId !== state.pendingQuestion.toolUseId) {
+            runningTask.pendingQuestion = state.pendingQuestion;
+            runningTask.currentQuestionIndex = 0;
+            runningTask.collectedAnswers = {};
+          }
 
           await rateLimiter.flush();
-          await this.sender.updateCard(messageId, state);
 
+          // Show only the current question (not all at once)
+          const pending = runningTask.pendingQuestion;
+          const currentQ = pending.questions[runningTask.currentQuestionIndex];
+          const displayQuestion: PendingQuestion = {
+            toolUseId: pending.toolUseId,
+            questions: currentQ ? [currentQ] : pending.questions,
+          };
+          const progress = pending.questions.length > 1
+            ? ` (${runningTask.currentQuestionIndex + 1}/${pending.questions.length})`
+            : '';
+          await this.sender.updateCard(messageId, {
+            ...state,
+            pendingQuestion: displayQuestion,
+            // Append progress indicator to response if multi-question
+            responseText: progress
+              ? (state.responseText || '') + (state.responseText ? '\n\n' : '') + `_Question${progress}_`
+              : state.responseText,
+          });
+
+          // Set/reset timeout for auto-answer
+          if (runningTask.questionTimeoutId) {
+            clearTimeout(runningTask.questionTimeoutId);
+          }
           runningTask.questionTimeoutId = setTimeout(() => {
-            this.logger.warn({ chatId }, 'Question timeout, auto-answering');
-            const pending = runningTask.pendingQuestion;
-            if (pending) {
-              runningTask.pendingQuestion = null;
-              processor.clearPendingQuestion();
-              const sid = processor.getSessionId() || '';
-              const autoAnswer = JSON.stringify({ answers: { _timeout: '用户未及时回复，请自行判断继续' } });
-              executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
-            }
+            this.autoAnswerRemainingQuestions(runningTask);
           }, QUESTION_TIMEOUT_MS);
 
           continue;
@@ -779,6 +894,8 @@ export class MessageBridge {
       startTime,
       executionHandle,
       pendingQuestion: null,
+      currentQuestionIndex: 0,
+      collectedAnswers: {},
       cardMessageId: messageId || '',
       processor,
       rateLimiter,
@@ -1067,6 +1184,8 @@ export class MessageBridge {
    * Only sends for tasks that took longer than 10 seconds.
    */
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
+    // Some senders (WeChat) already send the final response as a standalone message, so skip
+    if (this.sender.skipCompletionNotice) return;
     // Only notify for tasks that took a while — quick tasks don't need it
     if (durationMs < 10_000) return;
 
@@ -1075,8 +1194,30 @@ export class MessageBridge {
       ? `${(durationMs / 60_000).toFixed(1)}min`
       : `${(durationMs / 1000).toFixed(0)}s`;
     const costStr = state.costUsd ? ` · $${state.costUsd.toFixed(2)}` : '';
-    const statusWord = state.status === 'complete' ? 'Task completed' : 'Task failed';
-    const message = `${statusEmoji} ${statusWord} (${durationStr}${costStr})`;
+    const statusWord = state.status === 'complete' ? 'Done' : 'Failed';
+
+    // Model display name: strip "claude-" prefix for brevity (e.g. "opus-4-6")
+    const modelStr = state.model
+      ? ` · ${state.model.replace(/^claude-/, '')}`
+      : '';
+
+    // Context usage: show totalTokens / contextWindow as percentage
+    let usageStr = '';
+    if (state.totalTokens && state.contextWindow) {
+      const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
+      const tokensK = state.totalTokens >= 1000
+        ? `${(state.totalTokens / 1000).toFixed(1)}k`
+        : `${state.totalTokens}`;
+      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
+      usageStr = ` · ${tokensK}/${ctxK} (${pct}%)`;
+    } else if (state.totalTokens) {
+      const tokensK = state.totalTokens >= 1000
+        ? `${(state.totalTokens / 1000).toFixed(1)}k`
+        : `${state.totalTokens}`;
+      usageStr = ` · ${tokensK} tokens`;
+    }
+
+    const message = `${statusEmoji} ${statusWord} (${durationStr}${costStr}${modelStr}${usageStr})`;
 
     try {
       await this.sender.sendText(chatId, message);

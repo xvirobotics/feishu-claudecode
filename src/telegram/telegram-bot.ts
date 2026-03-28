@@ -2,6 +2,7 @@ import { Bot } from 'grammy';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { TelegramBotConfig, BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
+import { shouldBypassProxy } from '../utils/http.js';
 import type { IncomingMessage } from '../types.js';
 import type { IMessageSender } from '../bridge/message-sender.interface.js';
 import { TelegramSender } from './telegram-sender.js';
@@ -27,10 +28,11 @@ export async function startTelegramBot(
   botLogger.info('Starting Telegram bot...');
 
   const proxyUrl = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy;
-  if (proxyUrl) {
+  const useProxy = proxyUrl && !shouldBypassProxy('https://api.telegram.org');
+  if (useProxy) {
     botLogger.info({ proxyUrl }, 'Using HTTPS proxy for Telegram API');
   }
-  const botOptions = proxyUrl
+  const botOptions = useProxy
     ? { client: { baseFetchConfig: { agent: new HttpsProxyAgent(proxyUrl) } } }
     : {};
 

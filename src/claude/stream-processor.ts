@@ -24,9 +24,12 @@ export class StreamProcessor {
   private costUsd: number | undefined;
   private durationMs: number | undefined;
   private _imagePaths: Set<string> = new Set();
-  private _pendingQuestion: PendingQuestion | null = null;
+  private _pendingQuestions: PendingQuestion[] = [];
   private _sdkHandledTools: DetectedTool[] = [];
   private _planFilePath: string | null = null;
+  private _model: string | undefined;
+  private _totalTokens: number | undefined;
+  private _contextWindow: number | undefined;
 
   constructor(private userPrompt: string) {}
 
@@ -60,7 +63,7 @@ export class StreamProcessor {
 
     // Determine running status
     const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
-    const status = this._pendingQuestion
+    const status = this._pendingQuestions.length > 0
       ? 'waiting_for_input'
       : hasActiveTools ? 'running' : this.responseText ? 'running' : 'thinking';
 
@@ -71,7 +74,7 @@ export class StreamProcessor {
       toolCalls: [...this.toolCalls],
       costUsd: this.costUsd,
       durationMs: this.durationMs,
-      pendingQuestion: this._pendingQuestion || undefined,
+      pendingQuestion: this._pendingQuestions[0] || undefined,
     };
   }
 
@@ -133,6 +136,26 @@ export class StreamProcessor {
     this.costUsd = message.total_cost_usd;
     this.durationMs = message.duration_ms;
 
+    // Extract model usage info (per-model breakdown from SDK)
+    if (message.modelUsage) {
+      const models = Object.keys(message.modelUsage);
+      if (models.length > 0) {
+        // Primary model is the one with highest cost
+        const primaryModel = models.reduce((a, b) =>
+          (message.modelUsage![a].costUSD ?? 0) >= (message.modelUsage![b].costUSD ?? 0) ? a : b
+        );
+        const mu = message.modelUsage[primaryModel];
+        this._model = primaryModel;
+        this._contextWindow = mu.contextWindow;
+        // Sum tokens across all models
+        let totalTokens = 0;
+        for (const m of models) {
+          totalTokens += (message.modelUsage![m].inputTokens ?? 0) + (message.modelUsage![m].outputTokens ?? 0);
+        }
+        this._totalTokens = totalTokens;
+      }
+    }
+
     // Mark all tools as done
     for (const tool of this.toolCalls) {
       tool.status = 'done';
@@ -153,6 +176,9 @@ export class StreamProcessor {
       errorMessage: isError
         ? (message.errors?.join('; ') || `Ended with: ${message.subtype}`)
         : isApiError ? resultText : undefined,
+      model: this._model,
+      totalTokens: this._totalTokens,
+      contextWindow: this._contextWindow,
     };
   }
 
@@ -206,15 +232,18 @@ export class StreamProcessor {
       multiSelect: Boolean(q.multiSelect),
     }));
 
-    this._pendingQuestion = { toolUseId, questions: parsed };
+    // Queue instead of overwrite — supports multiple AskUserQuestion calls
+    this._pendingQuestions.push({ toolUseId, questions: parsed });
   }
 
+  /** Remove the first pending question (after it's been fully answered). */
   clearPendingQuestion(): void {
-    this._pendingQuestion = null;
+    this._pendingQuestions.shift();
   }
 
+  /** Peek at the first pending question without removing it. */
   getPendingQuestion(): PendingQuestion | null {
-    return this._pendingQuestion;
+    return this._pendingQuestions[0] ?? null;
   }
 
   /**
@@ -233,7 +262,7 @@ export class StreamProcessor {
   /** Return the current card state without processing a new message. */
   getCurrentState(): CardState {
     const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
-    const status = this._pendingQuestion
+    const status = this._pendingQuestions.length > 0
       ? 'waiting_for_input'
       : hasActiveTools ? 'running' : this.responseText ? 'running' : 'thinking';
     return {
@@ -243,7 +272,7 @@ export class StreamProcessor {
       toolCalls: [...this.toolCalls],
       costUsd: this.costUsd,
       durationMs: this.durationMs,
-      pendingQuestion: this._pendingQuestion || undefined,
+      pendingQuestion: this._pendingQuestions[0] || undefined,
     };
   }
 

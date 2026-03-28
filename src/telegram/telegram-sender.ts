@@ -6,6 +6,7 @@ import { Bot, InputFile } from 'grammy';
 import type { IMessageSender } from '../bridge/message-sender.interface.js';
 import type { CardState, CardStatus } from '../types.js';
 import type { Logger } from '../utils/logger.js';
+import { shouldBypassProxy } from '../utils/http.js';
 
 const MAX_MESSAGE_LENGTH = 4096;
 
@@ -79,8 +80,22 @@ function renderCardHtml(state: CardState): string {
   // Stats
   if (state.status === 'complete' || state.status === 'error') {
     const statParts: string[] = [];
+    if (state.model) {
+      statParts.push(state.model.replace(/^claude-/, ''));
+    }
     if (state.durationMs !== undefined) {
-      statParts.push(`Duration: ${(state.durationMs / 1000).toFixed(1)}s`);
+      statParts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+    }
+    if (state.costUsd !== undefined) {
+      statParts.push(`$${state.costUsd.toFixed(2)}`);
+    }
+    if (state.totalTokens && state.contextWindow) {
+      const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
+      const tokensK = state.totalTokens >= 1000
+        ? `${(state.totalTokens / 1000).toFixed(1)}k`
+        : `${state.totalTokens}`;
+      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
+      statParts.push(`${tokensK}/${ctxK} (${pct}%)`);
     }
     if (statParts.length > 0) {
       parts.push('');
@@ -465,7 +480,7 @@ function downloadUrl(url: string, savePath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const proxyUrl = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy;
     const options: https.RequestOptions = {};
-    if (proxyUrl) {
+    if (proxyUrl && !shouldBypassProxy(url)) {
       options.agent = new HttpsProxyAgent(proxyUrl);
     }
     const proto = url.startsWith('https') ? https : http;

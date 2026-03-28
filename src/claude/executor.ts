@@ -22,35 +22,53 @@ function resolveClaudePath(): string {
 const CLAUDE_EXECUTABLE = resolveClaudePath();
 
 /**
- * Custom spawn function for cross-platform compatibility.
- * - Uses process.execPath (current Node binary) to avoid PATH issues on Windows.
- * - Filters CLAUDE* env vars to prevent "nested session" errors.
- * - Merges process.env so child inherits system PATH, TEMP, etc.
+ * Env var prefixes to strip from the inherited process environment.
+ * - CLAUDE*: prevents "nested session" errors from the SDK.
+ * - ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN: ensures the child Claude Code
+ *   process resolves auth from ~/.claude/.credentials.json (written by
+ *   `cc switch`, `claude /login`, etc.) rather than stale PM2 env vars.
+ *   Users who need a fixed API key can set `apiKey` in bots.json instead.
  */
-function customSpawn(options: SpawnOptions): SpawnedProcess {
-  const nodePath = process.execPath;
+const FILTERED_ENV_PREFIXES = ['CLAUDE', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
 
-  // Merge provided env with process.env for a complete environment
-  const baseEnv = options.env && Object.keys(options.env).length > 0
-    ? { ...process.env, ...options.env }
-    : { ...process.env };
+/**
+ * Create a custom spawn function for cross-platform compatibility.
+ * - Uses process.execPath (current Node binary) to avoid PATH issues on Windows.
+ * - Filters CLAUDE* and ANTHROPIC auth env vars (see above).
+ * - Merges process.env so child inherits system PATH, TEMP, etc.
+ * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
+ */
+function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+  return (options: SpawnOptions): SpawnedProcess => {
+    const nodePath = process.execPath;
 
-  // Filter out CLAUDE* vars to avoid nested session detection
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(baseEnv)) {
-    if (!key.startsWith('CLAUDE') && value !== undefined) {
-      env[key] = value;
+    // Merge provided env with process.env for a complete environment
+    const baseEnv = options.env && Object.keys(options.env).length > 0
+      ? { ...process.env, ...options.env }
+      : { ...process.env };
+
+    // Filter out env vars that interfere with auth or cause nested session errors
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(baseEnv)) {
+      if (value !== undefined && !FILTERED_ENV_PREFIXES.some(p => key.startsWith(p))) {
+        env[key] = value;
+      }
     }
-  }
 
-  const child = spawn(nodePath, options.args, {
-    cwd: options.cwd,
-    env,
-    signal: options.signal,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  });
+    // Inject explicit API key from bots.json (after filtering, so it takes effect)
+    if (explicitApiKey) {
+      env.ANTHROPIC_API_KEY = explicitApiKey;
+    }
 
-  return child as unknown as SpawnedProcess;
+    const child = spawn(nodePath, options.args, {
+      cwd: options.cwd,
+      env,
+      signal: options.signal,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    return child as unknown as SpawnedProcess;
+  };
 }
 
 export interface ApiContext {
@@ -89,6 +107,8 @@ export type SDKMessage = {
   is_error?: boolean;
   num_turns?: number;
   errors?: string[];
+  // Model usage from result message (per-model breakdown)
+  modelUsage?: Record<string, { inputTokens: number; outputTokens: number; contextWindow: number; costUSD: number }>;
   // Stream event fields
   event?: {
     type: string;
@@ -131,7 +151,7 @@ export class ClaudeExecutor {
       // Cross-platform spawn: custom spawn filters CLAUDE* env vars and uses
       // process.execPath to avoid PATH issues on Windows; fileURLToPath converts
       // file:// URLs to native paths for the SDK CLI entrypoint.
-      spawnClaudeCodeProcess: customSpawn,
+      spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey),
       executableArgs: [fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk/cli.js'))],
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
     };
