@@ -1,19 +1,17 @@
 /* ============================================================
    PixelOffice — 2D Pixel art virtual office for the Team tab.
-   Replaces TeamDashboard with an interactive pixel office where
-   each agent sits at a desk and the user can walk around and chat.
+   Each bot gets its own room with sub-agents at desks inside.
+   Click any agent (lead or sub-agent) to open a chat session.
    ============================================================ */
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useStore, type BotStatus, type TeamStatus } from '../../store';
 import { OfficeCanvas } from './canvas/OfficeCanvas';
 import { generateLayout } from './engine/layout-generator';
 import { agentColor } from './canvas/sprites';
-import { worldToScreen } from './engine/interaction';
 import { ChatSidePanel } from './ui/ChatSidePanel';
 import { AgentTooltip } from './ui/AgentTooltip';
-import type { AgentSprite, Position } from './types';
-import { TILE_SIZE } from './types';
+import type { AgentSprite } from './types';
 import styles from './PixelOffice.module.css';
 
 /* ── Team status polling hook ── */
@@ -62,50 +60,84 @@ export function PixelOffice() {
   const [hoveredAgent, setHoveredAgent] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-  // Generate layout from bot names
+  // Count total sub-agents for summary
+  const totalSubAgents = useMemo(() => {
+    if (!teamStatus) return 0;
+    return teamStatus.bots.reduce((sum, b) => sum + (b.agents?.length || 0), 0);
+  }, [teamStatus]);
+
+  // Generate layout: each bot gets a room with its sub-agents
   const layout = useMemo(() => {
     if (!teamStatus) return null;
     const bots = teamStatus.bots.map((b) => ({
       name: b.name,
       specialties: b.specialties,
       platform: b.platform,
+      agents: b.agents?.map((a) => ({
+        name: a.name,
+        description: a.description,
+        model: a.model,
+      })),
     }));
     return generateLayout(bots);
-  }, [teamStatus?.bots.length]); // only regenerate when bot count changes
+  }, [teamStatus?.bots.map((b) => `${b.name}:${b.agents?.length || 0}`).join(',')]);
 
-  // Build agent sprites from team status + layout positions
+  // Build agent sprites for leads AND sub-agents
   const agents = useMemo(() => {
     const map = new Map<string, AgentSprite>();
     if (!teamStatus || !layout) return map;
 
     for (const bot of teamStatus.bots) {
-      const pos = layout.agentPositions.get(bot.name);
-      if (!pos) continue;
-      map.set(bot.name, {
-        botName: bot.name,
-        position: pos.seat,
-        deskPosition: pos.desk,
-        status: bot.status,
-        color: agentColor(bot.name),
-        description: bot.description,
-        specialties: bot.specialties,
-        platform: bot.platform,
-        currentTask: bot.currentTask
-          ? { durationMs: bot.currentTask.durationMs }
-          : undefined,
-        stats: bot.stats
-          ? {
-              totalTasks: bot.stats.totalTasks,
-              completedTasks: bot.stats.completedTasks,
-              totalCostUsd: bot.stats.totalCostUsd,
-            }
-          : undefined,
-      });
+      // Lead bot sprite
+      const leadPos = layout.agentPositions.get(bot.name);
+      if (leadPos) {
+        map.set(bot.name, {
+          botName: bot.name,
+          position: leadPos.seat,
+          deskPosition: leadPos.desk,
+          status: bot.status,
+          color: agentColor(bot.name),
+          description: bot.description,
+          specialties: bot.specialties,
+          platform: bot.platform,
+          currentTask: bot.currentTask
+            ? { durationMs: bot.currentTask.durationMs }
+            : undefined,
+          stats: bot.stats
+            ? {
+                totalTasks: bot.stats.totalTasks,
+                completedTasks: bot.stats.completedTasks,
+                totalCostUsd: bot.stats.totalCostUsd,
+              }
+            : undefined,
+          isLead: true,
+        });
+      }
+
+      // Sub-agent sprites
+      if (bot.agents) {
+        for (const sub of bot.agents) {
+          const key = `${bot.name}/${sub.name}`;
+          const subPos = layout.agentPositions.get(key);
+          if (!subPos) continue;
+          map.set(key, {
+            botName: sub.name,
+            position: subPos.seat,
+            deskPosition: subPos.desk,
+            status: 'idle', // sub-agents don't have independent status
+            color: agentColor(sub.name),
+            description: sub.description,
+            platform: sub.model || 'sub-agent',
+            isLead: false,
+            parentBot: bot.name,
+          });
+        }
+      }
     }
     return map;
   }, [teamStatus, layout]);
 
-  // Track mouse for tooltip positioning
+  // Track mouse for tooltip
   useEffect(() => {
     const handler = (e: MouseEvent) => setMousePos({ x: e.clientX, y: e.clientY });
     window.addEventListener('mousemove', handler);
@@ -124,8 +156,15 @@ export function PixelOffice() {
     setSelectedAgent(null);
   }, []);
 
-  // Find bot status for selected/hovered agent
-  const selectedBotStatus = teamStatus?.bots.find((b) => b.name === selectedAgent);
+  // For chat panel: resolve the actual bot name to chat with
+  // Sub-agents chat through their parent bot
+  const chatBotName = useMemo(() => {
+    if (!selectedAgent) return null;
+    const sprite = agents.get(selectedAgent);
+    return sprite?.parentBot || selectedAgent;
+  }, [selectedAgent, agents]);
+
+  const selectedBotStatus = teamStatus?.bots.find((b) => b.name === chatBotName);
   const hoveredAgentSprite = hoveredAgent ? agents.get(hoveredAgent) : null;
 
   if (loading && !teamStatus) {
@@ -153,7 +192,10 @@ export function PixelOffice() {
       {/* Status bar */}
       <div className={styles.statusBar}>
         <span className={styles.stat}>
-          <span className={styles.statValue}>{summary.totalBots}</span> Agents
+          <span className={styles.statValue}>{summary.totalBots}</span> Bots
+        </span>
+        <span className={styles.stat}>
+          <span className={styles.statValue}>{totalSubAgents}</span> Sub-agents
         </span>
         <span className={styles.stat}>
           <span className={styles.statBusy}>{summary.busyBots}</span> Busy
@@ -167,7 +209,7 @@ export function PixelOffice() {
         <span className={styles.hint}>Click agent to chat | Click floor to move</span>
       </div>
 
-      {/* Main content: canvas + optional side panel */}
+      {/* Main content */}
       <div className={styles.main}>
         <div className={styles.canvasArea}>
           <OfficeCanvas
@@ -182,10 +224,10 @@ export function PixelOffice() {
           />
         </div>
 
-        {/* Chat side panel */}
-        {selectedAgent && (
+        {/* Chat side panel — always talks to the parent bot */}
+        {chatBotName && (
           <ChatSidePanel
-            botName={selectedAgent}
+            botName={chatBotName}
             botStatus={selectedBotStatus}
             onClose={handleCloseChat}
           />

@@ -33,9 +33,17 @@ export function AgentTooltip({ agent, screenX, screenY }: AgentTooltipProps) {
       }}
     >
       <div className={styles.header}>
-        <span className={styles.name}>{agent.botName}</span>
+        <span className={styles.name}>
+          {agent.isLead ? '\u{2B50} ' : ''}{agent.botName}
+        </span>
         <span className={styles.status}>{statusEmoji} {agent.status}</span>
       </div>
+      {agent.parentBot && (
+        <div className={styles.parent}>Team: {agent.parentBot}</div>
+      )}
+      {agent.platform && !agent.parentBot && (
+        <div className={styles.parent}>{agent.platform}</div>
+      )}
       {agent.description && <div className={styles.desc}>{agent.description}</div>}
       {agent.specialties && agent.specialties.length > 0 && (
         <div className={styles.tags}>

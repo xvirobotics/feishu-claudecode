@@ -37,6 +37,10 @@ export interface AgentSprite {
   platform?: string;
   currentTask?: { durationMs: number };
   stats?: { totalTasks: number; completedTasks: number; totalCostUsd: number };
+  /** True if this is the lead bot (not a sub-agent) */
+  isLead?: boolean;
+  /** Parent bot name (set for sub-agents) */
+  parentBot?: string;
 }
 
 export interface Room {

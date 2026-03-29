@@ -106,6 +106,7 @@ export function renderFrame(
           d.name,
           frame,
           d.name === selectedAgent,
+          a.isLead,
         );
         // Hover highlight
         if (d.name === hoveredAgent && d.name !== selectedAgent) {

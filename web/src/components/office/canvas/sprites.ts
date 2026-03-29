@@ -153,6 +153,7 @@ export function drawAgent(
   name: string,
   frame: number,
   isSelected: boolean,
+  isLead?: boolean,
 ): void {
   const px = x * TILE_SIZE;
   const py = y * TILE_SIZE;
@@ -164,6 +165,14 @@ export function drawAgent(
     ctx.lineWidth = 2;
     ctx.strokeRect(px - 2, py - 18, TILE_SIZE + 4, TILE_SIZE + 22);
     ctx.lineWidth = 1;
+  }
+
+  // Lead badge glow
+  if (isLead) {
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.15)';
+    ctx.beginPath();
+    ctx.arc(cx, py + 12, 18, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // Body

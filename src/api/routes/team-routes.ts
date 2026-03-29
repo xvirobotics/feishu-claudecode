@@ -14,7 +14,7 @@ export async function handleTeamRoutes(
 
   // GET /api/team/status
   if (method === 'GET' && url === '/api/team/status') {
-    const status = getTeamStatus(registry);
+    const status = await getTeamStatus(registry);
     jsonResponse(res, 200, status);
     return true;
   }
