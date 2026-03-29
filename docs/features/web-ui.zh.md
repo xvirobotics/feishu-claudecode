@@ -13,9 +13,13 @@ Web UI 是一个 React SPA，部署在 MetaBot 服务器的 `/web/` 路径。通
 - **实时流式聊天** — 基于 WebSocket 的流式输出，展示工具调用过程
 - **Markdown 渲染** — 语法高亮、代码块、表格
 - **电话语音模式** — 点击电话图标免手语音对话，VAD 自动检测说完
+- **RTC 实时通话** — 基于火山引擎 RTC 的双向语音/视频通话
+- **群聊模式** — 多个 Agent 在一个对话中协作，@mention 路由到指定 Agent
 - **交互式问答** — 内联回答 Claude 的待确认问题
 - **会话管理** — 多会话、重置、切换 Bot
 - **MetaMemory 浏览器** — 浏览和搜索知识库文档
+- **团队看板** — 查看 Agent 组织状态概览
+- **文件支持** — 上传/下载文件，内联预览
 - **明暗主题** — 跟随系统或手动切换
 - **响应式设计** — 桌面端和移动端均可使用
 
@@ -138,7 +142,12 @@ sudo journalctl -u caddy
 | `web/src/store.ts` | Zustand 状态管理（认证、会话、Bot、主题） |
 | `web/src/hooks/useWebSocket.ts` | WebSocket 自动重连 + 指数退避 |
 | `web/src/components/ChatView.tsx` | 主聊天界面 + 电话语音覆盖层 |
+| `web/src/components/VoiceView.tsx` | 电话语音模式 + VAD |
+| `web/src/components/RtcCallOverlay.tsx` | RTC 语音/视频通话 UI |
 | `web/src/components/MemoryView.tsx` | MetaMemory 文档浏览器 |
+| `web/src/components/TeamDashboard.tsx` | 团队状态概览 |
+| `web/src/components/InputBar.tsx` | 消息输入 + 文件附件 |
+| `web/src/components/MessageList.tsx` | 实时消息流 |
 | `web/src/theme.css` | CSS 自定义属性设计系统 |
 
 ### 静态文件服务

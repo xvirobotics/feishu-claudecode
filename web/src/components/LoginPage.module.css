@@ -1,0 +1,161 @@
+/* ============================================================
+   LoginPage — "NEXUS"
+   Clean card on void background, no orbs.
+   ============================================================ */
+
+.page {
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--void);
+  position: relative;
+  overflow: hidden;
+}
+
+.card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 20px;
+  padding: 48px 40px;
+  background: var(--surface-0);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-xl);
+  animation: v2-scaleIn 500ms var(--ease-out);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.logoIcon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -1px;
+  box-shadow: 0 0 16px rgba(0, 214, 143, 0.3);
+}
+
+.logoText {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: var(--text-0);
+}
+
+.subtitle {
+  text-align: center;
+  color: var(--text-1);
+  font-size: 14.5px;
+  margin-bottom: 40px;
+  line-height: 1.65;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.inputGroup {
+  position: relative;
+}
+
+.inputLabel {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+}
+
+.input {
+  width: 100%;
+  padding: 14px 18px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  color: var(--text-0);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  transition: border-color var(--duration-base), box-shadow var(--duration-base);
+}
+
+.input::placeholder { color: var(--text-3); }
+
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(0, 214, 143, 0.15);
+}
+
+.submitBtn {
+  width: 100%;
+  padding: 13px 24px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+  border-radius: var(--r-md);
+  transition: transform var(--duration-fast), opacity var(--duration-fast);
+  margin-top: 4px;
+  letter-spacing: -0.1px;
+}
+
+.submitBtn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  opacity: 0.9;
+}
+
+.submitBtn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.submitBtn:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+.error {
+  padding: 12px 16px;
+  background: var(--red-soft);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--r-md);
+  color: var(--red);
+  font-size: 13px;
+  animation: v2-fadeIn 200ms var(--ease-out);
+}
+
+.footer {
+  text-align: center;
+  margin-top: 32px;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.footer a {
+  color: var(--text-1);
+  transition: color var(--duration-fast);
+}
+
+.footer a:hover { color: var(--accent-text); }
+
+@media (max-width: 480px) {
+  .card { padding: 40px 28px; margin: 0 16px; }
+}

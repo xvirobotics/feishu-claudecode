@@ -74,6 +74,10 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
 export interface ApiContext {
   botName: string;
   chatId: string;
+  /** Group chat member names — enables inter-bot communication prompt. */
+  groupMembers?: string[];
+  /** Group ID — used to build grouptalk chatIds for inter-bot communication. */
+  groupId?: string;
 }
 
 export interface ExecutorOptions {
@@ -83,6 +87,12 @@ export interface ExecutorOptions {
   abortController: AbortController;
   outputsDir?: string;
   apiContext?: ApiContext;
+  /** Override maxTurns for this execution. */
+  maxTurns?: number;
+  /** Override model for this execution (e.g. faster model for voice calls). */
+  model?: string;
+  /** Override allowed tools for this execution (empty array = no tools). */
+  allowedTools?: string[];
 }
 
 export type SDKMessage = {
@@ -170,6 +180,21 @@ export class ClaudeExecutor {
       appendSections.push(
         `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
       );
+
+      // Group chat — tell the bot who else is in the group and how to talk to them
+      if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {
+        const others = apiContext.groupMembers.filter((m) => m !== apiContext.botName);
+        const groupId = apiContext.groupId;
+        if (groupId) {
+          appendSections.push(
+            `## Group Chat\nYou are in a group chat (group: ${groupId}) with these bots: ${others.join(', ')}.\nTo talk to another bot, use: \`mb talk <botName> grouptalk-${groupId}-<botName> "message"\`\nExample: \`mb talk ${others[0]} grouptalk-${groupId}-${others[0]} "hello"\`\nIMPORTANT: Always use the grouptalk-${groupId}-<botName> chatId pattern when talking to other bots in this group.`
+          );
+        } else {
+          appendSections.push(
+            `## Group Chat\nYou are in a group chat with these bots: ${others.join(', ')}.\nUse \`mb talk <botName> <chatId> "message"\` to communicate with other bots in the group.`
+          );
+        }
+      }
     }
 
     if (appendSections.length > 0) {
@@ -219,6 +244,15 @@ export class ClaudeExecutor {
     inputQueue.enqueue(initialMessage);
 
     const queryOptions = this.buildQueryOptions(cwd, sessionId, abortController, outputsDir, apiContext);
+    if (options.maxTurns !== undefined) {
+      queryOptions.maxTurns = options.maxTurns;
+    }
+    if (options.model) {
+      queryOptions.model = options.model;
+    }
+    if (options.allowedTools !== undefined) {
+      queryOptions.allowedTools = options.allowedTools;
+    }
 
     const stream = query({
       prompt: inputQueue,

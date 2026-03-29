@@ -1,0 +1,415 @@
+/* ============================================================
+   MemoryView — "NEXUS" Two-Pane
+   ============================================================ */
+
+.container {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  background: var(--void);
+}
+
+/* ── Tree Sidebar ── */
+.treeSidebar {
+  width: 250px;
+  min-width: 250px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+  border-right: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+.treeHeader {
+  padding: 22px 18px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.treeTitle {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-family: var(--font-mono);
+}
+
+.treeActions { display: flex; gap: 2px; }
+
+.treeActionBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.treeActionBtn:hover { background: var(--surface-hover); color: var(--text-0); }
+
+.treeList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px 16px;
+}
+
+.treeItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-1);
+  transition: background var(--duration-fast), color var(--duration-fast);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+}
+.treeItem:hover { background: var(--surface-hover); color: var(--text-0); }
+
+.treeItemActive {
+  background: var(--accent-softer);
+  color: var(--text-0);
+  font-weight: 500;
+}
+
+.treeItemIcon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+}
+
+.treeItemActive .treeItemIcon {
+  opacity: 1;
+  color: var(--accent-text);
+}
+
+/* ── Main Area ── */
+.mainArea {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+}
+
+.searchBar {
+  padding: 18px 28px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.searchInput {
+  width: 100%;
+  padding: 11px 16px 11px 40px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  color: var(--text-0);
+  font-size: 13px;
+  outline: none;
+  transition: border-color var(--duration-base), box-shadow var(--duration-base);
+  background-image: url("data:image/svg+xml,%3Csvg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2352525b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cline x1='21' y1='21' x2='16.65' y2='16.65'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 13px center;
+}
+.searchInput::placeholder { color: var(--text-3); }
+.searchInput:focus { border-color: rgba(0, 214, 143, 0.3); box-shadow: 0 0 0 1px rgba(0, 214, 143, 0.1); }
+
+/* Document list */
+.docList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.docItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.docItem:hover { background: var(--surface-hover); }
+
+.docItemIcon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--accent-softer);
+  border: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--accent-text);
+}
+
+.docItemContent { flex: 1; min-width: 0; }
+
+.docItemTitle {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-0);
+  margin-bottom: 2px;
+  line-height: 1.3;
+  letter-spacing: -0.1px;
+}
+
+.docItemPath {
+  font-size: 12px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.docItemMeta {
+  display: flex;
+  gap: 16px;
+  margin-top: 6px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.docItemTags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.tag {
+  padding: 2px 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-full);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+
+/* Document viewer */
+.docViewer {
+  flex: 1;
+  overflow-y: auto;
+  padding: 36px 48px;
+}
+
+.docViewerHeader {
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.docViewerTitle {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-0);
+  letter-spacing: -0.6px;
+  margin-bottom: 10px;
+  line-height: 1.25;
+}
+
+.docViewerMeta {
+  display: flex;
+  gap: 18px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.docViewerContent {
+  font-size: 14.5px;
+  line-height: 1.8;
+  color: var(--text-0);
+}
+
+.docViewerContent h1 { font-size: 24px; font-weight: 700; margin-top: 32px; margin-bottom: 12px; letter-spacing: -0.4px; }
+.docViewerContent h2 { font-size: 19px; font-weight: 700; margin-top: 28px; margin-bottom: 10px; letter-spacing: -0.3px; }
+.docViewerContent h3 { font-size: 15px; font-weight: 600; margin-top: 24px; margin-bottom: 8px; }
+.docViewerContent p { margin-bottom: 14px; }
+.docViewerContent ul, .docViewerContent ol { margin-bottom: 14px; padding-left: 22px; }
+.docViewerContent li { margin-bottom: 4px; }
+
+.docViewerContent blockquote {
+  margin: 16px 0;
+  padding: 12px 18px;
+  border-left: 3px solid var(--accent);
+  background: var(--surface-1);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  color: var(--text-1);
+}
+
+.docViewerContent code:not(pre code) {
+  background: var(--surface-2);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-xs);
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 0.84em;
+  color: var(--accent-text);
+}
+
+.docViewerContent pre {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: var(--r-md);
+  padding: 16px 18px;
+  margin: 16px 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.docViewerContent a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.docViewerContent hr { border: none; border-top: 1px solid var(--glass-border); margin: 28px 0; }
+.docViewerContent table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
+.docViewerContent th, .docViewerContent td { padding: 10px 14px; border: 1px solid var(--glass-border); text-align: left; }
+.docViewerContent th { background: var(--surface-1); font-weight: 600; }
+
+/* Empty / loading */
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 48px;
+  color: var(--text-2);
+}
+
+.emptyIcon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 18px;
+  color: var(--text-2);
+}
+
+.emptyTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin-bottom: 6px;
+}
+
+.emptySubtitle {
+  font-size: 13px;
+  text-align: center;
+  max-width: 300px;
+  line-height: 1.65;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--text-2);
+  font-size: 13px;
+  gap: 10px;
+}
+
+.loadingSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--glass-border-hover);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.backBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  margin-bottom: 16px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.backBtn:hover { background: var(--surface-hover); color: var(--text-0); }
+
+/* ── Mobile Folder Pills ── */
+
+.mobileFolderBar {
+  display: none;
+  gap: 8px;
+  padding: 14px 18px 6px;
+  overflow-x: auto;
+  flex-shrink: 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mobileFolderBar::-webkit-scrollbar { display: none; }
+
+.folderPill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: var(--r-full);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  white-space: nowrap;
+  transition: all var(--duration-fast);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.folderPill:active {
+  background: var(--surface-2);
+}
+
+.folderPillActive {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+@media (max-width: 768px) {
+  .treeSidebar { display: none; }
+  .mobileFolderBar { display: flex; }
+  .docViewer { padding: 24px 18px; }
+  .searchBar { padding: 14px 18px; }
+  .docList { padding: 8px 18px; }
+}

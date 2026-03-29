@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
 
 /** Skills installed for all platforms. */
-const COMMON_SKILLS = ['metaskill', 'metamemory', 'metabot', 'voice'];
+const COMMON_SKILLS = ['metaskill', 'metamemory', 'metabot', 'phone-call'];
 
 /** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
  *  symlinked into ~/.claude/skills/ automatically. We copy them to the bot
@@ -21,7 +21,7 @@ const LARK_CLI_SKILLS = [
 
 export interface InstallSkillsOptions {
   /** Bot platform — feishu-only skills are skipped for other platforms. */
-  platform?: 'feishu' | 'telegram' | 'wechat';
+  platform?: 'feishu' | 'telegram' | 'web' | 'wechat';
   /** Feishu app credentials for lark-cli auto-config (feishu only). */
   feishuAppId?: string;
   feishuAppSecret?: string;

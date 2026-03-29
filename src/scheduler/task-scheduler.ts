@@ -4,6 +4,8 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Logger } from '../utils/logger.js';
 import type { BotRegistry } from '../api/bot-registry.js';
+import type { WebSocketHandle } from '../web/ws-server.js';
+import type { CardState } from '../types.js';
 import { isValidCron, nextCronOccurrence, getDefaultTimezone } from './cron-utils.js';
 
 // --- One-time task types (unchanged) ---
@@ -99,12 +101,18 @@ export class TaskScheduler {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private recurringTasks = new Map<string, RecurringTask>();
   private recurringTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private wsHandle?: WebSocketHandle;
 
   constructor(
     private registry: BotRegistry,
     private logger: Logger,
   ) {
     this.loadFromDisk();
+  }
+
+  /** Set WebSocket handle for streaming task updates to connected clients. */
+  setWebSocketHandle(handle: WebSocketHandle): void {
+    this.wsHandle = handle;
   }
 
   // ===== One-time task methods (unchanged) =====
@@ -378,12 +386,24 @@ export class TaskScheduler {
     this.saveToDisk();
     this.logger.info({ taskId: id, botName: task.botName, chatId: task.chatId }, 'Firing scheduled task');
 
+    // Generate a messageId for WebSocket streaming
+    const messageId = `sched_${task.id}`;
+
     try {
       const result = await bot.bridge.executeApiTask({
         prompt: task.prompt,
         chatId: task.chatId,
         userId: 'scheduler',
         sendCards: task.sendCards,
+        onUpdate: (state: CardState, _bridgeMessageId: string, final: boolean) => {
+          // Stream updates to any WebSocket client subscribed to this chatId
+          if (this.wsHandle) {
+            const msg = final
+              ? { type: 'complete' as const, chatId: task.chatId, messageId, state, botName: task.botName }
+              : { type: 'state' as const, chatId: task.chatId, messageId, state, botName: task.botName };
+            this.wsHandle.subscriptions.broadcast(task.chatId, msg);
+          }
+        },
       });
 
       task.status = result.success ? 'completed' : 'failed';

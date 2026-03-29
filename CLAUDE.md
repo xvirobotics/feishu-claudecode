@@ -10,7 +10,8 @@ MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude C
 
 ```bash
 npm run dev          # Development with tsx (hot reload)
-npm run build        # TypeScript compile to dist/
+npm run build        # TypeScript compile + build web frontend to dist/
+npm run build:web    # Build web frontend only (Vite → dist/web/)
 npm start            # Run compiled output (dist/index.js)
 ```
 
@@ -28,6 +29,7 @@ The app is a TypeScript ESM project (`"type": "module"`, all imports use `.js` e
 
 ```
 Feishu WSClient → EventHandler (parse, @mention filter) → MessageBridge → ClaudeExecutor → StreamProcessor → Feishu card updates
+Web Browser → WebSocket (/ws) → ws-server.ts → MessageBridge.executeApiTask(onUpdate) → WebSocket push → React UI
 ```
 
 ### Key Modules
@@ -45,6 +47,7 @@ Feishu WSClient → EventHandler (parse, @mention filter) → MessageBridge → 
 - **`src/feishu/message-sender.ts`** — Feishu API wrapper for sending/updating cards, uploading/downloading images, sending text.
 - **`src/bridge/rate-limiter.ts`** — Throttles card updates to avoid Feishu API rate limits (default 1.5s interval). Keeps only the latest pending update.
 - **`src/api/peer-manager.ts`** — Manages cross-instance bot discovery and task forwarding. Polls peer MetaBot instances every 30s, caches their bot lists, supports qualified name routing (`peerName/botName`). Anti-loop via `X-MetaBot-Origin` header.
+- **`src/web/ws-server.ts`** — WebSocket server for the Web UI. Handles upgrade on `/ws`, token auth via `?token=`, heartbeat, and routes `chat`/`stop`/`answer` messages. Also serves static files from `dist/web/` for the SPA.
 
 ### Outputs Directory Pattern
 
@@ -97,21 +100,21 @@ Read Feishu documents (standalone docx and wiki pages) and convert them to Markd
 
 **Key module:** `src/feishu/doc-reader.ts` — `FeishuDocReader` class that fetches blocks via `docx.v1.documentBlock.list` and converts them to Markdown (reverse of `markdown-to-blocks.ts`).
 
-### Voice API (Jarvis Mode)
+### Voice API & Call Mode
 
-`POST /api/voice` — Server-side STT + Agent execution + optional TTS. Accepts raw audio body (m4a, wav, webm, mp3, ogg — max 100 MB). Config via query params: `botName`, `chatId`, `language`, `stt` (doubao/whisper), `tts` (doubao/openai/elevenlabs), `ttsVoice`, `sendCards`. Defaults to Doubao for both STT and TTS when Volcengine keys are configured.
+`POST /api/voice` — Server-side STT + Agent execution + optional TTS. Accepts raw audio body (m4a, wav, webm, mp3, ogg — max 100 MB). Config via query params: `botName`, `chatId`, `language`, `stt` (doubao/whisper), `tts` (doubao/openai/elevenlabs), `ttsVoice`, `sendCards`, `voiceMode`. Defaults to Doubao for both STT and TTS when Volcengine keys are configured.
+
+**Voice mode (`voiceMode=true`)**: Prepends a concise-response instruction to the prompt and limits agent execution to `maxTurns=1` for faster responses. Designed for real-time phone call interaction — responses are 1-2 spoken sentences, no tool use, no markdown.
+
+**Web Call Mode**: The web UI (`ChatView.tsx`) includes a phone call overlay activated by the phone icon. Features:
+- **Voice Activity Detection (VAD)** — Uses Web Audio API `AnalyserNode` to detect speech. Auto-stops recording after 1.8s of silence.
+- **Auto-cycling** — Record → process → play response → auto-record again (like a real phone call).
+- **Mobile audio playback** — Uses `AudioContext` created during user gesture (tap) to bypass iOS/Android autoplay restrictions. Falls back to HTML Audio element.
+- **Status feedback** — Shows "Listening...", "Speaking..." (user detected), "Thinking...", "Speaking..." (AI response) phases.
 
 **Key module:** `src/api/voice-handler.ts` — Doubao/Whisper transcription, agent execution via `bridge.executeApiTask()`, Doubao/OpenAI/ElevenLabs TTS.
 
-**Environment:** `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY` (for Doubao STT + TTS, recommended), `OPENAI_API_KEY` (fallback for Whisper STT + OpenAI TTS), `ELEVENLABS_API_KEY` (optional for ElevenLabs TTS).
-
-### Text-to-Speech API
-
-`POST /api/tts` — Lightweight TTS-only endpoint (no STT, no agent). Accepts JSON `{ text, provider?, voice? }`, returns `audio/mpeg` binary with metadata headers (`X-Text-Length`, `X-Provider`, `X-Voice`). Reuses TTS functions from `voice-handler.ts`.
-
-**CLI:** `mb voice "text" [--play] [-o file.mp3] [--provider doubao|openai|elevenlabs] [--voice <id>]`
-
-**Skill:** `voice` — Global skill teaching Claude agents to use `mb voice` for audio output. Installed to `~/.claude/skills/voice/SKILL.md`.
+**Environment:** `VOLCENGINE_TTS_APPID` + `VOLCENGINE_TTS_ACCESS_KEY` (for Doubao STT + TTS, recommended), `OPENAI_API_KEY` (fallback for Whisper STT + OpenAI TTS), `ELEVENLABS_API_KEY` (optional for ElevenLabs TTS), `VOICE_MODEL` (optional, override Claude model for voice mode).
 
 ### Plan Mode Display
 
@@ -120,6 +123,29 @@ When Claude enters plan mode and writes a plan to `.claude/plans/*.md`, the plan
 ### Session Isolation
 
 Sessions are keyed by `chatId` (not `userId`), so each group chat and DM gets its own independent session, working directory, and conversation history. Group chats with exactly 2 members (1 user + 1 bot) are treated like DMs — no @mention required. This lets users "fork" a bot by creating multiple small group chats, each with its own session. The member count is cached for 5 minutes to avoid excessive API calls.
+
+### Web Platform
+
+A full-featured React SPA served at `/web/` with real-time WebSocket streaming. No external CSS framework — hand-crafted "Midnight Luxe" design system.
+
+**URL**: `http://server:9100/web/` — no auth required for static files; WebSocket auth via `?token=API_SECRET`.
+
+**Architecture**: WebSocket (`/ws`) → `ws-server.ts` → `MessageBridge.executeApiTask(onUpdate, onQuestion)` → streaming CardState back to browser. Reuses existing bot registry — talk to any Feishu/Telegram bot from the web.
+
+**Frontend stack**: React 19 + Vite + Zustand + react-markdown. Source in `web/`, builds to `dist/web/`.
+
+**Features**: Real-time streaming chat with tool call display, Markdown + syntax highlighting, interactive pending questions, session management, MetaMemory browser, phone call mode (voice with VAD), dark/light theme, responsive design.
+
+**Key frontend files:**
+- **`web/src/store.ts`** — Zustand store (auth, sessions, bots, theme, navigation)
+- **`web/src/hooks/useWebSocket.ts`** — WebSocket with auto-reconnect + exponential backoff
+- **`web/src/components/ChatView.tsx`** — Main chat interface with streaming + phone call overlay (VAD, auto-cycling, Web Audio playback)
+- **`web/src/components/MemoryView.tsx`** — MetaMemory document browser
+- **`web/src/theme.css`** — Complete design system with CSS custom properties
+
+**Static file serving**: Hashed assets (`/web/assets/*-<hash>.js`) get `Cache-Control: immutable` (1 year). `index.html` gets `no-cache`. Missing assets return 404 (not SPA fallback) to prevent stale-cache white-screen issues.
+
+**Dev workflow**: Run `cd web && npm run dev` for Vite dev server (port 5173) with API/WS proxy to 9100. Production: `npm run build:web` builds to `dist/web/`, served by MetaBot's HTTP server.
 
 ## Configuration
 
@@ -166,6 +192,41 @@ Before running the service, ensure:
    - Verify: Run `claude --version` and `claude "hello"` in a standalone terminal to confirm it works.
    - **Important**: You cannot run `claude login` or `claude auth status` from inside a Claude Code session (nested sessions are blocked). Always use a separate terminal.
 3. **Feishu app is configured** — See the setup guide below.
+
+## HTTPS Setup (Required for Web Voice Mode)
+
+The Web UI's phone call mode requires HTTPS for microphone access (`getUserMedia`). The recommended approach is [Caddy](https://caddyserver.com/) as a reverse proxy — it handles Let's Encrypt certificates automatically.
+
+### Step 1: Install Caddy
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt-get update && sudo apt-get install caddy
+```
+
+### Step 2: Configure DNS
+
+Add an A record for your domain (e.g. `metabot.xvirobotics.com`) pointing to your server's public IP. Wait for DNS propagation (check with `host <domain> 1.1.1.1`).
+
+### Step 3: Configure Caddy
+
+```bash
+sudo tee /etc/caddy/Caddyfile > /dev/null << 'EOF'
+metabot.yourdomain.com {
+    reverse_proxy localhost:9100
+}
+EOF
+sudo systemctl restart caddy
+```
+
+Caddy automatically obtains and renews Let's Encrypt certificates. Ports 80 and 443 must be open. Check status with `sudo journalctl -u caddy` — look for "certificate obtained successfully".
+
+### Step 4: Access
+
+Open `https://metabot.yourdomain.com/web/` in a browser. The phone call button in Chat now has microphone access.
+
+**Note**: WebSocket connections (`/ws`) are automatically proxied by Caddy. No additional WebSocket configuration is needed.
 
 ## Feishu App Setup Guide (飞书机器人配置)
 

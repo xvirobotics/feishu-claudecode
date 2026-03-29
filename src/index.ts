@@ -11,12 +11,15 @@ import type { BotConfigBase } from './config.js';
 import { startTelegramBot } from './telegram/telegram-bot.js';
 import { startWechatBot } from './wechat/wechat-bot.js';
 import { BotRegistry } from './api/bot-registry.js';
+import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
+
+import { SessionRegistry } from './session/session-registry.js';
 
 interface FeishuBotHandle {
   name: string;
@@ -153,6 +156,14 @@ async function main() {
     });
   }
 
+  // Register web-only bots (no IM platform — accessible via Web UI only)
+  for (const webConfig of appConfig.webBots) {
+    const botLogger = logger.child({ bot: webConfig.name });
+    const sender = new NullSender();
+    const bridge = new MessageBridge(webConfig, botLogger, sender, appConfig.memoryServerUrl, appConfig.memory.secret || undefined);
+    registry.register({ name: webConfig.name, platform: 'web', config: webConfig, bridge, sender });
+  }
+
   for (const handle of wechatHandles) {
     registry.register({
       name: handle.name,
@@ -163,7 +174,12 @@ async function main() {
     });
   }
 
-  const allNames = [...feishuHandles.map((h) => h.name), ...telegramHandles.map((h) => h.name), ...wechatHandles.map((h) => h.name)];
+  const allNames = [
+    ...feishuHandles.map((h) => h.name),
+    ...telegramHandles.map((h) => h.name),
+    ...appConfig.webBots.map((b) => b.name),
+    ...wechatHandles.map((h) => h.name),
+  ];
   logger.info({ bots: allNames }, 'All bots started');
 
   // Create task scheduler
@@ -233,6 +249,14 @@ async function main() {
     logger.info('Wiki sync service initialized (auto-sync enabled, /sync for manual trigger)');
   }
 
+  // Initialize cross-platform session registry
+  const sessionRegistry = new SessionRegistry(logger);
+  // Inject into all bot bridges
+  for (const info of registry.list()) {
+    const bot = registry.get(info.name);
+    if (bot) bot.bridge.setSessionRegistry(sessionRegistry);
+  }
+
   // Resolve bots config path for API-driven bot CRUD
   const botsConfigPath = process.env.BOTS_CONFIG
     ? path.resolve(process.env.BOTS_CONFIG)
@@ -249,6 +273,9 @@ async function main() {
     docSync,
     feishuServiceClient,
     peerManager,
+    memoryServerUrl: appConfig.memoryServerUrl,
+    memoryAuthToken: appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
+    sessionRegistry,
   });
 
   // Graceful shutdown
@@ -262,6 +289,7 @@ async function main() {
     if (docSync) {
       docSync.destroy();
     }
+    sessionRegistry.close();
     if (memoryServer) {
       memoryServer.server.close();
       memoryServer.storage.close();
