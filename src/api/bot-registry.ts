@@ -5,7 +5,7 @@ import type { IMessageSender } from '../bridge/message-sender.interface.js';
 
 export interface RegisteredBot {
   name: string;
-  platform: 'feishu' | 'telegram' | 'wechat';
+  platform: 'feishu' | 'telegram' | 'web' | 'wechat';
   config: BotConfigBase;
   bridge: MessageBridge;
   sender: IMessageSender;
@@ -17,8 +17,11 @@ export interface RegisteredBot {
 export interface BotInfo {
   name: string;
   description?: string;
+  specialties?: string[];
+  icon?: string;
   platform: string;
   workingDirectory: string;
+  ttsVoice?: string;
   /** Set when the bot comes from a peer instance. */
   peerUrl?: string;
   /** Human-readable peer identifier. */
@@ -47,7 +50,7 @@ export class BotRegistry {
 
   get(name: string): RegisteredBot | undefined {
     // Try platform-qualified keys first
-    for (const prefix of ['feishu', 'telegram', 'wechat']) {
+    for (const prefix of ['feishu', 'telegram', 'web', 'wechat']) {
       const bot = this.bots.get(`${prefix}:${name}`);
       if (bot) return bot;
     }
@@ -65,8 +68,8 @@ export class BotRegistry {
   }
 
   deregister(name: string): boolean {
-    // Try both platform-qualified keys
-    for (const prefix of ['feishu', 'telegram', 'wechat']) {
+    // Try all platform-qualified keys
+    for (const prefix of ['feishu', 'telegram', 'web', 'wechat']) {
       if (this.bots.delete(`${prefix}:${name}`)) return true;
     }
     return false;
@@ -76,8 +79,11 @@ export class BotRegistry {
     return Array.from(this.bots.values()).map((b) => ({
       name: b.name,
       ...(b.config.description ? { description: b.config.description } : {}),
+      ...(b.config.specialties?.length ? { specialties: b.config.specialties } : {}),
+      ...(b.config.icon ? { icon: b.config.icon } : {}),
       platform: b.platform,
       workingDirectory: b.config.claude.defaultWorkingDirectory,
+      ...(b.config.ttsVoice ? { ttsVoice: b.config.ttsVoice } : {}),
     }));
   }
 }

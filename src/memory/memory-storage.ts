@@ -234,7 +234,6 @@ export class MemoryStorage {
 
     // Filter folders by role: readers can only see shared folders
     const visibleFolders = role === 'admin' ? folders : folders.filter((f) => f.visibility !== 'private');
-    const visibleIds = new Set(visibleFolders.map((f) => f.id));
 
     // Build tree
     const nodeMap = new Map<string, FolderTreeNode>();

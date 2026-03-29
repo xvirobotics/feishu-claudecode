@@ -1,0 +1,17 @@
+source 'https://cdn.cocoapods.org/'
+source 'https://github.com/volcengine/volcengine-specs.git'
+
+platform :ios, '17.0'
+use_frameworks!
+
+target 'MetaBot' do
+  pod 'VolcEngineRTC', '~> 3.60'
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '17.0'
+    end
+  end
+end

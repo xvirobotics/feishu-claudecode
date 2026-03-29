@@ -136,6 +136,127 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
   metrics|m)
     curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/metrics"
     ;;
+  # --- RTC Voice Call ---
+  voice|v)
+    subcmd="${1:-help}"; shift 2>/dev/null || true
+    case "$subcmd" in
+      call|c)
+        bot="${1:-}" chat="${2:-}"; shift 2 2>/dev/null || true
+        _welcome=""
+        _prompt=""
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            -w|--welcome) _welcome="$2"; shift 2 ;;
+            *)            _prompt="${_prompt:+$_prompt }$1"; shift ;;
+          esac
+        done
+        if [[ -z "${bot:-}" || -z "${chat:-}" ]]; then
+          echo "Usage: mb voice call <botName> <chatId> [prompt] [-w welcomeMessage]"
+          echo "  Initiates an RTC voice call. Notifies the web/iOS user,"
+          echo "  waits for the call to end, and returns the transcript."
+          echo ""
+          echo "  Options:"
+          echo "    -w, --welcome <text>  AI's opening line (what it says first)"
+          echo ""
+          echo "  Examples:"
+          echo "    mb voice call whis chat123 'Tell user they are awesome' -w 'Flood, 你是最棒的！'"
+          echo "    mb voice call whis chat123 -w 'Hi! I wanted to discuss the project progress.'"
+          exit 1
+        fi
+        echo "Starting voice call... (waiting for user to join and call to end)"
+        python3 -c "
+import json, sys
+p = {'botName': sys.argv[1], 'chatId': sys.argv[2]}
+if sys.argv[3]: p['prompt'] = sys.argv[3]
+if sys.argv[4]: p['welcomeMessage'] = sys.argv[4]
+print(json.dumps(p))
+" "$bot" "$chat" "${_prompt:-}" "${_welcome:-}" | \
+        curl -s -X POST "$METABOT_URL/api/rtc/voice?wait=true" \
+          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+          --max-time 660 \
+          -d @- | _json
+        ;;
+      transcript|t)
+        if [[ -z "${1:-}" ]]; then echo "Usage: mb voice transcript <sessionId>"; exit 1; fi
+        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/transcript?sessionId=$1" | _json
+        ;;
+      list|ls)
+        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/sessions" | _json
+        ;;
+      config)
+        curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/rtc/config" | _json
+        ;;
+      tts)
+        _provider=""
+        _voice=""
+        _output=""
+        _play=false
+        _text=""
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --provider|-p) _provider="$2"; shift 2 ;;
+            --voice)       _voice="$2"; shift 2 ;;
+            -o|--output)   _output="$2"; shift 2 ;;
+            --play)        _play=true; shift ;;
+            --)            shift; _text="$*"; break ;;
+            -*)            echo "Unknown flag: $1"; exit 1 ;;
+            *)             _text="$*"; break ;;
+          esac
+        done
+        if [[ -z "$_text" ]]; then
+          if [[ -t 0 ]]; then
+            echo "Usage: mb voice tts \"text\" [--play] [-o file.mp3] [--provider doubao|openai|elevenlabs] [--voice <name>]"
+            echo "  Or pipe text: echo 'hello' | mb voice tts"
+            exit 1
+          fi
+          _text="$(cat)"
+        fi
+        _json_body=$(python3 -c "
+import json, sys
+body = {'text': sys.argv[1]}
+if sys.argv[2]: body['provider'] = sys.argv[2]
+if sys.argv[3]: body['voice'] = sys.argv[3]
+print(json.dumps(body))
+" "$_text" "$_provider" "$_voice")
+        if [[ -z "$_output" ]]; then
+          _output="/tmp/mb-voice-$(date +%s).mp3"
+        fi
+        _http_code=$(curl -s -w '%{http_code}' -o "$_output" \
+          -X POST "$METABOT_URL/api/tts" \
+          -H "$METABOT_AUTH" -H "Content-Type: application/json" \
+          -d "$_json_body")
+        if [[ "$_http_code" != "200" ]]; then
+          echo "Error: TTS request failed (HTTP $_http_code)"
+          cat "$_output" 2>/dev/null
+          rm -f "$_output"
+          exit 1
+        fi
+        echo "$_output"
+        if [[ "$_play" == "true" ]]; then
+          if command -v afplay &>/dev/null; then afplay "$_output"
+          elif command -v mpv &>/dev/null; then mpv --no-video "$_output" 2>/dev/null
+          elif command -v ffplay &>/dev/null; then ffplay -nodisp -autoexit "$_output" 2>/dev/null
+          elif command -v play &>/dev/null; then play "$_output" 2>/dev/null
+          else echo "(no audio player found — install mpv, ffplay, or sox to use --play)"
+          fi
+        fi
+        ;;
+      *)
+        echo "mb voice - Voice tools"
+        echo ""
+        echo "  RTC Voice Call:"
+        echo "    mb voice call <bot> <chatId> [prompt] [-w opening]  - Start voice call"
+        echo "    mb voice transcript <sessionId>         - Get call transcript"
+        echo "    mb voice list                           - List active voice sessions"
+        echo "    mb voice config                         - Check RTC configuration"
+        echo ""
+        echo "  Text-to-Speech:"
+        echo "    mb voice tts \"text\" [--play] [-o f]    - Generate MP3 from text"
+        echo "    mb voice tts \"text\" --provider doubao   - Use specific TTS provider"
+        echo "    echo 'hello' | mb voice tts              - Read from stdin"
+        ;;
+    esac
+    ;;
   # --- Health ---
   health|h)
     curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health" | _json
@@ -175,13 +296,14 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
     echo "==> Updating skills..."
     SKILLS_DIR="$HOME/.claude/skills"
     mkdir -p "$SKILLS_DIR"
-    for skill in metaskill metamemory metabot voice; do
+    for skill in metaskill metamemory metabot voice phone-call; do
       case "$skill" in
-        metaskill)  src="$METABOT_SRC/src/skills/metaskill" ;;
-        metamemory) src="$METABOT_SRC/src/memory/skill" ;;
-        metabot)    src="$METABOT_SRC/src/skills/metabot" ;;
-        voice)      src="$METABOT_SRC/src/skills/voice" ;;
-        *)          src="" ;;
+        metaskill)   src="$METABOT_SRC/src/skills/metaskill" ;;
+        metamemory)  src="$METABOT_SRC/src/memory/skill" ;;
+        metabot)     src="$METABOT_SRC/src/skills/metabot" ;;
+        voice)       src="$METABOT_SRC/src/skills/voice" ;;
+        phone-call)  src="$METABOT_SRC/src/skills/phone-call" ;;
+        *)           src="" ;;
       esac
       if [[ -n "$src" && -d "$src" ]]; then
         mkdir -p "$SKILLS_DIR/$skill"
@@ -211,7 +333,7 @@ print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'cronExpr': sys
       if [[ -n "${work_dir:-}" ]]; then
         ws_skills_dir="$work_dir/.claude/skills"
         mkdir -p "$ws_skills_dir"
-        for skill in metaskill metamemory metabot voice; do
+        for skill in metaskill metamemory metabot voice phone-call; do
           if [[ -d "$SKILLS_DIR/$skill" ]]; then
             mkdir -p "$ws_skills_dir/$skill"
             cp -r "$SKILLS_DIR/$skill/." "$ws_skills_dir/$skill/"
@@ -351,6 +473,14 @@ print(json.dumps(body))
     echo "    mb schedule pause <id>           - Pause a recurring task"
     echo "    mb schedule resume <id>          - Resume a paused task"
     echo "    mb schedule cancel <id>          - Cancel a scheduled task"
+    echo ""
+    echo "  Voice:"
+    echo "    mb voice call <bot> <chatId> [prompt] [-w opening] - Start voice call"
+    echo "    mb voice transcript <sessionId>  - Get call transcript"
+    echo "    mb voice list                    - List active voice sessions"
+    echo "    mb voice config                  - Check RTC configuration"
+    echo "    mb voice tts \"text\" [--play] [-o f] - Text-to-speech (saves MP3)"
+    echo ""
     echo ""
     echo "  Monitoring:"
     echo "    mb stats                         - Cost & usage stats (per-bot, per-user)"
