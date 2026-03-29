@@ -6,7 +6,7 @@ import { ChatView } from './components/ChatView';
 import { MemoryView } from './components/MemoryView';
 import { VoiceView } from './components/VoiceView';
 import { SettingsView } from './components/SettingsView';
-import { TeamDashboard } from './components/TeamDashboard';
+import { PixelOffice } from './components/office';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export function App() {
@@ -25,7 +25,7 @@ export function App() {
             <Route path="/memory" element={<MemoryView />} />
             <Route path="/voice" element={<VoiceView />} />
             <Route path="/settings" element={<SettingsView />} />
-            <Route path="/team" element={<TeamDashboard />} />
+            <Route path="/team" element={<PixelOffice />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ErrorBoundary>
