@@ -5,7 +5,8 @@
   "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "build": "tsc && cp -r src/memory/static dist/memory/static",
+    "build": "npm run build:web && tsc && cp -r src/memory/static dist/memory/static",
+    "build:web": "cd web && npm install --include=dev && ./node_modules/.bin/vite build",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
@@ -18,17 +19,23 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "@larksuiteoapi/node-sdk": "^1.58.0",
+    "@types/ws": "^8.18.0",
+    "@volcengine/openapi": "^1.36.0",
     "better-sqlite3": "^12.6.2",
     "cron-parser": "^5.5.0",
     "dotenv": "^16.4.0",
     "grammy": "^1.40.0",
     "https-proxy-agent": "^7.0.6",
+    "mammoth": "^1.12.0",
     "node-edge-tts": "^1.2.10",
     "openai": "^6.29.0",
     "pino": "^9.0.0",
     "pino-pretty": "^11.0.0",
-    "undici": "^7.24.5"
+    "undici": "^7.24.5",
+    "ws": "^8.19.0",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -36,9 +43,9 @@
     "@types/node": "^22.0.0",
     "eslint": "^10.0.2",
     "prettier": "^3.8.1",
-    "tsx": "^4.19.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.56.1",
-    "vitest": "^3.1.1"
+    "vitest": "^3.2.4"
   }
 }

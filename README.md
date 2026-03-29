@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![GitHub stars](https://img.shields.io/github/stars/xvirobotics/metabot?style=flat-square)](https://github.com/xvirobotics/metabot)
 
-[English](README_EN.md) | 中文
+中文 | [English](README_EN.md) | [文档站](https://xvirobotics.com/metabot/zh/)
 
 > 在飞书中设定一个每天早上9点自动搜索 AI 新闻并保存到 MetaMemory 的定时任务 — Thinking → Running → Complete，全程流式展示。
 
@@ -54,7 +54,15 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
                     Agent 总线（跨 Bot 通信）
 ```
 
-**自我进化 Agent 组织的三大支柱：**
+## 多端接入
+
+MetaBot 支持 4 种方式与你的 Agent 团队交互：
+
+| 客户端 | 场景 | 特色功能 |
+|--------|------|---------|
+| **飞书/Lark** | 工作场景，团队协作 | 流式交互卡片、@mention 路由、知识库自动同步 |
+| **Telegram** | 个人/国际用户 | 30 秒配置、长轮询无需公网 IP、群聊 + 私聊 |
+| **Web UI** | 浏览器端，语音对话 | 电话语音模式（VAD）、RTC 实时通话、MetaMemory 浏览器、团队看板 |
 
 | 支柱 | 组件 | 作用 |
 |------|------|------|
@@ -62,18 +70,38 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 | **自我进化** | MetaMemory | 共享知识库。Agent 写入学到的东西，其他 Agent 检索引用 |
 | **Agent 组织** | MetaSkill + 调度器 + Agent 总线 | 一个命令生成完整 Agent 团队。Agent 互相委派任务、创建新 Agent |
 
-## 核心组件
+## Web UI
+
+浏览器端全功能聊天界面，部署即可用。访问地址：`https://your-server/web/`
+
+![MetaBot Web UI](resources/web-ui.png)
+
+- **实时流式聊天** — WebSocket 推送，Markdown 渲染，工具调用展示
+- **电话语音模式** — 点击电话图标，全屏免手对话，VAD 自动检测说完
+- **RTC 实时通话** — 基于火山引擎 RTC 的双向语音/视频通话
+- **群聊模式** — 多个 Agent 在一个对话中协作，@mention 路由
+- **MetaMemory 浏览器** — 搜索和浏览共享知识库
+- **团队看板** — 查看 Agent 组织状态概览
+- **文件支持** — 上传/下载文件，内联预览
+- **明暗主题** — 跟随系统或手动切换
+
+**技术栈**：React 19 + Vite + Zustand + react-markdown
+
+> 语音功能需要 HTTPS。推荐用 Caddy 反向代理，自动管理证书。详见 [Web UI 文档](https://xvirobotics.com/metabot/zh/features/web-ui/)。
+
+## 核心能力
 
 | 组件 | 一句话说明 |
 |------|-----------|
 | **Claude Code 内核** | 每个 Bot 都是完整的 Claude Code — Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP，`bypassPermissions` 全自动 |
-| **MetaSkill** | Agent 工厂。`/metaskill ios app` 一键生成 `.claude/` Agent 团队（orchestrator + 专家 + reviewer） |
+| **MetaSkill** | Agent 工厂。`/metaskill` 一键生成 `.claude/` Agent 团队（orchestrator + 专家 + reviewer） |
 | **MetaMemory** | 内嵌 SQLite 知识库，全文搜索，Web UI，变更自动同步到飞书知识库 |
 | **IM Bridge** | 飞书、Telegram、微信（含手机端）对话任意 Agent，流式卡片 + 工具调用追踪 |
 | **Agent 总线** | Agent 通过 `mb talk` 互相对话，运行时创建/删除 Bot |
 | **定时调度器** | Cron 周期任务 + 一次性延迟任务，跨重启持久化，忙时自动重试 |
 | **飞书 Lark CLI** | 200+ 命令覆盖文档、消息、日历、任务等 11 大业务域，19 个 AI Agent Skills |
 | **Peers 联邦** | 跨实例 Bot 发现和任务路由，`mb talk alice/backend-bot` 自动路由 |
+| **语音助手** | Jarvis 模式 — AirPods 说 "Hey Siri, Jarvis" 语音控制 Agent |
 
 ## 快速开始
 
@@ -96,6 +124,8 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 4. 发布应用
 
 > 不需要公网 IP。飞书用 WebSocket，Telegram 和微信用长轮询。
+
+**Web UI**：启动 MetaBot 后访问 `http://localhost:9100/web/`，输入 API_SECRET 即可使用。
 
 ## 示例 Prompt
 
@@ -198,10 +228,6 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
     "name": "tg-bot",
     "telegramBotToken": "123456:ABC...",
     "defaultWorkingDirectory": "/home/user/project"
-  }],
-  "wechatBots": [{
-    "name": "wechat-bot",
-    "defaultWorkingDirectory": "/home/user/project"
   }]
 }
 ```
@@ -227,9 +253,8 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `BOTS_CONFIG` | — | bots.json 路径 |
 | `API_PORT` | 9100 | HTTP API 端口 |
-| `API_SECRET` | — | Bearer 认证 |
+| `API_SECRET` | — | Bearer 认证（同时保护 API 和 Web UI） |
 | `MEMORY_ENABLED` | true | 启用 MetaMemory |
 | `MEMORY_PORT` | 8100 | MetaMemory 端口 |
 | `MEMORY_ADMIN_TOKEN` | — | 管理员 Token（完整访问） |
@@ -237,6 +262,8 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 | `WIKI_SYNC_ENABLED` | true | 启用 MetaMemory→飞书知识库同步 |
 | `WIKI_SPACE_NAME` | MetaMemory | 飞书知识库空间名称 |
 | `WIKI_AUTO_SYNC` | true | MetaMemory 变更时自动同步 |
+| `VOLCENGINE_TTS_APPID` | — | 豆包语音（TTS + STT） |
+| `VOLCENGINE_TTS_ACCESS_KEY` | — | 豆包语音密钥 |
 | `METABOT_URL` | `http://localhost:9100` | MetaBot API 地址 |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory 服务地址 |
 | `METABOT_PEERS` | — | Peer MetaBot 地址（逗号分隔） |
@@ -377,7 +404,6 @@ npm run build        # TypeScript 编译
 
 ## Roadmap
 
-- [ ] Web UI 控制面板（Bot 管理、任务监控、MetaMemory 浏览）
 - [ ] Agent 异步双向通信协议
 - [ ] 插件市场（MCP Server 一键安装）
 - [ ] 更多 IM 平台（Slack、Discord、钉钉）

@@ -17,6 +17,7 @@ import { CommandHandler } from './command-handler.js';
 import { OutputHandler } from './output-handler.js';
 import { CostTracker } from '../utils/cost-tracker.js';
 import { metrics } from '../utils/metrics.js';
+import type { SessionRegistry } from '../session/session-registry.js';
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
@@ -56,6 +57,22 @@ export interface ApiTaskOptions {
   chatId: string;
   userId?: string;
   sendCards?: boolean;
+  /** Override maxTurns for this task (e.g. 1 for voice mode). */
+  maxTurns?: number;
+  /** Override model for this task (e.g. faster model for voice calls). */
+  model?: string;
+  /** Override allowed tools for this task (empty array = no tools). */
+  allowedTools?: string[];
+  /** Called on every card state update (streaming). `final` is true on the last update. */
+  onUpdate?: (state: CardState, messageId: string, final: boolean) => void;
+  /** Called when Claude asks a question. Return the answer JSON string. */
+  onQuestion?: (question: PendingQuestion) => Promise<string>;
+  /** Called with output files after execution completes (before cleanup). */
+  onOutputFiles?: (files: import('./outputs-manager.js').OutputFile[]) => void;
+  /** Group chat member names — injected into system prompt for inter-bot communication. */
+  groupMembers?: string[];
+  /** Group ID — used for inter-bot communication chatId pattern. */
+  groupId?: string;
 }
 
 export interface ApiTaskResult {
@@ -75,6 +92,7 @@ export class MessageBridge {
   private commandHandler: CommandHandler;
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
+  private sessionRegistry?: SessionRegistry;
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
@@ -108,8 +126,33 @@ export class MessageBridge {
     this.commandHandler.setDocSync(docSync);
   }
 
+  /** Inject the session registry for cross-platform session sync. */
+  setSessionRegistry(registry: SessionRegistry): void {
+    this.sessionRegistry = registry;
+  }
+
+  /** Expose session manager for cross-platform session linking. */
+  getSessionManager(): SessionManager {
+    return this.sessionManager;
+  }
+
   isBusy(chatId: string): boolean {
     return this.runningTasks.has(chatId);
+  }
+
+  /** Return info about all currently running tasks (for team status display). */
+  getRunningTasksInfo(): Array<{ chatId: string; startTime: number }> {
+    return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
+      chatId,
+      startTime: task.startTime,
+    }));
+  }
+
+  /** Stop a running task for the given chatId. Returns true if a task was stopped. */
+  stopChatTask(chatId: string): boolean {
+    if (!this.runningTasks.has(chatId)) return false;
+    this.stopTask(chatId);
+    return true;
   }
 
   private stopTask(chatId: string): void {
@@ -723,11 +766,7 @@ export class MessageBridge {
           const newSid = processor.getSessionId();
           if (newSid) this.sessionManager.setSessionId(chatId, newSid);
           if (state.status === 'complete' || state.status === 'error') break;
-          if (!abortController.signal.aborted) {
-            rateLimiter.schedule(() => {
-              if (!abortController.signal.aborted) this.sender.updateCard(messageId, state);
-            });
-          }
+          rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
         }
         await rateLimiter.cancelAndWait();
       }
@@ -750,6 +789,9 @@ export class MessageBridge {
       metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
+
+      // Record in cross-platform session registry
+      this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       // Send completion notification for long-running tasks (>10s) so user gets a Feishu push
       await this.sendCompletionNotice(chatId, lastState, durationMs);
@@ -796,6 +838,7 @@ export class MessageBridge {
           metrics.incCounter('metabot_tasks_total');
           metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
+          this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
           await this.sendCompletionNotice(chatId, lastState, durationMs);
           await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
           return; // skip the normal error handling below
@@ -866,18 +909,23 @@ export class MessageBridge {
     const processor = new StreamProcessor(displayPrompt);
     const rateLimiter = new RateLimiter(1500);
 
+    const initialState: CardState = {
+      status: 'thinking',
+      userPrompt: displayPrompt,
+      responseText: '',
+      toolCalls: [],
+    };
+
     let messageId: string | undefined;
     if (sendCards) {
-      const initialState: CardState = {
-        status: 'thinking',
-        userPrompt: displayPrompt,
-        responseText: '',
-        toolCalls: [],
-      };
       messageId = await this.sender.sendCard(chatId, initialState);
     }
 
-    const apiContext = { botName: this.config.name, chatId };
+    // Generate a messageId for onUpdate even if sendCards is false
+    const effectiveMessageId = messageId || `api-${chatId}-${Date.now()}`;
+    options.onUpdate?.(initialState, effectiveMessageId, false);
+
+    const apiContext = { botName: this.config.name, chatId, groupMembers: options.groupMembers, groupId: options.groupId };
 
     const executionHandle = this.executor.startExecution({
       prompt,
@@ -886,6 +934,9 @@ export class MessageBridge {
       abortController,
       outputsDir,
       apiContext,
+      maxTurns: options.maxTurns,
+      model: options.model,
+      allowedTools: options.allowedTools,
     });
 
     const startTime = Date.now();
@@ -949,10 +1000,21 @@ export class MessageBridge {
 
         if (state.status === 'waiting_for_input' && state.pendingQuestion) {
           const pending = state.pendingQuestion;
-          processor.clearPendingQuestion();
-          const sid = processor.getSessionId() || '';
-          const autoAnswer = JSON.stringify({ answers: { _auto: 'Please decide on your own and proceed.' } });
-          executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
+          if (options.onQuestion) {
+            // Notify the caller about the question state
+            options.onUpdate?.(state, effectiveMessageId, false);
+            // Wait for the caller to provide an answer
+            const answerJson = await options.onQuestion(pending);
+            processor.clearPendingQuestion();
+            const sid = processor.getSessionId() || '';
+            executionHandle.sendAnswer(pending.toolUseId, sid, answerJson);
+          } else {
+            // Auto-answer when no onQuestion handler is provided
+            processor.clearPendingQuestion();
+            const sid = processor.getSessionId() || '';
+            const autoAnswer = JSON.stringify({ answers: { _auto: 'Please decide on your own and proceed.' } });
+            executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
+          }
           continue;
         }
 
@@ -974,6 +1036,7 @@ export class MessageBridge {
             this.sender.updateCard(messageId!, state);
           });
         }
+        options.onUpdate?.(state, effectiveMessageId, false);
       }
 
       await rateLimiter.cancelAndWait();
@@ -1019,6 +1082,7 @@ export class MessageBridge {
           if (sendCards && messageId) {
             rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
           }
+          options.onUpdate?.(state, effectiveMessageId, false);
         }
         await rateLimiter.cancelAndWait();
       }
@@ -1026,8 +1090,15 @@ export class MessageBridge {
       if (sendCards && messageId) {
         await this.sendFinalCard(messageId, lastState, chatId);
       }
+      options.onUpdate?.(lastState, effectiveMessageId, true);
 
       await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+
+      // Notify web clients about output files before cleanup
+      if (options.onOutputFiles) {
+        const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+        if (outputFiles.length > 0) options.onOutputFiles(outputFiles);
+      }
 
       const durationMs = Date.now() - startTime;
       this.audit.log({
@@ -1038,6 +1109,9 @@ export class MessageBridge {
       metrics.incCounter('metabot_api_tasks_total');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
+
+      // Record in cross-platform session registry
+      this.recordSession(chatId, prompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       return {
         success: lastState.status === 'complete',
@@ -1077,14 +1151,21 @@ export class MessageBridge {
             if (sendCards && messageId) {
               rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
             }
+            options.onUpdate?.(state, effectiveMessageId, false);
           }
           await rateLimiter.cancelAndWait();
 
           if (sendCards && messageId) {
             await this.sendFinalCard(messageId, lastState, chatId);
           }
+          options.onUpdate?.(lastState, effectiveMessageId, true);
 
           await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+
+          if (options.onOutputFiles) {
+            const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+            if (outputFiles.length > 0) options.onOutputFiles(outputFiles);
+          }
 
           return {
             success: lastState.status === 'complete',
@@ -1111,6 +1192,15 @@ export class MessageBridge {
         await rateLimiter.cancelAndWait();
         await this.sendFinalCard(messageId, errorState, chatId);
       }
+
+      const catchErrorState: CardState = {
+        status: 'error',
+        userPrompt: displayPrompt,
+        responseText: lastState.responseText,
+        toolCalls: lastState.toolCalls,
+        errorMessage: err.message || 'Unknown error',
+      };
+      options.onUpdate?.(catchErrorState, effectiveMessageId, true);
 
       return {
         success: false,
@@ -1183,6 +1273,25 @@ export class MessageBridge {
    * Card updates don't trigger Feishu mobile push notifications, but new messages do.
    * Only sends for tasks that took longer than 10 seconds.
    */
+  /** Record session and messages in the cross-platform registry. */
+  private recordSession(chatId: string, prompt: string, responseText: string | undefined, claudeSessionId: string | undefined, costUsd: number | undefined, durationMs: number | undefined): void {
+    if (!this.sessionRegistry) return;
+    try {
+      this.sessionRegistry.createOrUpdate({
+        chatId,
+        botName: this.config.name,
+        claudeSessionId,
+        workingDirectory: this.sessionManager.getSession(chatId).workingDirectory,
+        prompt,
+        responseText,
+        costUsd,
+        durationMs,
+      });
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'Failed to record session in registry');
+    }
+  }
+
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
     // Some senders (WeChat) already send the final response as a standalone message, so skip
     if (this.sender.skipCompletionNotice) return;

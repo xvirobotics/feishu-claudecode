@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 [![GitHub stars](https://img.shields.io/github/stars/xvirobotics/metabot?style=flat-square)](https://github.com/xvirobotics/metabot)
 
-English | [中文](README.md)
+[中文](README.md) | English | [Docs](https://xvirobotics.com/metabot/)
 
 > Setting up a daily 9 AM scheduled task in Feishu — auto-search AI news, summarize Top 5, save to MetaMemory. Watch: Thinking → Running → Complete with real-time streaming.
 
@@ -41,7 +41,7 @@ The installer walks you through everything: working directory → Claude auth �
 | **Autonomous** | bypassPermissions, fully automated | Requires human approval | Limited to workflows |
 | **Open source** | MIT, fully controllable | CLI is open source | Closed-source SaaS |
 
-## How It Works
+## Multi-Platform Access
 
 ![MetaBot Architecture](resources/metabot.png)
 
@@ -54,7 +54,13 @@ Feishu/TG/WeChat → IM Bridge → Claude Code Agent SDK → Streaming card upda
                          Agent Bus (cross-bot comms)
 ```
 
-**Three pillars of a self-improving agent organization:**
+| Client | Use Case | Key Features |
+|--------|----------|-------------|
+| **Feishu/Lark** | Work, team collaboration | Streaming interactive cards, @mention routing, Wiki auto-sync |
+| **Telegram** | Personal / international | 30-second setup, long polling (no public IP), group + private chat |
+| **Web UI** | Browser, voice conversations | Phone call mode (VAD), RTC calls, MetaMemory browser, team dashboard |
+
+## Web UI
 
 | Pillar | Component | What it does |
 |--------|-----------|-------------|
@@ -62,18 +68,36 @@ Feishu/TG/WeChat → IM Bridge → Claude Code Agent SDK → Streaming card upda
 | **Self-Improving** | MetaMemory | Shared knowledge store. Agents write what they learn, other agents retrieve it |
 | **Agent Organization** | MetaSkill + Scheduler + Agent Bus | One command generates a full agent team. Agents delegate tasks and create new agents |
 
+Full-featured browser-based chat interface. Access at `https://your-server/web/` after starting MetaBot.
+
+![MetaBot Web UI](resources/web-ui.png)
+
+- **Real-time streaming** -- WebSocket, Markdown rendering, tool call display
+- **Phone call mode** -- Tap phone icon for fullscreen hands-free voice conversation with VAD
+- **RTC calls** -- Two-way voice/video calls via VolcEngine RTC
+- **Group chat** -- Multiple agents in one conversation, @mention routing
+- **MetaMemory browser** -- Search and browse shared knowledge base
+- **Team dashboard** -- Agent organization overview
+- **File support** -- Upload/download with inline preview
+- **Dark/light themes** -- System-aware with manual toggle
+
+**Stack**: React 19 + Vite + Zustand + react-markdown
+
+> Voice features require HTTPS. We recommend Caddy as a reverse proxy. See [Web UI docs](https://xvirobotics.com/metabot/features/web-ui/).
+
 ## Core Components
 
 | Component | Description |
 |-----------|-------------|
 | **Claude Code Kernel** | Every bot is a full Claude Code instance — Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP, `bypassPermissions` for autonomous operation |
-| **MetaSkill** | Agent factory. `/metaskill ios app` generates a complete `.claude/` agent team (orchestrator + specialists + reviewer) |
+| **MetaSkill** | Agent factory. `/metaskill` generates a complete `.claude/` agent team (orchestrator + specialists + reviewer) |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search, Web UI, auto-syncs to Feishu Wiki |
 | **IM Bridge** | Chat with any agent from Feishu, Telegram, or WeChat (including mobile). Streaming cards + tool call tracking |
 | **Agent Bus** | Agents talk to each other via `mb talk`. Create/remove bots at runtime |
 | **Task Scheduler** | Cron recurring tasks + one-time delays, persisted across restarts, auto-retries when busy |
 | **Feishu Lark CLI** | 200+ commands covering docs, messaging, calendar, tasks, and 8 more domains. 19 AI Agent Skills |
 | **Peers** | Cross-instance bot discovery and task routing. `mb talk alice/backend-bot` routes automatically |
+| **Voice Assistant** | Jarvis mode -- "Hey Siri, Jarvis" from AirPods for hands-free agent control |
 
 ## Quick Start
 
@@ -96,6 +120,8 @@ Feishu/TG/WeChat → IM Bridge → Claude Code Agent SDK → Streaming card upda
 4. Publish the app
 
 > No public IP needed. Feishu uses WebSocket, Telegram and WeChat use long polling.
+
+**Web UI**: Visit `http://localhost:9100/web/` after starting MetaBot, enter your API_SECRET.
 
 ## Example Prompts
 
@@ -203,10 +229,6 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
     "name": "tg-bot",
     "telegramBotToken": "123456:ABC...",
     "defaultWorkingDirectory": "/home/user/project"
-  }],
-  "wechatBots": [{
-    "name": "wechat-bot",
-    "defaultWorkingDirectory": "/home/user/project"
   }]
 }
 ```
@@ -232,9 +254,8 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BOTS_CONFIG` | — | Path to `bots.json` |
 | `API_PORT` | 9100 | HTTP API port |
-| `API_SECRET` | — | Bearer token auth. Generate one with `openssl rand -hex 32` |
+| `API_SECRET` | — | Bearer token auth (protects API + Web UI). Generate one with `openssl rand -hex 32` |
 | `MEMORY_ENABLED` | true | Enable MetaMemory |
 | `MEMORY_PORT` | 8100 | MetaMemory port |
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access) |
@@ -242,6 +263,8 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
 | `WIKI_SYNC_ENABLED` | true | Enable MetaMemory→Wiki sync |
 | `WIKI_SPACE_NAME` | MetaMemory | Wiki space name |
 | `WIKI_AUTO_SYNC` | true | Auto-sync on changes |
+| `VOLCENGINE_TTS_APPID` | — | Doubao voice (TTS + STT) |
+| `VOLCENGINE_TTS_ACCESS_KEY` | — | Doubao voice key |
 | `METABOT_URL` | `http://localhost:9100` | MetaBot API URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory server URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
 | `METABOT_PEERS` | — | Peer MetaBot URLs (comma-separated). Prefer HTTPS for internet-reachable peers |
@@ -382,7 +405,6 @@ npm run build        # TypeScript compile
 
 ## Roadmap
 
-- [ ] Web UI dashboard (bot management, task monitoring, MetaMemory browser)
 - [ ] Async bidirectional agent communication protocol
 - [ ] Plugin marketplace (one-click MCP Server install)
 - [ ] More IM platforms (Slack, Discord, DingTalk)

@@ -24,6 +24,39 @@ import type { BotRegistry } from './bot-registry.js';
 const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB (Doubao flash limit)
 
 // ---------------------------------------------------------------------------
+// Per-chat voice conversation history (for Seed-ASR context)
+// ---------------------------------------------------------------------------
+
+interface VoiceTurn { role: 'user' | 'assistant'; text: string; ts: number }
+
+const voiceHistory = new Map<string, VoiceTurn[]>();
+const HISTORY_MAX_TURNS = 10;
+const HISTORY_TTL_MS = 30 * 60 * 1000; // 30 min
+
+function pushVoiceHistory(chatId: string, role: 'user' | 'assistant', text: string): void {
+  if (!text.trim()) return;
+  let turns = voiceHistory.get(chatId);
+  if (!turns) { turns = []; voiceHistory.set(chatId, turns); }
+  turns.push({ role, text: text.slice(0, 500), ts: Date.now() });
+  // Keep only the most recent turns
+  if (turns.length > HISTORY_MAX_TURNS) turns.splice(0, turns.length - HISTORY_MAX_TURNS);
+}
+
+function getVoiceContext(chatId: string): string[] {
+  const turns = voiceHistory.get(chatId);
+  if (!turns) return [];
+  const now = Date.now();
+  // Filter out expired turns
+  const valid = turns.filter(t => now - t.ts < HISTORY_TTL_MS);
+  if (valid.length !== turns.length) voiceHistory.set(chatId, valid);
+  return valid.map(t => t.text);
+}
+
+export function clearVoiceHistory(chatId: string): void {
+  voiceHistory.delete(chatId);
+}
+
+// ---------------------------------------------------------------------------
 // Read raw audio body
 // ---------------------------------------------------------------------------
 
@@ -49,7 +82,7 @@ function readRawBody(req: http.IncomingMessage): Promise<Buffer> {
 // Detect audio format from content-type or buffer magic bytes
 // ---------------------------------------------------------------------------
 
-function detectAudioExt(contentType: string | undefined, buf: Buffer): string {
+export function detectAudioExt(contentType: string | undefined, buf: Buffer): string {
   if (contentType?.includes('m4a') || contentType?.includes('mp4')) return 'm4a';
   if (contentType?.includes('wav')) return 'wav';
   if (contentType?.includes('webm')) return 'webm';
@@ -76,7 +109,14 @@ function extToFormat(ext: string): string {
 // Doubao (Volcengine) STT — Flash Recognition (synchronous)
 // ---------------------------------------------------------------------------
 
-async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger): Promise<string> {
+export interface SttContext {
+  /** Recent dialog turns for context-aware recognition */
+  dialogHistory?: string[];
+  /** Hotwords to boost recognition (names, terms, etc.) */
+  hotwords?: string[];
+}
+
+export async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger, context?: SttContext): Promise<string> {
   const appKey = process.env.VOLCENGINE_TTS_APPID;
   const accessKey = process.env.VOLCENGINE_TTS_ACCESS_KEY;
   if (!appKey || !accessKey) {
@@ -85,6 +125,24 @@ async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger
 
   const requestId = crypto.randomUUID();
   const url = 'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash';
+
+  // Build corpus with context for Seed-ASR
+  const corpus: Record<string, unknown> = {};
+  const hasDialog = context?.dialogHistory && context.dialogHistory.length > 0;
+  const hasHotwords = context?.hotwords && context.hotwords.length > 0;
+
+  if (hasDialog || hasHotwords) {
+    const ctxObj: Record<string, unknown> = {};
+    if (hasDialog) {
+      ctxObj.context_type = 'dialog_ctx';
+      ctxObj.context_data = context!.dialogHistory!.map(text => ({ text }));
+    }
+    if (hasHotwords) {
+      ctxObj.hotwords = context!.hotwords!.map(word => ({ word }));
+    }
+    corpus.context = ctxObj;
+  }
+
   const response = await proxyFetch(url, {
     method: 'POST',
     headers: {
@@ -101,7 +159,10 @@ async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger
         data: audioBuffer.toString('base64'),
         format: extToFormat(ext),
       },
-      request: { model_name: 'bigmodel' },
+      request: {
+        model_name: 'bigmodel',
+        ...(Object.keys(corpus).length > 0 ? { corpus } : {}),
+      },
     }),
   });
 
@@ -112,7 +173,7 @@ async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger
 
   const result = await response.json() as any;
   const text = result?.result?.text || '';
-  logger.info({ textLength: text.length, requestId }, 'Doubao STT transcription complete');
+  logger.info({ textLength: text.length, requestId, hasContext: hasDialog || hasHotwords }, 'Doubao STT transcription complete');
   return text;
 }
 
@@ -120,7 +181,7 @@ async function doubaoTranscribe(audioBuffer: Buffer, ext: string, logger: Logger
 // Whisper STT
 // ---------------------------------------------------------------------------
 
-async function whisperTranscribe(audioBuffer: Buffer, ext: string, language: string, logger: Logger): Promise<string> {
+export async function whisperTranscribe(audioBuffer: Buffer, ext: string, language: string, logger: Logger): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw Object.assign(new Error('OPENAI_API_KEY not configured'), { statusCode: 500 });
 
@@ -272,7 +333,7 @@ export async function edgeTTS(text: string, voice: string): Promise<Buffer> {
 // Resolve defaults: prefer Doubao when keys are configured, fall back to OpenAI
 // ---------------------------------------------------------------------------
 
-function resolveSTTProvider(explicit: string): string {
+export function resolveSTTProvider(explicit: string): string {
   if (explicit) return explicit;
   // Default to doubao if Volcengine keys exist, otherwise whisper
   if (process.env.VOLCENGINE_TTS_APPID && process.env.VOLCENGINE_TTS_ACCESS_KEY) return 'doubao';
@@ -286,13 +347,46 @@ export function resolveTTSProvider(explicit: string): string {
   return 'edge';
 }
 
-export function resolveTTSVoice(explicit: string, ttsProvider: string): string {
+export function resolveTTSVoice(explicit: string, ttsProvider: string, text?: string): string {
   if (explicit) return explicit;
-  // Sensible defaults per provider
-  if (ttsProvider === 'doubao') return 'zh_female_wanqudashu_moon_bigtts';
-  if (ttsProvider === 'elevenlabs') return 'EXAVITQu4vr4xnSDxMaL'; // Bella
-  if (ttsProvider === 'edge') return 'zh-CN-XiaoyiNeural';
-  return 'alloy'; // OpenAI
+
+  // Auto-detect language from response text to pick the right voice
+  const isChinese = text ? detectChinese(text) : true;
+
+  if (ttsProvider === 'doubao') {
+    return isChinese
+      ? 'zh_female_sajiaonvyou_moon_bigtts'   // Chinese female voice
+      : 'en_female_amanda_mars_bigtts';         // English female voice
+  }
+  if (ttsProvider === 'elevenlabs') return 'EXAVITQu4vr4xnSDxMaL'; // Bella (multilingual)
+  if (ttsProvider === 'edge') {
+    return isChinese ? 'zh-CN-XiaoyiNeural' : 'en-US-JennyNeural';
+  }
+  return 'alloy'; // OpenAI (multilingual)
+}
+
+/**
+ * Detect whether text is primarily Chinese.
+ * Returns true if >=15% of characters are CJK.
+ */
+function detectChinese(text: string): boolean {
+  if (!text) return true;
+  let cjk = 0;
+  let total = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) || 0;
+    if (code > 0x2f) { // skip whitespace/punctuation
+      total++;
+      if (
+        (code >= 0x4e00 && code <= 0x9fff) ||   // CJK Unified
+        (code >= 0x3400 && code <= 0x4dbf) ||   // CJK Extension A
+        (code >= 0xf900 && code <= 0xfaff)      // CJK Compat
+      ) {
+        cjk++;
+      }
+    }
+  }
+  return total === 0 || cjk / total >= 0.15;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,16 +407,18 @@ export async function handleVoiceRequest(
   const language = params.get('language') || params.get('lang') || 'zh';
   const sttProvider = resolveSTTProvider(params.get('stt') || '');
   const ttsProvider = resolveTTSProvider(params.get('tts') || '');
-  const ttsVoice = resolveTTSVoice(params.get('ttsVoice') || params.get('voice') || '', ttsProvider);
+  const explicitVoice = params.get('ttsVoice') || params.get('voice') || '';
   const sendCards = params.get('sendCards') === 'true';
+  const sttOnly = params.get('sttOnly') === 'true';
 
-  if (!botName) {
+  // sttOnly mode doesn't need a bot — just transcribe and return
+  if (!sttOnly && !botName) {
     jsonResponse(res, 400, { error: 'Missing required query param: botName' });
     return;
   }
 
-  const bot = registry.get(botName);
-  if (!bot) {
+  const bot = botName ? registry.get(botName) : undefined;
+  if (!sttOnly && !bot) {
     jsonResponse(res, 404, { error: `Bot not found: ${botName}` });
     return;
   }
@@ -335,41 +431,92 @@ export async function handleVoiceRequest(
   }
 
   const ext = detectAudioExt(req.headers['content-type'], audioBuffer);
-  logger.info({ botName, chatId, audioSize: audioBuffer.length, ext, sttProvider, ttsProvider }, 'Voice request received');
+  logger.info({ botName: botName || '(sttOnly)', chatId, audioSize: audioBuffer.length, ext, sttProvider, sttOnly }, 'Voice request received');
+
+  // Build Seed-ASR context from recent voice conversation history + hotwords
+  const sttContext: SttContext = {};
+  const dialogHistory = getVoiceContext(chatId);
+  if (dialogHistory.length > 0) {
+    sttContext.dialogHistory = dialogHistory;
+  }
+  // Collect hotwords: bot name, custom hotwords from env
+  const hotwords: string[] = [];
+  if (botName) hotwords.push(botName);
+  if (bot?.config.name && bot.config.name !== botName) hotwords.push(bot.config.name);
+  const envHotwords = process.env.VOICE_HOTWORDS;
+  if (envHotwords) hotwords.push(...envHotwords.split(',').map(w => w.trim()).filter(Boolean));
+  if (hotwords.length > 0) sttContext.hotwords = hotwords;
 
   // Step 1: STT
   let transcript: string;
   if (sttProvider === 'whisper') {
     transcript = await whisperTranscribe(audioBuffer, ext, language, logger);
   } else {
-    transcript = await doubaoTranscribe(audioBuffer, ext, logger);
+    transcript = await doubaoTranscribe(audioBuffer, ext, logger, sttContext);
   }
 
   if (!transcript.trim()) {
     jsonResponse(res, 200, { success: true, transcript: '', responseText: '', error: 'No speech detected' });
     return;
   }
-  logger.info({ botName, chatId, transcript, sttProvider }, 'Voice transcript');
 
-  // Step 2: Agent execution
-  const talkResult = await bot.bridge.executeApiTask({
-    prompt: transcript,
+  // sttOnly mode: just return the transcript, skip agent + TTS
+  if (sttOnly) {
+    logger.info({ transcript, sttProvider }, 'STT-only transcript');
+    jsonResponse(res, 200, { success: true, transcript });
+    return;
+  }
+  logger.info({ botName, chatId, transcript, sttProvider, contextTurns: dialogHistory.length }, 'Voice transcript');
+
+  // Record user turn in voice history
+  pushVoiceHistory(chatId, 'user', transcript);
+
+  const voiceMode = params.get('voiceMode') === 'true';
+  const orchestratorMode = params.get('orchestrator') === 'true' || process.env.VOICE_ORCHESTRATOR === 'true';
+
+  // Build agent prompt based on mode
+  let agentPrompt: string;
+  if (orchestratorMode) {
+    agentPrompt = `[Voice orchestrator mode — you can delegate tasks to other bots via "mb talk". Respond in 1-3 concise spoken sentences. Be conversational. Do NOT use Bash/Write/Edit for code. Do NOT use markdown. Respond in the same language the user speaks.]\n\n${transcript}`;
+  } else if (voiceMode) {
+    agentPrompt = `[Voice mode — respond in 1-2 concise spoken sentences. Be conversational and brief. Do NOT use any tools. Do NOT use markdown formatting. Respond in the same language the user speaks.]\n\n${transcript}`;
+  } else {
+    agentPrompt = transcript;
+  }
+
+  // Step 2: Agent execution (voice mode uses maxTurns=1, orchestrator uses maxTurns=3 with Bash)
+  const talkResult = await bot!.bridge.executeApiTask({
+    prompt: agentPrompt,
     chatId,
     userId: 'voice',
     sendCards,
+    ...(orchestratorMode
+      ? { maxTurns: 3, allowedTools: ['Bash'] }
+      : voiceMode
+        ? { maxTurns: 1 }
+        : {}),
   });
 
   const responseText = talkResult.responseText || '';
-  logger.info({ botName, chatId, responseLength: responseText.length, costUsd: talkResult.costUsd }, 'Voice response ready');
+  const costUsd = talkResult.costUsd || 0;
+  logger.info({ botName, chatId, voiceMode, responseLength: responseText.length, costUsd }, 'Voice response ready');
+
+  // Record assistant turn in voice history
+  pushVoiceHistory(chatId, 'assistant', responseText);
 
   // Step 3: Optional TTS
   if (ttsProvider && responseText) {
+    // Resolve voice AFTER we have the response text, so language detection works
+    const ttsVoice = resolveTTSVoice(explicitVoice, ttsProvider, responseText);
+
     try {
       // Truncate very long responses for TTS
       // Doubao V3 limit: 1024 bytes (~300 Chinese chars); OpenAI/ElevenLabs: ~4000 chars
+      const isCn = detectChinese(responseText);
       const maxChars = ttsProvider === 'doubao' ? 300 : 4000;
+      const truncSuffix = isCn ? '... 内容过长，已截断。' : '... Content truncated.';
       const ttsText = responseText.length > maxChars
-        ? responseText.slice(0, maxChars - 10) + '... 内容过长，已截断。'
+        ? responseText.slice(0, maxChars - 10) + truncSuffix
         : responseText;
 
       let audioOut: Buffer;
@@ -389,7 +536,7 @@ export async function handleVoiceRequest(
         'Content-Length': audioOut.length.toString(),
         'X-Transcript': Buffer.from(transcript).toString('base64'),
         'X-Response-Text': Buffer.from(responseText.slice(0, 2000)).toString('base64'),
-        'X-Cost-Usd': (talkResult.costUsd || 0).toString(),
+        'X-Cost-Usd': costUsd.toString(),
       });
       res.end(audioOut);
       return;
@@ -401,11 +548,10 @@ export async function handleVoiceRequest(
 
   // Return JSON (no TTS or TTS failed)
   jsonResponse(res, 200, {
-    success: talkResult.success,
+    success: true,
     transcript,
     responseText,
-    costUsd: talkResult.costUsd,
-    durationMs: talkResult.durationMs,
+    costUsd,
   });
 }
 

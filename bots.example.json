@@ -2,13 +2,20 @@
   "feishuBots": [
     {
       "name": "project-alpha",
-      "description": "Frontend development agent for Project Alpha",
+      "description": "Frontend development agent for Project Alpha — React, TypeScript, CSS",
+      "specialties": ["frontend", "react", "typescript", "css"],
+      "icon": "🎨",
+      "maxConcurrentTasks": 3,
+      "budgetLimitDaily": 5.0,
+      "ttsVoice": "zh_male_rap_mars_bigtts",
       "feishuAppId": "cli_xxx",
       "feishuAppSecret": "secret1",
       "defaultWorkingDirectory": "/home/user/project-alpha"
     },
     {
       "name": "project-beta",
+      "description": "Backend API development agent for Project Beta",
+      "specialties": ["backend", "api", "database"],
       "feishuAppId": "cli_yyy",
       "feishuAppSecret": "secret2",
       "defaultWorkingDirectory": "/home/user/project-beta",
@@ -19,6 +26,7 @@
   "telegramBots": [
     {
       "name": "tg-project",
+      "description": "General purpose project assistant via Telegram",
       "telegramBotToken": "123456:ABC-DEF...",
       "defaultWorkingDirectory": "/home/user/project"
     }
