@@ -1,0 +1,443 @@
+/* ── AgentDetailPanel ── */
+
+.panel {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 28px 32px 20px;
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.avatarLarge {
+  width: 52px;
+  height: 52px;
+  min-width: 52px;
+  border-radius: var(--r-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-sans);
+}
+
+.headerInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.name {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-0);
+  letter-spacing: -0.3px;
+  margin: 0;
+}
+
+.statusBadge {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: var(--r-full);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: var(--font-mono);
+}
+
+.status-idle { background: var(--green-soft); color: var(--green); }
+.status-busy { background: var(--amber-soft); color: var(--amber); }
+.status-error { background: var(--red-soft); color: var(--red); }
+
+.parentLabel {
+  font-size: 12px;
+  color: var(--text-2);
+  margin-bottom: 4px;
+}
+.parentLabel strong { color: var(--text-1); }
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.platform {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  background: var(--surface-2);
+  padding: 1px 7px;
+  border-radius: var(--r-full);
+}
+
+.tags { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.tag {
+  font-size: 11px;
+  padding: 1px 8px;
+  background: var(--accent-softer);
+  color: var(--accent-text);
+  border-radius: var(--r-full);
+  font-weight: 500;
+}
+
+.description {
+  font-size: 13px;
+  color: var(--text-1);
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.chatBtn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background var(--duration-fast), box-shadow var(--duration-fast);
+  flex-shrink: 0;
+}
+.chatBtn:hover {
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-accent);
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.tab {
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  border-bottom: 2px solid transparent;
+  transition: color var(--duration-fast), border-color var(--duration-fast);
+  margin-bottom: -1px;
+}
+.tab:hover { color: var(--text-0); }
+
+.tabActive {
+  color: var(--text-0);
+  border-bottom-color: var(--accent);
+}
+
+/* Content area */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 32px;
+}
+
+/* Activity tab */
+.activityTab { animation: v2-fadeIn 200ms ease; }
+
+.activeTask {
+  background: var(--surface-1);
+  border: 1px solid var(--amber-soft);
+  border-radius: var(--r-lg);
+  padding: 18px 20px;
+}
+
+.taskHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.taskPulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--amber);
+  animation: v2-pulse 1.5s infinite;
+}
+
+.taskLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--amber);
+}
+
+.taskMeta {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-1);
+  font-family: var(--font-mono);
+}
+
+.taskMetaItem {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.taskMetaItem code {
+  color: var(--text-2);
+}
+
+.emptyActivity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 48px 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.emptyDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--green);
+  margin-bottom: 4px;
+  opacity: 0.6;
+}
+
+.emptyHint {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* Stats tab */
+.statsTab { animation: v2-fadeIn 200ms ease; }
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.statCard {
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.statValue {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-0);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+.statGreen { color: var(--green); }
+.statRed { color: var(--red); }
+
+.statLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-family: var(--font-mono);
+}
+
+.progressSection {
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  padding: 16px;
+}
+
+.progressHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.progressLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-1);
+}
+
+.progressValue {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--green);
+  font-family: var(--font-mono);
+}
+
+.progressBar {
+  height: 6px;
+  background: var(--surface-2);
+  border-radius: var(--r-full);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--gradient-accent);
+  border-radius: var(--r-full);
+  transition: width 500ms var(--ease-out);
+}
+
+/* Info tab */
+.infoTab {
+  animation: v2-fadeIn 200ms ease;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.infoRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.infoLabel {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-family: var(--font-mono);
+}
+
+.infoValue {
+  font-size: 14px;
+  color: var(--text-0);
+}
+
+.infoCode {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-1);
+  background: var(--surface-1);
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--glass-border);
+  word-break: break-all;
+}
+
+.toolsList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.toolTag {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  border-radius: var(--r-full);
+  font-family: var(--font-mono);
+}
+
+/* Sub-agents list */
+.subAgentSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subAgentList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subAgentItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+}
+
+.subAgentDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+.subAgentInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subAgentName {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-0);
+}
+
+.subAgentDesc {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.subAgentModel {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  background: var(--surface-2);
+  padding: 1px 6px;
+  border-radius: var(--r-full);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .header { padding: 20px 18px 16px; }
+  .tabs { padding: 0 18px; }
+  .content { padding: 18px; }
+  .statsGrid { grid-template-columns: repeat(2, 1fr); }
+  .avatarLarge { width: 40px; height: 40px; min-width: 40px; font-size: 16px; }
+}

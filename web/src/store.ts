@@ -155,6 +155,14 @@ export interface AppStore {
   // Team
   teamStatus: TeamStatus | null;
   setTeamStatus: (status: TeamStatus) => void;
+  teamViewMode: 'workspace' | 'office';
+  setTeamViewMode: (mode: 'workspace' | 'office') => void;
+  selectedAgentKey: string | null;
+  setSelectedAgentKey: (key: string | null) => void;
+  teamChatBotName: string | null;
+  setTeamChatBotName: (name: string | null) => void;
+  teamDetailTab: 'activity' | 'stats' | 'info';
+  setTeamDetailTab: (tab: 'activity' | 'stats' | 'info') => void;
 
   // Incoming voice call
   incomingVoiceCall: { sessionId: string; roomId: string; token: string; appId: string; userId: string; aiUserId: string; chatId: string; botName: string; prompt?: string } | null;
@@ -416,6 +424,23 @@ export const useStore = create<AppStore>((set, get) => ({
   teamStatus: null,
   setTeamStatus(status: TeamStatus) {
     set({ teamStatus: status });
+  },
+  teamViewMode: (localStorage.getItem('metabot:teamViewMode') as 'workspace' | 'office') || 'workspace',
+  setTeamViewMode(mode: 'workspace' | 'office') {
+    localStorage.setItem('metabot:teamViewMode', mode);
+    set({ teamViewMode: mode });
+  },
+  selectedAgentKey: null,
+  setSelectedAgentKey(key: string | null) {
+    set({ selectedAgentKey: key });
+  },
+  teamChatBotName: null,
+  setTeamChatBotName(name: string | null) {
+    set({ teamChatBotName: name });
+  },
+  teamDetailTab: 'activity',
+  setTeamDetailTab(tab: 'activity' | 'stats' | 'info') {
+    set({ teamDetailTab: tab });
   },
 
   /* ---- Incoming voice call ---- */
