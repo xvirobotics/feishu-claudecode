@@ -24,6 +24,7 @@ export function useWebSocket() {
   const setIncomingVoiceCall = useStore((s) => s.setIncomingVoiceCall);
   const setAsrState = useStore((s) => s.setAsrState);
   const setAsrPartialText = useStore((s) => s.setAsrPartialText);
+  const setCurrentUser = useStore((s) => s.setCurrentUser);
 
   const wsRef = useRef<WebSocket | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
@@ -86,6 +87,7 @@ export function useWebSocket() {
         switch (msg.type) {
           case 'connected':
             setBots(msg.bots);
+            if (msg.user) setCurrentUser(msg.user);
             break;
 
           case 'bots_updated':
@@ -195,6 +197,28 @@ export function useWebSocket() {
             setGroups(msg.groups);
             break;
 
+          case 'group_message': {
+            // Human message from another user in a group chat
+            const store = useStore.getState();
+            const currentUser = store.currentUser;
+            // Skip if the message is from ourselves (we already added it locally)
+            if (currentUser && msg.sender.id === currentUser.id) break;
+            const groupSession = Array.from(store.sessions.values()).find(
+              (s) => s.groupId === msg.groupId,
+            );
+            if (groupSession) {
+              addMessage(groupSession.id, {
+                id: msg.messageId,
+                type: 'user',
+                text: msg.text,
+                timestamp: msg.timestamp,
+                senderName: msg.sender.displayName || msg.sender.username,
+                senderColor: msg.sender.avatarColor,
+              });
+            }
+            break;
+          }
+
           case 'voice_call':
             setIncomingVoiceCall({
               sessionId: msg.sessionId,
@@ -256,7 +280,7 @@ export function useWebSocket() {
         if (mountedRef.current) connect();
       }, delay);
     };
-  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall, setAsrState, setAsrPartialText]);
+  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall, setAsrState, setAsrPartialText, setCurrentUser]);
 
   const send = useCallback(
     (msg: WSOutgoingMessage) => {

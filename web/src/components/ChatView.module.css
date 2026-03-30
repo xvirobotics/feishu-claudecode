@@ -59,6 +59,41 @@
   background: var(--void);
 }
 
+/* ═══ Group Chat Header ═══ */
+.groupHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--glass-border);
+  background: var(--surface-0);
+  flex-shrink: 0;
+}
+
+.groupName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.groupMembers {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.groupMemberChip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--accent-softer);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+
 /* ═══ Message List ═══ */
 .messageList {
   flex: 1;
@@ -505,6 +540,53 @@
 }
 
 .textarea::placeholder { color: var(--text-3); }
+
+/* ═══ @mention popup ═══ */
+.mentionPopup {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--surface-0);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.25);
+  z-index: 100;
+  padding: 4px;
+  margin-bottom: 6px;
+  animation: fadeIn 150ms ease-out;
+}
+
+.mentionItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: none;
+  color: var(--text-0);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  text-align: left;
+  transition: background var(--duration-fast);
+}
+
+.mentionItem:hover,
+.mentionItemActive {
+  background: var(--accent-softer);
+}
+
+.mentionDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 
 .sendBtn {
   width: 36px;
@@ -1132,6 +1214,13 @@
   align-items: flex-end;
   gap: 6px;
   max-width: 80%;
+}
+
+.senderLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-text);
+  margin-bottom: -2px;
 }
 
 /* ═══ Attachment Grid ═══ */

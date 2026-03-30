@@ -6,5 +6,6 @@ export { handleBotRoutes } from './bot-routes.js';
 export { handleSyncRoutes } from './sync-routes.js';
 export { handleRtcRoutes } from './rtc-routes.js';
 export { handleSessionRoutes } from './session-routes.js';
+export { createAuthRoutes } from './auth-routes.js';
 export { jsonResponse, readBody, parseJsonBody } from './helpers.js';
 export type { RouteContext, RouteHandler } from './types.js';

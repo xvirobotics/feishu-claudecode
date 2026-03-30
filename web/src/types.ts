@@ -63,6 +63,9 @@ export interface ChatMessage {
   attachments?: FileAttachment[];
   /** In group chats, which bot sent this message. */
   botName?: string;
+  /** In group chats, human sender info. */
+  senderName?: string;
+  senderColor?: string;
 }
 
 export interface ChatSession {
@@ -81,8 +84,18 @@ export interface ChatSession {
 export interface ChatGroup {
   id: string;
   name: string;
-  members: string[];
+  members: string[];    // bot names
+  users?: string[];     // human user IDs
+  creatorId?: string;
   createdAt: number;
+}
+
+export interface UserInfo {
+  id: string;
+  username: string;
+  displayName: string;
+  role: 'admin' | 'user';
+  avatarColor: string;
 }
 
 /* --- Memory types --- */
@@ -107,13 +120,14 @@ export interface MemoryDocument {
 /* --- WebSocket messages --- */
 
 export type WSIncomingMessage =
-  | { type: 'connected'; bots: BotInfo[] }
+  | { type: 'connected'; bots: BotInfo[]; user?: UserInfo }
   | { type: 'bots_updated'; bots: BotInfo[] }
   | { type: 'state'; chatId: string; messageId: string; state: CardState; botName?: string; groupId?: string }
   | { type: 'complete'; chatId: string; messageId: string; state: CardState; botName?: string; groupId?: string }
   | { type: 'error'; chatId: string; messageId: string; error: string }
   | { type: 'notice'; text?: string; chatId?: string; title?: string; content?: string }
   | { type: 'file'; chatId: string; url: string; name: string; mimeType: string; size?: number }
+  | { type: 'group_message'; groupId: string; chatId: string; messageId: string; text: string; sender: { id: string; username: string; displayName: string; avatarColor: string }; timestamp: number }
   | { type: 'group_created'; group: ChatGroup }
   | { type: 'group_deleted'; groupId: string }
   | { type: 'groups_list'; groups: ChatGroup[] }

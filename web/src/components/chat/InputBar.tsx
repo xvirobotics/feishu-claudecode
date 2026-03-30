@@ -22,13 +22,19 @@ interface InputBarProps {
   callActive: boolean;
   send: (msg: WSOutgoingMessage) => void;
   sendBinary: (data: ArrayBuffer | Uint8Array) => void;
+  /** Bot names available for @mention (in group chats). */
+  mentionBots?: string[];
 }
 
 type VoiceState = 'idle' | 'recording' | 'recognizing' | 'preview';
 
-export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, callActive, send, sendBinary }: InputBarProps) {
+export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, callActive, send, sendBinary, mentionBots }: InputBarProps) {
   const [input, setInput] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState('');
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const token = useStore((s) => s.token);
 
@@ -436,8 +442,74 @@ export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, ca
     await onSend(text, filesToSend);
   }, [input, connected, pendingFiles, onSend]);
 
+  // ── @mention logic ──
+  const filteredMentions = (mentionBots || []).filter((b) =>
+    b.toLowerCase().includes(mentionFilter.toLowerCase()),
+  );
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setInput(val);
+
+    // Check if user just typed @ at start or after space
+    if (mentionBots && mentionBots.length > 0) {
+      const cursorPos = e.target.selectionStart || 0;
+      const textBefore = val.slice(0, cursorPos);
+      const atMatch = textBefore.match(/(^|\s)@(\S*)$/);
+      if (atMatch) {
+        setMentionOpen(true);
+        setMentionFilter(atMatch[2]);
+        setMentionIndex(0);
+      } else {
+        setMentionOpen(false);
+      }
+    }
+  }, [mentionBots]);
+
+  const insertMention = useCallback((botName: string) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const cursorPos = el.selectionStart || 0;
+    const textBefore = input.slice(0, cursorPos);
+    const textAfter = input.slice(cursorPos);
+    // Replace the @partial with @botName
+    const atIdx = textBefore.lastIndexOf('@');
+    const newText = textBefore.slice(0, atIdx) + `@${botName} ` + textAfter;
+    setInput(newText);
+    setMentionOpen(false);
+    setTimeout(() => {
+      el.focus();
+      const newPos = atIdx + botName.length + 2;
+      el.selectionStart = el.selectionEnd = newPos;
+    }, 10);
+  }, [input]);
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
+      // Mention popup keyboard navigation
+      if (mentionOpen && filteredMentions.length > 0) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setMentionIndex((i) => Math.min(i + 1, filteredMentions.length - 1));
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setMentionIndex((i) => Math.max(i - 1, 0));
+          return;
+        }
+        if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+          e.preventDefault();
+          insertMention(filteredMentions[mentionIndex]);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setMentionOpen(false);
+          return;
+        }
+      }
+
       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
         e.preventDefault();
         handleSend();
@@ -447,7 +519,7 @@ export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, ca
         onStop();
       }
     },
-    [handleSend, isRunning, onStop],
+    [handleSend, isRunning, onStop, mentionOpen, filteredMentions, mentionIndex, insertMention],
   );
 
   useEffect(() => {
@@ -577,17 +649,35 @@ export function InputBar({ connected, isRunning, onSend, onStop, onStartCall, ca
             </button>
           </div>
         ) : (
-          <textarea
-            ref={textareaRef}
-            className={styles.textarea}
-            placeholder={connected ? 'Ask anything...' : 'Connecting...'}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            rows={1}
-            disabled={!connected}
-          />
+          <div style={{ position: 'relative', flex: 1 }}>
+            <textarea
+              ref={textareaRef}
+              className={styles.textarea}
+              placeholder={connected ? (mentionBots?.length ? 'Type @ to mention a bot...' : 'Ask anything...') : 'Connecting...'}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
+              rows={1}
+              disabled={!connected}
+            />
+            {/* @mention popup */}
+            {mentionOpen && filteredMentions.length > 0 && (
+              <div ref={mentionRef} className={styles.mentionPopup}>
+                {filteredMentions.map((bot, i) => (
+                  <button
+                    key={bot}
+                    className={`${styles.mentionItem} ${i === mentionIndex ? styles.mentionItemActive : ''}`}
+                    onMouseDown={(e) => { e.preventDefault(); insertMention(bot); }}
+                    onMouseEnter={() => setMentionIndex(i)}
+                  >
+                    <span className={styles.mentionDot} style={{ background: `hsl(${bot.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360}, 60%, 55%)` }} />
+                    @{bot}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Mode toggle: keyboard ↔ mic */}

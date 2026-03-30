@@ -52,6 +52,11 @@ export function MessageList({ messages, onAnswer, onPreview, autoScrollRef }: Me
           >
             {msg.type === 'user' && (
               <div className={styles.userBubbleWrap}>
+                {msg.senderName && (
+                  <div className={styles.senderLabel} style={msg.senderColor ? { color: msg.senderColor } : undefined}>
+                    {msg.senderName}
+                  </div>
+                )}
                 {msg.attachments && msg.attachments.length > 0 && (
                   <div className={styles.attachGrid}>
                     {msg.attachments.map((file, fi) => (
