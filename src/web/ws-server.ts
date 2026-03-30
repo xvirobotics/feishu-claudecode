@@ -11,6 +11,7 @@ import { ChatSubscriptionManager } from './chat-subscriptions.js';
 import { GroupManager, type ChatGroup } from './group-manager.js';
 import { StreamingASRSession, createStreamingASRSession, isStreamingASRAvailable } from '../api/streaming-asr.js';
 import type { SessionRegistry, SessionRecord, SessionMessage } from '../session/session-registry.js';
+import type { UserStore, User } from '../auth/user-store.js';
 
 // ─── Client → Server messages ──────────────────────────────────────────────
 
@@ -34,13 +35,14 @@ type ClientMessage =
 // ─── Server → Client messages ──────────────────────────────────────────────
 
 type ServerMessage =
-  | { type: 'connected'; bots: BotInfo[] }
+  | { type: 'connected'; bots: BotInfo[]; user?: { id: string; username: string; displayName: string; role: string; avatarColor: string } }
   | { type: 'bots_updated'; bots: BotInfo[] }
   | { type: 'state'; chatId: string; messageId: string; state: CardState; botName?: string; groupId?: string }
   | { type: 'complete'; chatId: string; messageId: string; state: CardState; botName?: string; groupId?: string }
   | { type: 'error'; chatId: string; messageId?: string; error: string }
   | { type: 'notice'; chatId: string; title: string; content: string; color?: string }
   | { type: 'file'; chatId: string; url: string; name: string; mimeType: string; size?: number }
+  | { type: 'group_message'; groupId: string; chatId: string; messageId: string; text: string; sender: { id: string; username: string; displayName: string; avatarColor: string }; timestamp: number }
   | { type: 'group_created'; group: ChatGroup }
   | { type: 'group_deleted'; groupId: string }
   | { type: 'groups_list'; groups: ChatGroup[] }
@@ -113,6 +115,7 @@ export function setupWebSocketServer(
   secret?: string,
   peerManager?: PeerManager,
   sessionRegistry?: SessionRegistry,
+  userStore?: UserStore,
 ): WebSocketHandle {
   const wsLogger = logger.child({ module: 'ws' });
 
@@ -137,15 +140,19 @@ export function setupWebSocketServer(
       return;
     }
 
-    // Auth via ?token=SECRET query parameter (if secret is configured)
+    // Auth via ?token=SECRET query parameter
+    const token = url.searchParams.get('token');
     if (secret) {
-      const token = url.searchParams.get('token');
-      if (token !== secret) {
+      // Validate token against userStore (which also checks legacy admin secret)
+      const validUser = token ? userStore?.validateToken(token) : null;
+      if (!validUser) {
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         wsLogger.warn('WebSocket connection rejected: invalid token');
         return;
       }
+      // Attach user info to request for use in connection handler
+      (req as any).__user = validUser;
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
@@ -153,10 +160,15 @@ export function setupWebSocketServer(
     });
   });
 
+  // Track user info per WebSocket connection
+  const clientUserMap = new Map<WebSocket, User>();
+
   // Handle new WebSocket connections
   wss.on('connection', (ws: WebSocket, _req: IncomingMessage) => {
-    wsLogger.info('WebSocket client connected');
+    const user = (_req as any).__user as User | undefined;
+    wsLogger.info({ userId: user?.id, username: user?.username }, 'WebSocket client connected');
     connectedClients.add(ws);
+    if (user) clientUserMap.set(ws, user);
 
     // Per-connection state
     const pendingAnswers = new Map<string, {
@@ -166,10 +178,20 @@ export function setupWebSocketServer(
     // Track chatId → botName for stop commands
     const chatBotMap = new Map<string, string>();
 
-    // Send connected message with bot list
+    // Send connected message with bot list + user info
     const bots = registry.list();
     const peerBots = peerManager?.getPeerBots() ?? [];
-    sendMessage(ws, { type: 'connected', bots: [...bots, ...peerBots] });
+    const connectedMsg: any = { type: 'connected', bots: [...bots, ...peerBots] };
+    if (user) {
+      connectedMsg.user = {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        role: user.role,
+        avatarColor: user.avatarColor,
+      };
+    }
+    sendMessage(ws, connectedMsg);
 
     // Heartbeat: ping every 30s, close if no pong
     let isAlive = true;
@@ -228,7 +250,7 @@ export function setupWebSocketServer(
           break;
 
         case 'group_chat':
-          handleGroupChat(ws, msg, groupManager, registry, subscriptions, pendingAnswers, wsLogger).catch((err) => {
+          handleGroupChat(ws, msg, groupManager, registry, subscriptions, pendingAnswers, wsLogger, connectedClients, clientUserMap, user).catch((err) => {
             wsLogger.error({ err, chatId: msg.chatId }, 'WS group chat handler error');
             sendMessage(ws, { type: 'error', chatId: msg.chatId, messageId: msg.messageId, error: err.message || 'Internal error' });
           });
@@ -236,18 +258,18 @@ export function setupWebSocketServer(
 
         case 'create_group': {
           const { name, members } = msg;
-          if (!name || !members || members.length < 2) {
-            sendMessage(ws, { type: 'error', chatId: '', error: 'Group needs a name and at least 2 members' });
+          if (!name || !members || members.length < 1) {
+            sendMessage(ws, { type: 'error', chatId: '', error: 'Group needs a name and at least 1 bot member' });
             break;
           }
-          // Validate all members exist
+          // Validate all bot members exist
           const invalid = members.filter((m) => !registry.get(m));
           if (invalid.length > 0) {
             sendMessage(ws, { type: 'error', chatId: '', error: `Unknown bot(s): ${invalid.join(', ')}` });
             break;
           }
-          const group = groupManager.create(name, members);
-          wsLogger.info({ groupId: group.id, name, members }, 'Group created');
+          const group = groupManager.create(name, members, user?.id || 'admin');
+          wsLogger.info({ groupId: group.id, name, members, creator: user?.username }, 'Group created');
           // Broadcast to all clients
           for (const client of connectedClients) {
             sendMessage(client, { type: 'group_created', group });
@@ -380,8 +402,9 @@ export function setupWebSocketServer(
     });
 
     ws.on('close', () => {
-      wsLogger.info('WebSocket client disconnected');
+      wsLogger.info({ userId: user?.id }, 'WebSocket client disconnected');
       connectedClients.delete(ws);
+      clientUserMap.delete(ws);
       subscriptions.unsubscribeAll(ws);
       clearInterval(heartbeat);
       // Clean up ASR session
@@ -616,6 +639,9 @@ async function handleGroupChat(
   subscriptions: ChatSubscriptionManager,
   pendingAnswers: Map<string, { resolve: (answer: string) => void; reject: (err: Error) => void }>,
   logger: Logger,
+  connectedClients: Set<WebSocket>,
+  clientUserMap: Map<WebSocket, User>,
+  senderUser?: User,
 ): Promise<void> {
   const { groupId, chatId, text, messageId: clientMessageId } = msg;
 
@@ -625,10 +651,34 @@ async function handleGroupChat(
     return;
   }
 
+  // Subscribe the sender to the group chatId
+  subscriptions.subscribe(chatId, ws);
+  // Subscribe to grouptalk chatIds so inter-bot mb talk calls are visible
+  for (const member of group.members) {
+    subscriptions.subscribe(`grouptalk-${groupId}-${member}`, ws);
+  }
+
+  // Broadcast the human message to all group subscribers (so other users see it)
+  const humanMsg = {
+    type: 'group_message' as const,
+    groupId,
+    chatId,
+    messageId: clientMessageId || `human-${Date.now()}`,
+    text,
+    sender: senderUser ? {
+      id: senderUser.id,
+      username: senderUser.username,
+      displayName: senderUser.displayName,
+      avatarColor: senderUser.avatarColor,
+    } : { id: 'anonymous', username: 'anonymous', displayName: 'Anonymous', avatarColor: '#888' },
+    timestamp: Date.now(),
+  };
+  subscriptions.broadcast(chatId, humanMsg);
+
   // Parse @mention to route to specific bot
   const mentionMatch = text.match(/^@(\S+)\s+([\s\S]*)$/);
   if (!mentionMatch) {
-    sendMessage(ws, { type: 'error', chatId, error: 'In group chat, use @botName to address a specific bot' });
+    // No @mention — just a human-to-human message, already broadcast above
     return;
   }
 
@@ -649,34 +699,27 @@ async function handleGroupChat(
   // Use per-bot chatId to avoid "chat busy" conflicts between bots
   const botChatId = `group-${groupId}-${targetBot}`;
 
-  // Subscribe the client to the group chatId for receiving updates
-  subscriptions.subscribe(chatId, ws);
-  // Subscribe to grouptalk chatIds so inter-bot mb talk calls are visible
-  for (const member of group.members) {
-    subscriptions.subscribe(`grouptalk-${groupId}-${member}`, ws);
-  }
-
-  logger.info({ groupId, targetBot, chatId, botChatId, promptLength: prompt.length }, 'Group chat request');
+  logger.info({ groupId, targetBot, chatId, botChatId, promptLength: prompt.length, sender: senderUser?.username }, 'Group chat request');
 
   try {
     await bot.bridge.executeApiTask({
       prompt,
       chatId: botChatId,
-      userId: 'web',
+      userId: senderUser?.id || 'web',
       sendCards: false,
       groupMembers: group.members,
       groupId,
       onUpdate: (state: CardState, bridgeMessageId: string, final: boolean) => {
-        if (ws.readyState !== WebSocket.OPEN) return;
         const msgId = clientMessageId || bridgeMessageId;
         const msgType = final ? 'complete' : 'state';
-        // Broadcast to all subscribers of this group chat using the user-facing chatId
+        // Broadcast to all subscribers of this group chat
         subscriptions.broadcast(chatId, {
           type: msgType,
           chatId,
           messageId: msgId,
           state,
           botName: targetBot,
+          groupId,
         });
       },
       onQuestion: (question: PendingQuestion): Promise<string> => {

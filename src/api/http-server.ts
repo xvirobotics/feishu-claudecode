@@ -17,6 +17,7 @@ import { VoiceIdentityStore } from './voice-identity.js';
 import { RtcVoiceChatService } from './rtc-voice-chat.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
+import { UserStore } from '../auth/user-store.js';
 import {
   jsonResponse,
   handleVoiceRoutes,
@@ -27,6 +28,7 @@ import {
   handleSyncRoutes,
   handleRtcRoutes,
   handleSessionRoutes,
+  createAuthRoutes,
 } from './routes/index.js';
 import type { RouteContext } from './routes/index.js';
 
@@ -71,6 +73,9 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
   const ws: { handle?: WebSocketHandle } = {};
 
+  // Initialize user store for multi-user auth
+  const userStore = new UserStore(logger, secret);
+
   // Build route context (shared across all route handlers)
   const ctx: RouteContext = {
     registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient,
@@ -80,10 +85,15 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     rtcService: rtcService.isConfigured() ? rtcService : undefined,
     ws,
     sessionRegistry: options.sessionRegistry,
+    userStore,
   };
+
+  // Auth routes must be first (register/login are public)
+  const handleAuthRoutes = createAuthRoutes(userStore);
 
   // Route handlers in priority order
   const routeHandlers = [
+    handleAuthRoutes,
     handleVoiceRoutes,
     handleFileRoutes,
     handleTeamRoutes,
@@ -98,11 +108,17 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     const method = req.method || 'GET';
     const url = req.url || '/';
 
-    // Auth check (exempt /web/, /memory/, /api/files/)
-    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/')) {
+    // Auth check (exempt /web/, /memory/, /api/files/, /api/auth/register, /api/auth/login)
+    const isPublicRoute = url.startsWith('/web') || url.startsWith('/memory') || url.startsWith('/api/files/')
+      || url === '/api/auth/register' || url === '/api/auth/login' || url === '/api/users';
+    if (secret && !isPublicRoute) {
       const auth = req.headers.authorization;
+      const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;
       const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
-      if (auth !== `Bearer ${secret}` && urlToken !== secret) {
+      const effectiveToken = token || urlToken;
+      // Validate against userStore (which also checks legacy admin secret)
+      const valid = effectiveToken ? userStore.validateToken(effectiveToken) : null;
+      if (!valid) {
         jsonResponse(res, 401, { error: 'Unauthorized' });
         return;
       }
@@ -145,7 +161,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   });
 
   // Set up WebSocket server for Web UI streaming
-  ws.handle = setupWebSocketServer(server, registry, logger, secret, peerManager, options.sessionRegistry);
+  ws.handle = setupWebSocketServer(server, registry, logger, secret, peerManager, options.sessionRegistry, userStore);
 
   // Wire WebSocket handle to scheduler so scheduled tasks stream updates to clients
   scheduler.setWebSocketHandle(ws.handle);

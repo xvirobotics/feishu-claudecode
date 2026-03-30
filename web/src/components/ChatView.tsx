@@ -50,6 +50,7 @@ export function ChatView() {
   const connected = useStore((s) => s.connected);
   const activeBotName = useStore((s) => s.activeBotName);
   const bots = useStore((s) => s.bots);
+  const groups = useStore((s) => s.groups);
   const token = useStore((s) => s.token);
 
   const activeBot = bots.find((b) => b.name === activeBotName);
@@ -280,15 +281,18 @@ export function ChatView() {
       ...(attachments.length > 0 ? { attachments } : {}),
     });
 
-    addMessage(sessionId, {
-      id: assistantMsgId, type: 'assistant', text: '',
-      state: { status: 'thinking', userPrompt: fullText, responseText: '', toolCalls: [] },
-      timestamp: Date.now(),
-    });
-
     // Determine if this is a group chat
     const currentSession = sessions.get(sessionId);
     if (currentSession?.groupId) {
+      // In group chat: only show "thinking" if @mentioning a bot
+      const hasMention = /^@\S+\s/.test(fullText);
+      if (hasMention) {
+        addMessage(sessionId, {
+          id: assistantMsgId, type: 'assistant', text: '',
+          state: { status: 'thinking', userPrompt: fullText, responseText: '', toolCalls: [] },
+          timestamp: Date.now(),
+        });
+      }
       send({
         type: 'group_chat',
         groupId: currentSession.groupId,
@@ -297,6 +301,11 @@ export function ChatView() {
         messageId: assistantMsgId,
       });
     } else {
+      addMessage(sessionId, {
+        id: assistantMsgId, type: 'assistant', text: '',
+        state: { status: 'thinking', userPrompt: fullText, responseText: '', toolCalls: [] },
+        timestamp: Date.now(),
+      });
       send({
         type: 'chat',
         botName: activeBotName || 'default',
@@ -329,6 +338,22 @@ export function ChatView() {
   return (
     <div className={styles.chatLayout}>
       <div className={styles.container}>
+        {/* Group chat header */}
+        {session?.groupId && (() => {
+          const group = groups.find((g) => g.id === session.groupId);
+          if (!group) return null;
+          return (
+            <div className={styles.groupHeader}>
+              <span className={styles.groupName}>{group.name}</span>
+              <span className={styles.groupMembers}>
+                {group.members.map((m) => (
+                  <span key={m} className={styles.groupMemberChip}>@{m}</span>
+                ))}
+              </span>
+            </div>
+          );
+        })()}
+
         {/* Messages or empty state */}
         {hasMessages ? (
           <MessageList
@@ -375,6 +400,7 @@ export function ChatView() {
           callActive={callActive}
           send={send}
           sendBinary={sendBinary}
+          mentionBots={session?.groupId ? groups.find((g) => g.id === session.groupId)?.members : undefined}
         />
 
         {/* File panel toggle button */}

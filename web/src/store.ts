@@ -11,6 +11,7 @@ import type {
   ChatMessage,
   ChatSession,
   Theme,
+  UserInfo,
 } from './types';
 
 /* ---- team status types ---- */
@@ -93,7 +94,10 @@ function loadSessions(): Map<string, ChatSession> {
 export interface AppStore {
   // Auth
   token: string | null;
+  currentUser: UserInfo | null;
   login: (token: string) => void;
+  loginWithUser: (token: string, user: UserInfo) => void;
+  setCurrentUser: (user: UserInfo | null) => void;
   logout: () => void;
 
   // Connection
@@ -177,15 +181,37 @@ export interface AppStore {
 export const useStore = create<AppStore>((set, get) => ({
   /* ---- Auth ---- */
   token: localStorage.getItem('metabot:token'),
+  currentUser: (() => {
+    try {
+      const raw = localStorage.getItem('metabot:user');
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  })(),
 
   login(token: string) {
     localStorage.setItem('metabot:token', token);
     set({ token });
   },
 
+  loginWithUser(token: string, user: UserInfo) {
+    localStorage.setItem('metabot:token', token);
+    localStorage.setItem('metabot:user', JSON.stringify(user));
+    set({ token, currentUser: user });
+  },
+
+  setCurrentUser(user: UserInfo | null) {
+    if (user) {
+      localStorage.setItem('metabot:user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('metabot:user');
+    }
+    set({ currentUser: user });
+  },
+
   logout() {
     localStorage.removeItem('metabot:token');
-    set({ token: null, connected: false, bots: [], activeBotName: null });
+    localStorage.removeItem('metabot:user');
+    set({ token: null, currentUser: null, connected: false, bots: [], activeBotName: null });
   },
 
   /* ---- Connection ---- */

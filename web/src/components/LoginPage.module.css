@@ -142,9 +142,34 @@
   animation: v2-fadeIn 200ms var(--ease-out);
 }
 
+.modeSwitch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.modeBtn {
+  background: none;
+  border: none;
+  color: var(--accent-text);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: opacity var(--duration-fast);
+}
+
+.modeBtn:hover { opacity: 0.8; }
+
+.modeDivider {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
 .footer {
   text-align: center;
-  margin-top: 32px;
+  margin-top: 24px;
   color: var(--text-2);
   font-size: 12px;
 }
