@@ -5,11 +5,14 @@
 import { create } from 'zustand';
 import type {
   ActiveView,
+  ActivityEvent,
   BotInfo,
   CardState,
   ChatGroup,
   ChatMessage,
   ChatSession,
+  ServerSession,
+  ServerSessionMessage,
   Theme,
 } from './types';
 
@@ -132,6 +135,10 @@ export interface AppStore {
   markRunningMessagesDisconnected: () => void;
   clearSessions: () => void;
   getOrCreateBotSession: (botName: string) => string;
+  /** Merge server-side sessions into local store (session persistence). */
+  mergeServerSessions: (serverSessions: ServerSession[]) => void;
+  /** Load server message history into a local session. */
+  loadServerHistory: (chatId: string, messages: ServerSessionMessage[]) => void;
 
   // Groups
   groups: ChatGroup[];
@@ -163,6 +170,11 @@ export interface AppStore {
   setTeamChatBotName: (name: string | null) => void;
   teamDetailTab: 'activity' | 'stats' | 'info';
   setTeamDetailTab: (tab: 'activity' | 'stats' | 'info') => void;
+
+  // Activity feed
+  activityEvents: ActivityEvent[];
+  addActivityEvent: (event: ActivityEvent) => void;
+  setActivityEvents: (events: ActivityEvent[]) => void;
 
   // Incoming voice call
   incomingVoiceCall: { sessionId: string; roomId: string; token: string; appId: string; userId: string; aiUserId: string; chatId: string; botName: string; prompt?: string } | null;
@@ -366,6 +378,56 @@ export const useStore = create<AppStore>((set, get) => ({
     return id;
   },
 
+  mergeServerSessions(serverSessions: ServerSession[]) {
+    const sessions = new Map(get().sessions);
+    let changed = false;
+    for (const ss of serverSessions) {
+      // Server sessions use chatId as key — same as local session ID
+      if (!sessions.has(ss.chatId)) {
+        // Session exists on server but not locally — restore it
+        sessions.set(ss.chatId, {
+          id: ss.chatId,
+          botName: ss.botName,
+          title: ss.title || 'Restored Chat',
+          messages: [],
+          createdAt: ss.createdAt,
+          updatedAt: ss.updatedAt,
+        });
+        changed = true;
+      }
+    }
+    if (changed) {
+      persistSessions(sessions);
+      set({ sessions });
+    }
+  },
+
+  loadServerHistory(chatId: string, messages: ServerSessionMessage[]) {
+    const sessions = new Map(get().sessions);
+    const session = sessions.get(chatId);
+    if (!session) return;
+    // Only load if local session has fewer messages (avoid overwriting in-progress work)
+    if (session.messages.length >= messages.length) return;
+
+    const chatMessages: ChatMessage[] = messages.map((m, i) => ({
+      id: `srv-${chatId}-${i}`,
+      type: m.role === 'user' ? 'user' as const : 'assistant' as const,
+      text: m.text,
+      timestamp: m.timestamp,
+      state: m.role === 'assistant' ? {
+        status: 'complete' as const,
+        userPrompt: '',
+        responseText: m.text,
+        toolCalls: [],
+        costUsd: m.costUsd,
+        durationMs: m.durationMs,
+      } : undefined,
+    }));
+    sessions.set(chatId, { ...session, messages: chatMessages });
+    persistSessions(sessions);
+    set({ sessions });
+  },
+
   /* ---- Groups ---- */
   groups: [],
   setGroups(groups: ChatGroup[]) {
@@ -441,6 +503,16 @@ export const useStore = create<AppStore>((set, get) => ({
   teamDetailTab: 'activity',
   setTeamDetailTab(tab: 'activity' | 'stats' | 'info') {
     set({ teamDetailTab: tab });
+  },
+
+  /* ---- Activity feed ---- */
+  activityEvents: [],
+  addActivityEvent(event: ActivityEvent) {
+    const events = [event, ...get().activityEvents].slice(0, 100);
+    set({ activityEvents: events });
+  },
+  setActivityEvents(events: ActivityEvent[]) {
+    set({ activityEvents: events });
   },
 
   /* ---- Incoming voice call ---- */

@@ -12,6 +12,21 @@ export async function handleTeamRoutes(
 ): Promise<boolean> {
   const { registry, peerManager, intentRouter, circuitBreaker, budgetManager, teamManager, meetingService, voiceIdentityStore } = ctx;
 
+  // GET /api/activity/events — recent activity events
+  if (method === 'GET' && url.startsWith('/api/activity/events')) {
+    if (!ctx.activityStore) {
+      jsonResponse(res, 200, { events: [] });
+      return true;
+    }
+    const parsed = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const botName = parsed.searchParams.get('botName') || undefined;
+    const since = parsed.searchParams.get('since') ? Number(parsed.searchParams.get('since')) : undefined;
+    const limit = parsed.searchParams.get('limit') ? Number(parsed.searchParams.get('limit')) : 50;
+    const events = ctx.activityStore.list({ botName, since, limit });
+    jsonResponse(res, 200, { events });
+    return true;
+  }
+
   // GET /api/team/status
   if (method === 'GET' && url === '/api/team/status') {
     const status = await getTeamStatus(registry);

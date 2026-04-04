@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useStore } from '../store';
+import { requestNotificationPermission } from '../utils/notifications';
 import styles from './LoginPage.module.css';
 
 export function LoginPage() {
@@ -25,6 +26,7 @@ export function LoginPage() {
       });
       if (res.ok) {
         login(t);
+        requestNotificationPermission();
       } else if (res.status === 401 || res.status === 403) {
         setError('Invalid token. Please check and try again.');
       } else {

@@ -75,6 +75,11 @@ export class BotRegistry {
     return false;
   }
 
+  /** Return all registered bots with full internal info (bridge, sender, etc.) */
+  listRegistered(): RegisteredBot[] {
+    return Array.from(this.bots.values());
+  }
+
   list(): BotInfo[] {
     return Array.from(this.bots.values()).map((b) => ({
       name: b.name,

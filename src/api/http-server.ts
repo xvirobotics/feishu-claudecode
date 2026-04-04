@@ -15,6 +15,7 @@ import { TeamManager } from './team-manager.js';
 import { VoiceMeetingService } from './voice-meeting.js';
 import { VoiceIdentityStore } from './voice-identity.js';
 import { RtcVoiceChatService } from './rtc-voice-chat.js';
+import { ActivityStore } from './activity-store.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
 import {
@@ -64,6 +65,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
   const teamManager = options.teamManager ?? new TeamManager(logger);
   const meetingService = new VoiceMeetingService(registry, logger);
   const voiceIdentityStore = new VoiceIdentityStore(logger);
+  const activityStore = new ActivityStore(logger);
   const rtcService = new RtcVoiceChatService(logger);
   if (rtcService.isConfigured()) {
     logger.info('RTC voice chat service enabled');
@@ -80,6 +82,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     rtcService: rtcService.isConfigured() ? rtcService : undefined,
     ws,
     sessionRegistry: options.sessionRegistry,
+    activityStore,
   };
 
   // Route handlers in priority order
@@ -149,6 +152,14 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
   // Wire WebSocket handle to scheduler so scheduled tasks stream updates to clients
   scheduler.setWebSocketHandle(ws.handle);
+
+  // Wire activity events: each bridge records to ActivityStore and broadcasts to WS clients
+  for (const bot of registry.listRegistered()) {
+    bot.bridge.onActivityEvent = (event) => {
+      const recorded = activityStore.record(event);
+      ws.handle?.broadcastAll({ type: 'activity_event', event: recorded });
+    };
+  }
 
   server.listen(port, host, () => {
     logger.info({ host, port }, 'API server started');

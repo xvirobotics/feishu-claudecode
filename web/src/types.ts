@@ -104,6 +104,42 @@ export interface MemoryDocument {
   updated_at: string;
 }
 
+/* --- Server session types --- */
+
+export interface ServerSession {
+  id: string;
+  botName: string;
+  title: string;
+  chatId: string;
+  createdAt: number;
+  updatedAt: number;
+  lastMessagePreview?: string;
+}
+
+export interface ServerSessionMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: number;
+  costUsd?: number;
+  durationMs?: number;
+}
+
+/* --- Activity event types --- */
+
+export interface ActivityEvent {
+  id: string;
+  type: 'task_started' | 'task_completed' | 'task_failed';
+  botName: string;
+  chatId: string;
+  userId?: string;
+  prompt?: string;
+  responsePreview?: string;
+  costUsd?: number;
+  durationMs?: number;
+  errorMessage?: string;
+  timestamp: number;
+}
+
 /* --- WebSocket messages --- */
 
 export type WSIncomingMessage =
@@ -118,6 +154,9 @@ export type WSIncomingMessage =
   | { type: 'group_deleted'; groupId: string }
   | { type: 'groups_list'; groups: ChatGroup[] }
   | { type: 'voice_call'; sessionId: string; roomId: string; token: string; appId: string; userId: string; aiUserId: string; chatId: string; botName: string; prompt?: string }
+  | { type: 'sessions_list'; botName: string; sessions: ServerSession[] }
+  | { type: 'session_history'; sessionId: string; messages: ServerSessionMessage[] }
+  | { type: 'activity_event'; event: ActivityEvent }
   | { type: 'asr_started' }
   | { type: 'asr_transcript'; text: string; isFinal: boolean }
   | { type: 'asr_error'; error: string }
@@ -133,6 +172,8 @@ export type WSOutgoingMessage =
   | { type: 'delete_group'; groupId: string }
   | { type: 'list_groups' }
   | { type: 'subscribe_group'; groupId: string; chatId: string }
+  | { type: 'list_sessions'; botName: string }
+  | { type: 'get_session_history'; sessionId: string; since?: number }
   | { type: 'start_asr' }
   | { type: 'stop_asr' }
   | { type: 'ping' };

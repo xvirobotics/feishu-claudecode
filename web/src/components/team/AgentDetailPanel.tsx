@@ -1,5 +1,7 @@
 import { useMemo } from 'react';
 import type { BotStatus, AgentMetadata } from '../../store';
+import { useStore } from '../../store';
+import { ActivityTimeline } from './ActivityTimeline';
 import s from './AgentDetailPanel.module.css';
 
 /* ── Icons ── */
@@ -121,31 +123,7 @@ export function AgentDetailPanel({ bot, agentKey, activeTab, onTabChange, onOpen
       {/* Tab content */}
       <div className={s.content}>
         {activeTab === 'activity' && (
-          <div className={s.activityTab}>
-            {bot.status === 'busy' && bot.currentTask ? (
-              <div className={s.activeTask}>
-                <div className={s.taskHeader}>
-                  <span className={s.taskPulse} />
-                  <span className={s.taskLabel}>Running Task</span>
-                </div>
-                <div className={s.taskMeta}>
-                  <span className={s.taskMetaItem}>
-                    <IconClock />
-                    {formatDuration(bot.currentTask.durationMs)}
-                  </span>
-                  <span className={s.taskMetaItem}>
-                    Session: <code>{bot.currentTask.chatId.slice(0, 12)}...</code>
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className={s.emptyActivity}>
-                <div className={s.emptyDot} />
-                <span>No active tasks</span>
-                <span className={s.emptyHint}>Agent is idle and ready for work</span>
-              </div>
-            )}
-          </div>
+          <ActivityTab bot={bot} />
         )}
 
         {activeTab === 'stats' && (
@@ -241,6 +219,35 @@ export function AgentDetailPanel({ bot, agentKey, activeTab, onTabChange, onOpen
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ── Activity Tab with active task + timeline ── */
+
+function ActivityTab({ bot }: { bot: BotStatus }) {
+  const activityEvents = useStore((s) => s.activityEvents);
+
+  return (
+    <div className={s.activityTab}>
+      {bot.status === 'busy' && bot.currentTask && (
+        <div className={s.activeTask}>
+          <div className={s.taskHeader}>
+            <span className={s.taskPulse} />
+            <span className={s.taskLabel}>Running Task</span>
+          </div>
+          <div className={s.taskMeta}>
+            <span className={s.taskMetaItem}>
+              <IconClock />
+              {formatDuration(bot.currentTask.durationMs)}
+            </span>
+            <span className={s.taskMetaItem}>
+              Session: <code>{bot.currentTask.chatId.slice(0, 12)}...</code>
+            </span>
+          </div>
+        </div>
+      )}
+      <ActivityTimeline events={activityEvents} botFilter={bot.name} />
     </div>
   );
 }

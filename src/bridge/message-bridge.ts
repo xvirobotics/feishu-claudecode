@@ -84,6 +84,19 @@ export interface ApiTaskResult {
   error?: string;
 }
 
+export interface ActivityEventData {
+  type: 'task_started' | 'task_completed' | 'task_failed';
+  botName: string;
+  chatId: string;
+  userId?: string;
+  prompt?: string;
+  responsePreview?: string;
+  costUsd?: number;
+  durationMs?: number;
+  errorMessage?: string;
+  timestamp: number;
+}
+
 export class MessageBridge {
   private executor: ClaudeExecutor;
   private sessionManager: SessionManager;
@@ -96,6 +109,8 @@ export class MessageBridge {
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
+  /** Callback for activity lifecycle events (task started/completed/failed). */
+  onActivityEvent?: (event: ActivityEventData) => void;
 
   constructor(
     private config: BotConfigBase,
@@ -119,6 +134,11 @@ export class MessageBridge {
     );
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
+  }
+
+  /** Emit an activity event if a listener is registered. */
+  private emitActivity(event: ActivityEventData): void {
+    try { this.onActivityEvent?.(event); } catch { /* ignore */ }
   }
 
   /** Inject the doc sync service for /sync commands. */
@@ -611,6 +631,7 @@ export class MessageBridge {
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
 
     this.audit.log({ event: 'task_start', botName: this.config.name, chatId, userId, prompt: text });
+    this.emitActivity({ type: 'task_started', botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200), timestamp: startTime });
 
     // Setup timeout
     let timedOut = false;
@@ -784,6 +805,13 @@ export class MessageBridge {
         botName: this.config.name, chatId, userId, prompt: text,
         durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
       });
+      this.emitActivity({
+        type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+        botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
+        responsePreview: lastState.responseText?.slice(0, 200),
+        costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
+        timestamp: Date.now(),
+      });
       this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
       metrics.incCounter('metabot_tasks_total');
       metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
@@ -834,6 +862,13 @@ export class MessageBridge {
             botName: this.config.name, chatId, userId, prompt: text,
             durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
           });
+          this.emitActivity({
+            type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+            botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
+            responsePreview: lastState.responseText?.slice(0, 200),
+            costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
+            timestamp: Date.now(),
+          });
           this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
           metrics.incCounter('metabot_tasks_total');
           metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
@@ -852,6 +887,10 @@ export class MessageBridge {
       this.audit.log({
         event: 'task_error', botName: this.config.name, chatId, userId, prompt: text,
         durationMs, error: err.message || 'Unknown error',
+      });
+      this.emitActivity({
+        type: 'task_failed', botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
+        errorMessage: err.message || 'Unknown error', durationMs, timestamp: Date.now(),
       });
       this.costTracker.record({ botName: this.config.name, userId, success: false, durationMs });
       metrics.incCounter('metabot_tasks_total');
@@ -956,6 +995,7 @@ export class MessageBridge {
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
 
     this.audit.log({ event: 'api_task_start', botName: this.config.name, chatId, userId, prompt });
+    this.emitActivity({ type: 'task_started', botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200), timestamp: startTime });
 
     let timedOut = false;
     let idledOut = false;
@@ -1105,6 +1145,13 @@ export class MessageBridge {
         event: 'api_task_complete', botName: this.config.name, chatId, userId, prompt,
         durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
       });
+      this.emitActivity({
+        type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+        botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200),
+        responsePreview: lastState.responseText?.slice(0, 200),
+        costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
+        timestamp: Date.now(),
+      });
       this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
       metrics.incCounter('metabot_api_tasks_total');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
@@ -1201,6 +1248,11 @@ export class MessageBridge {
         errorMessage: err.message || 'Unknown error',
       };
       options.onUpdate?.(catchErrorState, effectiveMessageId, true);
+
+      this.emitActivity({
+        type: 'task_failed', botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200),
+        errorMessage: err.message || 'Unknown error', durationMs: Date.now() - startTime, timestamp: Date.now(),
+      });
 
       return {
         success: false,

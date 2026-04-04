@@ -5,10 +5,14 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useStore } from '../store';
 import type { WSIncomingMessage, WSOutgoingMessage } from '../types';
+import { notifyTaskComplete } from '../utils/notifications';
 
 const HEARTBEAT_INTERVAL = 25_000;
 const RECONNECT_BASE = 1000;
 const RECONNECT_MAX = 30_000;
+
+/** Maps server session UUID → local chatId for session_history response mapping. */
+const serverSessionIdMap = new Map<string, string>();
 
 export function useWebSocket() {
   const token = useStore((s) => s.token);
@@ -22,6 +26,9 @@ export function useWebSocket() {
   const removeGroup = useStore((s) => s.removeGroup);
   const setGroups = useStore((s) => s.setGroups);
   const setIncomingVoiceCall = useStore((s) => s.setIncomingVoiceCall);
+  const addActivityEvent = useStore((s) => s.addActivityEvent);
+  const mergeServerSessions = useStore((s) => s.mergeServerSessions);
+  const loadServerHistory = useStore((s) => s.loadServerHistory);
   const setAsrState = useStore((s) => s.setAsrState);
   const setAsrPartialText = useStore((s) => s.setAsrPartialText);
 
@@ -86,6 +93,10 @@ export function useWebSocket() {
         switch (msg.type) {
           case 'connected':
             setBots(msg.bots);
+            // Request server-side sessions for each bot to restore history
+            for (const bot of msg.bots) {
+              ws.send(JSON.stringify({ type: 'list_sessions', botName: bot.name }));
+            }
             break;
 
           case 'bots_updated':
@@ -118,6 +129,10 @@ export function useWebSocket() {
               }
             } else {
               updateMessageState(msg.chatId, msg.messageId, msg.state, msg.botName);
+            }
+            // Desktop notification when task completes while tab is unfocused
+            if (msg.type === 'complete' && msg.state.status === 'complete') {
+              notifyTaskComplete(msg.botName || 'MetaBot', msg.state.responseText?.slice(0, 100));
             }
             break;
           }
@@ -195,6 +210,27 @@ export function useWebSocket() {
             setGroups(msg.groups);
             break;
 
+          case 'sessions_list': {
+            mergeServerSessions(msg.sessions);
+            // For restored sessions with no local messages, fetch history
+            const curSessions = useStore.getState().sessions;
+            for (const ss of msg.sessions) {
+              const local = curSessions.get(ss.chatId);
+              if (local && local.messages.length === 0) {
+                ws.send(JSON.stringify({ type: 'get_session_history', sessionId: ss.id }));
+                serverSessionIdMap.set(ss.id, ss.chatId);
+              }
+            }
+            break;
+          }
+
+          case 'session_history': {
+            const histChatId = serverSessionIdMap.get(msg.sessionId) || msg.sessionId;
+            loadServerHistory(histChatId, msg.messages);
+            serverSessionIdMap.delete(msg.sessionId);
+            break;
+          }
+
           case 'voice_call':
             setIncomingVoiceCall({
               sessionId: msg.sessionId,
@@ -207,6 +243,10 @@ export function useWebSocket() {
               botName: msg.botName,
               prompt: msg.prompt,
             });
+            break;
+
+          case 'activity_event':
+            addActivityEvent(msg.event);
             break;
 
           // ── Streaming ASR events ──
@@ -256,7 +296,7 @@ export function useWebSocket() {
         if (mountedRef.current) connect();
       }, delay);
     };
-  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall, setAsrState, setAsrPartialText]);
+  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall, addActivityEvent, mergeServerSessions, loadServerHistory, setAsrState, setAsrPartialText]);
 
   const send = useCallback(
     (msg: WSOutgoingMessage) => {

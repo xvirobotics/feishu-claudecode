@@ -11,6 +11,7 @@ import s from './TeamWorkspace.module.css';
 function useTeamPoller(intervalMs = 5000) {
   const token = useStore((st) => st.token);
   const setTeamStatus = useStore((st) => st.setTeamStatus);
+  const setActivityEvents = useStore((st) => st.setActivityEvents);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -37,10 +38,18 @@ function useTeamPoller(intervalMs = 5000) {
       }
     };
 
+    // Fetch initial activity events (once)
+    fetch('/api/activity/events?limit=50', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => { if (active) setActivityEvents(data.events || []); })
+      .catch(() => {});
+
     poll();
     const id = setInterval(poll, intervalMs);
     return () => { active = false; clearInterval(id); };
-  }, [token, intervalMs, setTeamStatus]);
+  }, [token, intervalMs, setTeamStatus, setActivityEvents]);
 
   return { loading, error };
 }
