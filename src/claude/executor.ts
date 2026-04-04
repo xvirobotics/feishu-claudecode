@@ -1,4 +1,5 @@
 import { execSync, spawn } from 'node:child_process';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
@@ -162,7 +163,7 @@ export class ClaudeExecutor {
       // process.execPath to avoid PATH issues on Windows; fileURLToPath converts
       // file:// URLs to native paths for the SDK CLI entrypoint.
       spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey),
-      executableArgs: [fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk/cli.js'))],
+      executableArgs: [path.join(path.dirname(fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk'))), 'cli.js')],
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
     };
 
@@ -220,6 +221,9 @@ export class ClaudeExecutor {
     if (sessionId) {
       queryOptions.resume = sessionId;
     }
+
+    // Enable 1M context window for Opus 4.6 and Sonnet 4.6
+    queryOptions.betas = ['context-1m-2025-08-07'];
 
     return queryOptions;
   }
