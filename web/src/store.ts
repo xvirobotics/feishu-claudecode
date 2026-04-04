@@ -135,6 +135,8 @@ export interface AppStore {
   markRunningMessagesDisconnected: () => void;
   clearSessions: () => void;
   getOrCreateBotSession: (botName: string) => string;
+  /** Rename a session locally. */
+  renameSession: (id: string, title: string) => void;
   /** Merge server-side sessions into local store (session persistence). */
   mergeServerSessions: (serverSessions: ServerSession[]) => void;
   /** Load server message history into a local session. */
@@ -376,6 +378,15 @@ export const useStore = create<AppStore>((set, get) => ({
     persistSessions(sessions);
     set({ sessions, activeSessionId: id, activeBotName: botName });
     return id;
+  },
+
+  renameSession(id: string, title: string) {
+    const sessions = new Map(get().sessions);
+    const session = sessions.get(id);
+    if (!session) return;
+    sessions.set(id, { ...session, title });
+    persistSessions(sessions);
+    set({ sessions });
   },
 
   mergeServerSessions(serverSessions: ServerSession[]) {

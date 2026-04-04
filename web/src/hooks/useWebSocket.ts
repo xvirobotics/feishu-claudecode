@@ -27,6 +27,8 @@ export function useWebSocket() {
   const setGroups = useStore((s) => s.setGroups);
   const setIncomingVoiceCall = useStore((s) => s.setIncomingVoiceCall);
   const addActivityEvent = useStore((s) => s.addActivityEvent);
+  const renameSession = useStore((s) => s.renameSession);
+  const deleteSession = useStore((s) => s.deleteSession);
   const mergeServerSessions = useStore((s) => s.mergeServerSessions);
   const loadServerHistory = useStore((s) => s.loadServerHistory);
   const setAsrState = useStore((s) => s.setAsrState);
@@ -231,6 +233,14 @@ export function useWebSocket() {
             break;
           }
 
+          case 'session_renamed':
+            renameSession(msg.chatId, msg.title);
+            break;
+
+          case 'session_deleted':
+            deleteSession(msg.chatId);
+            break;
+
           case 'voice_call':
             setIncomingVoiceCall({
               sessionId: msg.sessionId,
@@ -296,7 +306,7 @@ export function useWebSocket() {
         if (mountedRef.current) connect();
       }, delay);
     };
-  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall, addActivityEvent, mergeServerSessions, loadServerHistory, setAsrState, setAsrPartialText]);
+  }, [token, cleanup, setConnected, setBots, updateMessageState, addMessage, addMessageAttachment, markRunningMessagesDisconnected, addGroup, removeGroup, setGroups, setIncomingVoiceCall, addActivityEvent, renameSession, deleteSession, mergeServerSessions, loadServerHistory, setAsrState, setAsrPartialText]);
 
   const send = useCallback(
     (msg: WSOutgoingMessage) => {

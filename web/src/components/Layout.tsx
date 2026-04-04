@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
@@ -78,6 +78,14 @@ function IconPanelLeft() {
     <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <path d="M9 3v18" />
+    </svg>
+  );
+}
+function IconSearch() {
+  return (
+    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="8" />
+      <path d="M21 21l-4.35-4.35" />
     </svg>
   );
 }
@@ -180,6 +188,7 @@ function BotCard({
   onSessionClick,
   onNewSession,
   onDeleteSession,
+  onRenameSession,
 }: {
   bot: BotInfo;
   sessions: ChatSession[];
@@ -189,13 +198,30 @@ function BotCard({
   onSessionClick: (id: string, botName: string) => void;
   onNewSession: (botName: string) => void;
   onDeleteSession: (id: string) => void;
+  onRenameSession: (id: string, title: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const editRef = useRef<HTMLInputElement>(null);
   const isActive = activeBotName === bot.name && activeView === 'chat';
   const sorted = [...botSessions].sort((a, b) => b.updatedAt - a.updatedAt);
   const latest = sorted[0] || null;
   const preview = latest ? sessionPreview(latest) : null;
   const hasMultiple = sorted.length > 1;
+
+  const startRename = useCallback((session: ChatSession) => {
+    setEditingId(session.id);
+    setEditValue(session.title);
+    setTimeout(() => editRef.current?.select(), 0);
+  }, []);
+
+  const commitRename = useCallback(() => {
+    if (editingId && editValue.trim()) {
+      onRenameSession(editingId, editValue.trim());
+    }
+    setEditingId(null);
+  }, [editingId, editValue, onRenameSession]);
 
   return (
     <div className={s.botCard} data-active={isActive || undefined}>
@@ -274,9 +300,26 @@ function BotCard({
               className={s.sessionItem}
               data-active={activeSessionId === session.id || undefined}
               onClick={() => onSessionClick(session.id, bot.name)}
+              onDoubleClick={(e) => { e.stopPropagation(); startRename(session); }}
             >
               <span className={s.sessionDash} />
-              <span className={s.sessionTitle}>{session.title}</span>
+              {editingId === session.id ? (
+                <input
+                  ref={editRef}
+                  className={s.sessionRenameInput}
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') setEditingId(null);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  autoFocus
+                />
+              ) : (
+                <span className={s.sessionTitle}>{session.title}</span>
+              )}
               <span className={s.sessionTime}>{relTime(session.updatedAt)}</span>
               <button
                 className={s.sessionDel}
@@ -391,9 +434,12 @@ export function Layout({ children }: LayoutProps) {
   const groups = useStore((s) => s.groups);
   const createGroupSession = useStore((s) => s.createGroupSession);
 
+  const renameSessionStore = useStore((s) => s.renameSession);
+
   const { send } = useWebSocket();
 
   const [showGroupDialog, setShowGroupDialog] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   /* ── Mobile detection ── */
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
@@ -431,7 +477,39 @@ export function Layout({ children }: LayoutProps) {
     setMobileShowChat(true);
   }, [createSession, setView, navigate]);
 
-  const handleDeleteSession = useCallback((id: string) => { deleteSession(id); }, [deleteSession]);
+  const handleDeleteSession = useCallback((id: string) => {
+    deleteSession(id);
+    send({ type: 'delete_session', chatId: id });
+  }, [deleteSession, send]);
+
+  const handleRenameSession = useCallback((id: string, title: string) => {
+    renameSessionStore(id, title);
+    send({ type: 'rename_session', chatId: id, title });
+  }, [renameSessionStore, send]);
+
+  // Filter sessions by search query
+  const filteredSessionsByBot = useMemo(() => {
+    if (!searchQuery.trim()) return sessionsByBot;
+    const q = searchQuery.toLowerCase();
+    const map = new Map<string, ChatSession[]>();
+    for (const [botName, sessions] of sessionsByBot) {
+      if (botName.toLowerCase().includes(q)) {
+        map.set(botName, sessions);
+      } else {
+        const filtered = sessions.filter((s) => s.title.toLowerCase().includes(q));
+        if (filtered.length > 0) map.set(botName, filtered);
+      }
+    }
+    return map;
+  }, [sessionsByBot, searchQuery]);
+
+  const filteredBots = useMemo(() => {
+    if (!searchQuery.trim()) return bots;
+    const q = searchQuery.toLowerCase();
+    return bots.filter((b) =>
+      b.name.toLowerCase().includes(q) || filteredSessionsByBot.has(b.name),
+    );
+  }, [bots, searchQuery, filteredSessionsByBot]);
 
   const handleMobileBack = useCallback(() => { setMobileShowChat(false); }, []);
 
@@ -477,22 +555,41 @@ export function Layout({ children }: LayoutProps) {
   /* ── Shared bot list ── */
   const botList = (
     <>
-      {bots.length === 0 ? (
+      {/* Search box */}
+      <div className={s.searchBox}>
+        <IconSearch />
+        <input
+          className={s.searchInput}
+          type="text"
+          placeholder="Search chats..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          spellCheck={false}
+        />
+        {searchQuery && (
+          <button className={s.searchClear} onClick={() => setSearchQuery('')}>
+            <IconX size={10} />
+          </button>
+        )}
+      </div>
+
+      {filteredBots.length === 0 ? (
         <div className={s.emptyAgents}>
-          {connected ? 'No agents configured' : 'Connecting...'}
+          {searchQuery ? 'No matches' : connected ? 'No agents configured' : 'Connecting...'}
         </div>
       ) : (
-        bots.map((bot) => (
+        filteredBots.map((bot) => (
           <BotCard
             key={bot.name}
             bot={bot}
-            sessions={sessionsByBot.get(bot.name) || []}
+            sessions={filteredSessionsByBot.get(bot.name) || []}
             activeSessionId={activeSessionId}
             activeBotName={activeBotName}
             activeView={activeView}
             onSessionClick={handleSessionClick}
             onNewSession={handleNewSession}
             onDeleteSession={handleDeleteSession}
+            onRenameSession={handleRenameSession}
           />
         ))
       )}

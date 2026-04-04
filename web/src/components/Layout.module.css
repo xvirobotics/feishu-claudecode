@@ -149,6 +149,61 @@
   font-family: var(--font-mono);
 }
 
+/* ═══ Search Box ═══ */
+
+.searchBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  transition: border-color var(--duration-fast);
+}
+
+.searchBox:focus-within {
+  border-color: var(--accent);
+}
+
+.searchBox svg {
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-1);
+  font-size: 12px;
+  font-family: inherit;
+}
+
+.searchInput::placeholder {
+  color: var(--text-3);
+}
+
+.searchClear {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-xs);
+  color: var(--text-3);
+  flex-shrink: 0;
+  transition: color var(--duration-fast), background var(--duration-fast);
+}
+
+.searchClear:hover {
+  color: var(--text-1);
+  background: var(--surface-hover);
+}
+
 /* ═══ Agents List ═══ */
 
 .agentsList {
@@ -393,6 +448,19 @@
 .sessionItem[data-active] .sessionTitle {
   color: var(--text-0);
   font-weight: 500;
+}
+
+.sessionRenameInput {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface-1);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-xs);
+  outline: none;
+  color: var(--text-0);
+  font-size: 12px;
+  font-family: inherit;
+  padding: 1px 4px;
 }
 
 .sessionTime {

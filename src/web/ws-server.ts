@@ -27,6 +27,8 @@ type ClientMessage =
   | { type: 'list_sessions'; botName: string }
   | { type: 'adopt_session'; chatId: string; sessionId: string }
   | { type: 'get_session_history'; sessionId: string; since?: number }
+  | { type: 'rename_session'; chatId: string; title: string }
+  | { type: 'delete_session'; chatId: string }
   | { type: 'start_asr' }
   | { type: 'stop_asr' }
   | { type: 'ping' };
@@ -47,6 +49,8 @@ type ServerMessage =
   | { type: 'sessions_list'; botName: string; sessions: SessionRecord[] }
   | { type: 'session_adopted'; chatId: string; sessionId: string; claudeSessionId?: string; history: SessionMessage[] }
   | { type: 'session_history'; sessionId: string; messages: SessionMessage[] }
+  | { type: 'session_renamed'; chatId: string; title: string }
+  | { type: 'session_deleted'; chatId: string }
   | { type: 'asr_started' }
   | { type: 'asr_transcript'; text: string; isFinal: boolean }
   | { type: 'asr_error'; error: string }
@@ -334,6 +338,32 @@ export function setupWebSocketServer(
           }
           const messages = sessionRegistry.getMessages(msg.sessionId, msg.since);
           sendMessage(ws, { type: 'session_history', sessionId: msg.sessionId, messages });
+          break;
+        }
+
+        case 'rename_session': {
+          if (!sessionRegistry) {
+            sendMessage(ws, { type: 'error', chatId: msg.chatId, error: 'Session sync not available' });
+            break;
+          }
+          const session = sessionRegistry.findByChatId(msg.chatId);
+          if (session) {
+            sessionRegistry.renameSession(session.id, msg.title);
+            sendMessage(ws, { type: 'session_renamed', chatId: msg.chatId, title: msg.title });
+          }
+          break;
+        }
+
+        case 'delete_session': {
+          if (!sessionRegistry) {
+            sendMessage(ws, { type: 'error', chatId: msg.chatId, error: 'Session sync not available' });
+            break;
+          }
+          const delSession = sessionRegistry.findByChatId(msg.chatId);
+          if (delSession) {
+            sessionRegistry.deleteSession(delSession.id);
+            sendMessage(ws, { type: 'session_deleted', chatId: msg.chatId });
+          }
           break;
         }
 

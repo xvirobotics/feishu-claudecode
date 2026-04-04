@@ -288,6 +288,13 @@ export class SessionRegistry {
     return session.claudeSessionId;
   }
 
+  /** Rename a session. */
+  renameSession(id: string, newTitle: string): boolean {
+    const result = this.db.prepare('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?')
+      .run(newTitle, Date.now(), id);
+    return result.changes > 0;
+  }
+
   /** Delete a session and all its messages/links. */
   deleteSession(id: string): void {
     this.db.prepare('DELETE FROM session_messages WHERE session_id = ?').run(id);

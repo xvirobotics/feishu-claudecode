@@ -156,6 +156,8 @@ export type WSIncomingMessage =
   | { type: 'voice_call'; sessionId: string; roomId: string; token: string; appId: string; userId: string; aiUserId: string; chatId: string; botName: string; prompt?: string }
   | { type: 'sessions_list'; botName: string; sessions: ServerSession[] }
   | { type: 'session_history'; sessionId: string; messages: ServerSessionMessage[] }
+  | { type: 'session_renamed'; chatId: string; title: string }
+  | { type: 'session_deleted'; chatId: string }
   | { type: 'activity_event'; event: ActivityEvent }
   | { type: 'asr_started' }
   | { type: 'asr_transcript'; text: string; isFinal: boolean }
@@ -174,6 +176,8 @@ export type WSOutgoingMessage =
   | { type: 'subscribe_group'; groupId: string; chatId: string }
   | { type: 'list_sessions'; botName: string }
   | { type: 'get_session_history'; sessionId: string; since?: number }
+  | { type: 'rename_session'; chatId: string; title: string }
+  | { type: 'delete_session'; chatId: string }
   | { type: 'start_asr' }
   | { type: 'stop_asr' }
   | { type: 'ping' };
