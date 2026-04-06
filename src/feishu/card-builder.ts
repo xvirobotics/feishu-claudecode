@@ -10,7 +10,64 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
   waiting_for_input: { color: 'yellow', title: 'Waiting for Input', icon: '🟡' },
 };
 
-const MAX_CONTENT_LENGTH = 28000;
+export const MAX_CONTENT_LENGTH = 28000;
+
+/**
+ * Split long text into chunks that each fit within MAX_CONTENT_LENGTH.
+ * Splits at paragraph (\n\n) boundaries first, then line (\n) boundaries.
+ */
+export function splitResponseText(text: string): string[] {
+  if (text.length <= MAX_CONTENT_LENGTH) return [text];
+
+  const blocks = text.split('\n\n');
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const block of blocks) {
+    const candidate = current ? current + '\n\n' + block : block;
+    if (candidate.length <= MAX_CONTENT_LENGTH) {
+      current = candidate;
+    } else if (current) {
+      chunks.push(current);
+      if (block.length > MAX_CONTENT_LENGTH) {
+        const sub = splitAtNewlines(block);
+        for (let i = 0; i < sub.length - 1; i++) chunks.push(sub[i]);
+        current = sub[sub.length - 1];
+      } else {
+        current = block;
+      }
+    } else {
+      const sub = splitAtNewlines(block);
+      for (let i = 0; i < sub.length - 1; i++) chunks.push(sub[i]);
+      current = sub[sub.length - 1];
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+
+function splitAtNewlines(text: string): string[] {
+  const lines = text.split('\n');
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const line of lines) {
+    const candidate = current ? current + '\n' + line : line;
+    if (candidate.length <= MAX_CONTENT_LENGTH) {
+      current = candidate;
+    } else if (current) {
+      chunks.push(current);
+      current = line.length > MAX_CONTENT_LENGTH ? line.slice(0, MAX_CONTENT_LENGTH) : line;
+    } else {
+      chunks.push(line.slice(0, MAX_CONTENT_LENGTH));
+      current = '';
+    }
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
 
 function truncateContent(text: string): string {
   if (text.length <= MAX_CONTENT_LENGTH) return text;

@@ -18,6 +18,7 @@ import { OutputHandler } from './output-handler.js';
 import { CostTracker } from '../utils/cost-tracker.js';
 import { metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
+import { splitResponseText } from '../feishu/card-builder.js';
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
@@ -1276,29 +1277,61 @@ export class MessageBridge {
    * sends a plain text fallback so the user at least sees the result.
    */
   private async sendFinalCard(messageId: string, state: CardState, chatId?: string): Promise<void> {
+    // Split long responses into multiple cards
+    const chunks = state.responseText ? splitResponseText(state.responseText) : null;
+    const needsSplit = chunks !== null && chunks.length > 1;
+
+    const cardState = needsSplit
+      ? { ...state, responseText: chunks[0] + `\n\n---\n_📄 (1/${chunks.length})_` }
+      : state;
+
+    let updateSucceeded = false;
     for (let attempt = 0; attempt < FINAL_CARD_RETRIES; attempt++) {
       try {
-        await this.sender.updateCard(messageId, state);
+        await this.sender.updateCard(messageId, cardState);
         if (attempt > 0) {
           await new Promise((r) => setTimeout(r, FINAL_CARD_BASE_DELAY_MS));
-          await this.sender.updateCard(messageId, state);
+          await this.sender.updateCard(messageId, cardState);
         }
-        return;
+        updateSucceeded = true;
+        break;
       } catch {
         const delay = FINAL_CARD_BASE_DELAY_MS * Math.pow(2, attempt);
         this.logger.warn({ attempt, delay, messageId }, 'Final card update failed, retrying');
         await new Promise((r) => setTimeout(r, delay));
       }
     }
-    if (chatId) {
-      this.logger.error({ messageId, chatId }, 'All final card retries failed, sending text fallback');
-      const statusEmoji = state.status === 'complete' ? '✅' : '❌';
-      const summary = state.responseText
-        ? state.responseText.slice(0, 2000)
-        : state.errorMessage || 'Task finished';
-      try {
-        await this.sender.sendText(chatId, `${statusEmoji} ${summary}`);
-      } catch { /* last resort failed */ }
+
+    if (!updateSucceeded) {
+      if (chatId) {
+        this.logger.error({ messageId, chatId }, 'All final card retries failed, sending text fallback');
+        const statusEmoji = state.status === 'complete' ? '✅' : '❌';
+        const summary = state.responseText
+          ? state.responseText.slice(0, 2000)
+          : state.errorMessage || 'Task finished';
+        try {
+          await this.sender.sendText(chatId, `${statusEmoji} ${summary}`);
+        } catch { /* last resort failed */ }
+      }
+      return;
+    }
+
+    // Send continuation cards for remaining chunks
+    if (needsSplit && chatId) {
+      this.logger.info({ chatId, totalChunks: chunks.length }, 'Sending continuation cards for long response');
+      for (let i = 1; i < chunks.length; i++) {
+        try {
+          await new Promise((r) => setTimeout(r, 1500));
+          await this.sender.sendTextNotice(
+            chatId,
+            `📄 Continued (${i + 1}/${chunks.length})`,
+            chunks[i] + `\n\n---\n_📄 (${i + 1}/${chunks.length})_`,
+            'green',
+          );
+        } catch {
+          this.logger.warn({ chatId, chunk: i + 1, total: chunks.length }, 'Failed to send continuation card');
+        }
+      }
     }
   }
 
