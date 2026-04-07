@@ -77,25 +77,24 @@ function renderCardHtml(state: CardState): string {
     parts.push(`<b>Error:</b> ${escapeHtml(state.errorMessage)}`);
   }
 
-  // Stats
-  if (state.status === 'complete' || state.status === 'error') {
+  // Stats — show context usage during all states, full stats on complete/error
+  {
     const statParts: string[] = [];
-    if (state.model) {
-      statParts.push(state.model.replace(/^claude-/, ''));
-    }
-    if (state.durationMs !== undefined) {
-      statParts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
-    }
-    if (state.costUsd !== undefined) {
-      statParts.push(`$${state.costUsd.toFixed(2)}`);
-    }
     if (state.totalTokens && state.contextWindow) {
       const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
       const tokensK = state.totalTokens >= 1000
         ? `${(state.totalTokens / 1000).toFixed(1)}k`
         : `${state.totalTokens}`;
       const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      statParts.push(`${tokensK}/${ctxK} (${pct}%)`);
+      statParts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
+    }
+    if (state.status === 'complete' || state.status === 'error') {
+      if (state.model) {
+        statParts.push(state.model.replace(/^claude-/, ''));
+      }
+      if (state.durationMs !== undefined) {
+        statParts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+      }
     }
     if (statParts.length > 0) {
       parts.push('');

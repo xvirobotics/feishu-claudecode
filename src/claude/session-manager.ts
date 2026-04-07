@@ -7,12 +7,21 @@ export interface UserSession {
   sessionId: string | undefined;
   workingDirectory: string;
   lastUsed: number;
+  /** Cumulative token usage across all queries in this session */
+  cumulativeTokens: number;
+  /** Cumulative cost (USD) across all queries in this session */
+  cumulativeCostUsd: number;
+  /** Cumulative duration (ms) across all queries in this session */
+  cumulativeDurationMs: number;
 }
 
 interface PersistedSession {
   sessionId: string;
   workingDirectory: string;
   lastUsed: number;
+  cumulativeTokens?: number;
+  cumulativeCostUsd?: number;
+  cumulativeDurationMs?: number;
 }
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -51,6 +60,9 @@ export class SessionManager {
         sessionId: undefined,
         workingDirectory: this.defaultWorkingDirectory,
         lastUsed: Date.now(),
+        cumulativeTokens: 0,
+        cumulativeCostUsd: 0,
+        cumulativeDurationMs: 0,
       };
       this.sessions.set(chatId, session);
     }
@@ -80,10 +92,22 @@ export class SessionManager {
     this.saveToDisk();
   }
 
+  /** Accumulate token/cost/duration from a completed query into the session totals. */
+  addUsage(chatId: string, tokens: number, costUsd: number, durationMs: number): void {
+    const session = this.getSession(chatId);
+    session.cumulativeTokens += tokens;
+    session.cumulativeCostUsd += costUsd;
+    session.cumulativeDurationMs += durationMs;
+    this.saveToDisk();
+  }
+
   resetSession(chatId: string): void {
     const session = this.sessions.get(chatId);
     if (session) {
       session.sessionId = undefined;
+      session.cumulativeTokens = 0;
+      session.cumulativeCostUsd = 0;
+      session.cumulativeDurationMs = 0;
       // Keep working directory
       this.logger.info({ chatId }, 'Session reset');
       this.saveToDisk();
@@ -115,6 +139,9 @@ export class SessionManager {
             sessionId: session.sessionId,
             workingDirectory: session.workingDirectory,
             lastUsed: session.lastUsed,
+            cumulativeTokens: session.cumulativeTokens,
+            cumulativeCostUsd: session.cumulativeCostUsd,
+            cumulativeDurationMs: session.cumulativeDurationMs,
           };
         }
       }
@@ -138,6 +165,9 @@ export class SessionManager {
           sessionId: persisted.sessionId,
           workingDirectory: persisted.workingDirectory,
           lastUsed: persisted.lastUsed,
+          cumulativeTokens: persisted.cumulativeTokens ?? 0,
+          cumulativeCostUsd: persisted.cumulativeCostUsd ?? 0,
+          cumulativeDurationMs: persisted.cumulativeDurationMs ?? 0,
         });
         loaded++;
       }

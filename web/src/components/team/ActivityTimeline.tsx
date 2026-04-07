@@ -80,9 +80,6 @@ export function ActivityTimeline({ events, botFilter }: Props) {
               {event.durationMs != null && (
                 <span className={s.metaItem}>{formatDuration(event.durationMs)}</span>
               )}
-              {event.costUsd != null && (
-                <span className={s.metaItem}>${event.costUsd.toFixed(3)}</span>
-              )}
               {event.errorMessage && (
                 <span className={`${s.metaItem} ${s.errorMsg}`}>
                   {event.errorMessage.slice(0, 60)}

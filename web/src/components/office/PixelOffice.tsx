@@ -203,9 +203,6 @@ export function PixelOffice() {
         <span className={styles.stat}>
           <span className={styles.statIdle}>{summary.idleBots}</span> Idle
         </span>
-        <span className={styles.stat}>
-          ${summary.totalCostUsd.toFixed(2)} cost
-        </span>
         <span className={styles.hint}>Click agent to chat | Click floor to move</span>
       </div>
 

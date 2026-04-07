@@ -173,11 +173,9 @@ export function AssistantMessageView({ msg, onAnswer, onPreview }: AssistantMess
       {state.pendingQuestion && (
         <PendingQuestionUI question={state.pendingQuestion} onAnswer={onAnswer} />
       )}
-      {state.status === 'complete' && (state.costUsd || state.durationMs) && (
+      {state.status === 'complete' && state.durationMs && (
         <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 10, fontFamily: 'var(--font-mono)' }}>
-          {state.costUsd ? `$${state.costUsd.toFixed(4)}` : ''}
-          {state.costUsd && state.durationMs ? ' · ' : ''}
-          {state.durationMs ? `${(state.durationMs / 1000).toFixed(1)}s` : ''}
+          {`${(state.durationMs / 1000).toFixed(1)}s`}
         </div>
       )}
       {/* Output file attachments */}
