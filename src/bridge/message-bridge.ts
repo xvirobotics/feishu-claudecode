@@ -792,28 +792,10 @@ export class MessageBridge {
         await rateLimiter.cancelAndWait();
       }
 
-      // Accumulate usage into session cumulative totals
-      const queryDurationMs = Date.now() - startTime;
-      this.sessionManager.addUsage(
-        chatId,
-        lastState.totalTokens ?? 0,
-        lastState.costUsd ?? 0,
-        queryDurationMs,
-      );
-
-      // Override card state with cumulative session values
-      const cumSession = this.sessionManager.getSession(chatId);
-      lastState = {
-        ...lastState,
-        totalTokens: cumSession.cumulativeTokens || lastState.totalTokens,
-        costUsd: cumSession.cumulativeCostUsd || lastState.costUsd,
-      };
-
       await this.sendFinalCard(messageId, lastState, chatId);
 
-      // Audit + cost tracking (use per-query values for audit, not cumulative)
-      const durationMs = queryDurationMs;
-      const queryCostUsd = lastState.costUsd;
+      // Audit + cost tracking
+      const durationMs = Date.now() - startTime;
       const auditEvent = timedOut ? 'task_timeout' as const
         : idledOut ? 'task_idle_timeout' as const
         : lastState.status === 'error' ? 'task_error' as const
@@ -821,23 +803,23 @@ export class MessageBridge {
       this.audit.log({
         event: auditEvent,
         botName: this.config.name, chatId, userId, prompt: text,
-        durationMs, costUsd: queryCostUsd, error: lastState.errorMessage,
+        durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
       });
       this.emitActivity({
         type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
         botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
         responsePreview: lastState.responseText?.slice(0, 200),
-        costUsd: queryCostUsd, durationMs, errorMessage: lastState.errorMessage,
+        costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
         timestamp: Date.now(),
       });
-      this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: queryCostUsd, durationMs });
+      this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
       metrics.incCounter('metabot_tasks_total');
       metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
-      if (queryCostUsd) metrics.observeHistogram('metabot_task_cost_usd', queryCostUsd);
+      if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
       // Record in cross-platform session registry
-      this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), queryCostUsd, durationMs);
+      this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       // Send completion notification for long-running tasks (>10s) so user gets a Feishu push
       await this.sendCompletionNotice(chatId, lastState, durationMs);
@@ -1145,24 +1127,6 @@ export class MessageBridge {
         await rateLimiter.cancelAndWait();
       }
 
-      // Accumulate usage into session cumulative totals
-      const queryDurationMs2 = Date.now() - startTime;
-      this.sessionManager.addUsage(
-        chatId,
-        lastState.totalTokens ?? 0,
-        lastState.costUsd ?? 0,
-        queryDurationMs2,
-      );
-
-      // Override card state with cumulative session values
-      const cumSession2 = this.sessionManager.getSession(chatId);
-      const queryCostUsd2 = lastState.costUsd;
-      lastState = {
-        ...lastState,
-        totalTokens: cumSession2.cumulativeTokens || lastState.totalTokens,
-        costUsd: cumSession2.cumulativeCostUsd || lastState.costUsd,
-      };
-
       if (sendCards && messageId) {
         await this.sendFinalCard(messageId, lastState, chatId);
       }
@@ -1176,25 +1140,25 @@ export class MessageBridge {
         if (outputFiles.length > 0) options.onOutputFiles(outputFiles);
       }
 
-      const durationMs = queryDurationMs2;
+      const durationMs = Date.now() - startTime;
       this.audit.log({
         event: 'api_task_complete', botName: this.config.name, chatId, userId, prompt,
-        durationMs, costUsd: queryCostUsd2, error: lastState.errorMessage,
+        durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
       });
       this.emitActivity({
         type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
         botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200),
         responsePreview: lastState.responseText?.slice(0, 200),
-        costUsd: queryCostUsd2, durationMs, errorMessage: lastState.errorMessage,
+        costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
         timestamp: Date.now(),
       });
-      this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: queryCostUsd2, durationMs });
+      this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
       metrics.incCounter('metabot_api_tasks_total');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
-      if (queryCostUsd2) metrics.observeHistogram('metabot_task_cost_usd', queryCostUsd2);
+      if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
       // Record in cross-platform session registry
-      this.recordSession(chatId, prompt, lastState.responseText, processor.getSessionId(), queryCostUsd2, durationMs);
+      this.recordSession(chatId, prompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       return {
         success: lastState.status === 'complete',

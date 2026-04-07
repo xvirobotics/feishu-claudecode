@@ -147,12 +147,12 @@ export class StreamProcessor {
         const mu = message.modelUsage[primaryModel];
         this._model = primaryModel;
         this._contextWindow = mu.contextWindow;
-        // Sum tokens across all models
-        let totalTokens = 0;
+        // Use input tokens as current context usage (reflects actual context window occupation)
+        let inputTokens = 0;
         for (const m of models) {
-          totalTokens += (message.modelUsage![m].inputTokens ?? 0) + (message.modelUsage![m].outputTokens ?? 0);
+          inputTokens += (message.modelUsage![m].inputTokens ?? 0);
         }
-        this._totalTokens = totalTokens;
+        this._totalTokens = inputTokens;
       }
     }
 
