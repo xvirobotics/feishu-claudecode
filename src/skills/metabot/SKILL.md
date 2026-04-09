@@ -35,6 +35,12 @@ mb schedule cron <bot> <chatId> '<cronExpr>' <prompt>  # Create recurring task
 mb schedule pause <id>                     # Pause a recurring task
 mb schedule resume <id>                    # Resume a paused recurring task
 
+# Voice Call (RTC — real-time Doubao AI)
+mb voice call <bot> <chatId> [prompt]      # Start voice call, wait for transcript
+mb voice transcript <sessionId>            # Get call transcript
+mb voice list                              # List active voice sessions
+mb voice config                            # Check RTC configuration
+
 # Monitoring
 mb stats                                   # Cost & usage stats (per-bot, per-user)
 mb metrics                                 # Prometheus metrics

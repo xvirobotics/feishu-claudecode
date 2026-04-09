@@ -1,0 +1,333 @@
+#!/usr/bin/env node
+
+/**
+ * doubao-tts — CLI for Volcengine Doubao TTS (豆包语音合成)
+ *
+ * Usage:
+ *   doubao-tts "Hello world" -o output.mp3
+ *   doubao-tts -f script.txt -o podcast.mp3 -v BV701_streaming
+ *   echo "text" | doubao-tts -o output.mp3
+ *   doubao-tts "text" --speed 1.2 --volume 1.5 -o out.mp3
+ */
+
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+
+// ── Config from env ──────────────────────────────────────────────────────────
+const APPID = process.env.VOLCENGINE_TTS_APPID;
+const ACCESS_KEY = process.env.VOLCENGINE_TTS_ACCESS_KEY;
+const RESOURCE_ID = process.env.VOLCENGINE_TTS_RESOURCE_ID || 'volc.service_type.10029';
+
+if (!APPID || !ACCESS_KEY) {
+  console.error('Error: VOLCENGINE_TTS_APPID and VOLCENGINE_TTS_ACCESS_KEY must be set');
+  process.exit(1);
+}
+
+// ── Arg parsing ──────────────────────────────────────────────────────────────
+const args = process.argv.slice(2);
+let text = '';
+let outputFile = 'output.mp3';
+let voice = '';
+let speed = 1.0;
+let volume = 1.0;
+let pitch = 1.0;
+let inputFile = '';
+let format = 'mp3';
+
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (arg === '-o' || arg === '--output') { outputFile = args[++i]; continue; }
+  if (arg === '-v' || arg === '--voice') { voice = args[++i]; continue; }
+  if (arg === '-f' || arg === '--file') { inputFile = args[++i]; continue; }
+  if (arg === '--speed') { speed = parseFloat(args[++i]); continue; }
+  if (arg === '--volume') { volume = parseFloat(args[++i]); continue; }
+  if (arg === '--pitch') { pitch = parseFloat(args[++i]); continue; }
+  if (arg === '--format') { format = args[++i]; continue; }
+  if (arg === '-h' || arg === '--help') {
+    console.log(`doubao-tts — Volcengine Doubao Text-to-Speech
+
+Usage:
+  doubao-tts "text" [options]
+  doubao-tts -f file.txt [options]
+  echo "text" | doubao-tts [options]
+
+Options:
+  -o, --output <file>   Output audio file (default: output.mp3)
+  -v, --voice <id>      Voice/speaker ID (auto-detected by language)
+  -f, --file <path>     Read text from file
+  --speed <0.2-3>       Speech speed (default: 1.0)
+  --volume <0.1-3>      Volume (default: 1.0)
+  --pitch <0.1-3>       Pitch (default: 1.0)
+  --format <mp3|wav>    Audio format (default: mp3)
+
+Voices (Chinese Female):
+  zh_female_sajiaonvyou_moon_bigtts   撒娇女友 (default)
+  zh_female_gaolengyujie_moon_bigtts  高冷御姐
+  zh_female_tianmeixiaoyuan_moon_bigtts 甜美校园
+  zh_female_yuanqinvyou_moon_bigtts   元气女友
+  zh_female_wanwanxiaohe_moon_bigtts  弯弯小何
+  zh_female_linjianvhai_moon_bigtts   邻家女孩
+
+Voices (Chinese Male):
+  zh_male_aojiaobazong_moon_bigtts    傲娇霸总
+  zh_male_jingqiangkanye_moon_bigtts  京腔侃爷
+  zh_male_wennuanahu_moon_bigtts      温暖阿虎
+  zh_male_yangguangqingnian_moon_bigtts 阳光青年`);
+    process.exit(0);
+  }
+  if (!text) text = arg;
+}
+
+// ── Read text from file or stdin ─────────────────────────────────────────────
+async function readInput() {
+  if (inputFile) {
+    return fs.readFileSync(inputFile, 'utf-8');
+  }
+  if (text) return text;
+  // Read from stdin
+  const chunks = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
+// ── Language detection ───────────────────────────────────────────────────────
+function isChinese(t) {
+  let cjk = 0, total = 0;
+  for (const ch of t) {
+    const code = ch.codePointAt(0) || 0;
+    if (code > 0x2f) {
+      total++;
+      if (code >= 0x4e00 && code <= 0x9fff) cjk++;
+    }
+  }
+  return total > 0 ? (cjk / total) >= 0.15 : true;
+}
+
+function resolveVoice(t) {
+  if (voice) return voice;
+  return isChinese(t) ? 'zh_female_sajiaonvyou_moon_bigtts' : 'en_female_amanda_mars_bigtts';
+}
+
+// ── Short-form TTS (real-time, < 300 chars) ──────────────────────────────────
+async function shortFormTTS(t, speaker) {
+  const url = 'https://openspeech.bytedance.com/api/v3/tts/unidirectional';
+  const reqBody = {
+    req_params: {
+      text: t,
+      speaker,
+      audio_params: { format, sample_rate: 24000 },
+    },
+  };
+
+  // Add optional params if non-default
+  if (speed !== 1.0) reqBody.req_params.speed_ratio = speed;
+  if (volume !== 1.0) reqBody.req_params.volume_ratio = volume;
+  if (pitch !== 1.0) reqBody.req_params.pitch_ratio = pitch;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-App-Id': APPID,
+      'X-Api-Access-Key': ACCESS_KEY,
+      'X-Api-Resource-Id': RESOURCE_ID,
+      'X-Api-Request-Id': crypto.randomUUID(),
+    },
+    body: JSON.stringify(reqBody),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`TTS failed: ${response.status} ${err}`);
+  }
+
+  const body = await response.text();
+  const audioChunks = [];
+  for (const line of body.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const chunk = JSON.parse(trimmed);
+      if (chunk.data) audioChunks.push(Buffer.from(chunk.data, 'base64'));
+      if (chunk.code && chunk.code !== 0 && chunk.code !== 20000000) {
+        throw new Error(`TTS error: code=${chunk.code} message=${chunk.message}`);
+      }
+    } catch (e) {
+      if (e.message?.startsWith('TTS error')) throw e;
+    }
+  }
+
+  if (audioChunks.length === 0) throw new Error('TTS returned no audio data');
+  return Buffer.concat(audioChunks);
+}
+
+// ── Long-form TTS (async, for texts > 300 chars) ────────────────────────────
+async function longFormTTS(t, speaker) {
+  const submitUrl = 'https://openspeech.bytedance.com/api/v1/tts_async/submit';
+  const reqId = crypto.randomUUID().replace(/-/g, '').slice(0, 32);
+
+  const reqBody = {
+    appid: APPID,
+    reqid: reqId,
+    text: t,
+    format,
+    voice_type: speaker,
+    sample_rate: 24000,
+    speed: speed,
+    volume: volume,
+    pitch: pitch,
+  };
+
+  console.error(`Submitting long-form TTS (${t.length} chars)...`);
+
+  const submitRes = await fetch(submitUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Resource-Id': RESOURCE_ID,
+      'Authorization': `Bearer; ${ACCESS_KEY}`,
+    },
+    body: JSON.stringify(reqBody),
+  });
+
+  if (!submitRes.ok) {
+    const err = await submitRes.text();
+    throw new Error(`Submit failed: ${submitRes.status} ${err}`);
+  }
+
+  const submitResult = await submitRes.json();
+  if (submitResult.code && submitResult.code !== 0) {
+    throw new Error(`Submit error: ${submitResult.message || JSON.stringify(submitResult)}`);
+  }
+
+  const taskId = submitResult.task_id;
+  if (!taskId) throw new Error(`No task_id returned: ${JSON.stringify(submitResult)}`);
+  console.error(`Task submitted: ${taskId}`);
+
+  // Poll for completion
+  const queryUrl = `https://openspeech.bytedance.com/api/v1/tts_async/query?appid=${APPID}&task_id=${taskId}`;
+  const maxWait = 600_000; // 10 minutes
+  const pollInterval = 3_000;
+  const start = Date.now();
+
+  while (Date.now() - start < maxWait) {
+    await new Promise(r => setTimeout(r, pollInterval));
+
+    const queryRes = await fetch(queryUrl, {
+      headers: {
+        'Resource-Id': RESOURCE_ID,
+        'Authorization': `Bearer; ${ACCESS_KEY}`,
+      },
+    });
+
+    if (!queryRes.ok) {
+      console.error(`Query failed: ${queryRes.status}`);
+      continue;
+    }
+
+    const queryResult = await queryRes.json();
+    const status = queryResult.task_status;
+
+    if (status === 1) {
+      // Success — download audio
+      const audioUrl = queryResult.audio_url;
+      if (!audioUrl) throw new Error('No audio_url in completed task');
+      console.error(`Downloading audio...`);
+
+      const audioRes = await fetch(audioUrl);
+      if (!audioRes.ok) throw new Error(`Audio download failed: ${audioRes.status}`);
+      const arrayBuf = await audioRes.arrayBuffer();
+      return Buffer.from(arrayBuf);
+    } else if (status === 2) {
+      throw new Error(`TTS failed: ${queryResult.fail_reason || 'unknown'}`);
+    } else {
+      const elapsed = Math.round((Date.now() - start) / 1000);
+      console.error(`Waiting... (${elapsed}s)`);
+    }
+  }
+
+  throw new Error('TTS timed out after 10 minutes');
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+async function main() {
+  const inputText = (await readInput()).trim();
+  if (!inputText) {
+    console.error('Error: No text provided. Use: doubao-tts "text" or doubao-tts -f file.txt');
+    process.exit(1);
+  }
+
+  const speaker = resolveVoice(inputText);
+  console.error(`Voice: ${speaker} | Text: ${inputText.length} chars | Output: ${outputFile}`);
+
+  let audio;
+  if (inputText.length <= 300) {
+    audio = await shortFormTTS(inputText, speaker);
+  } else {
+    // For texts > 300 chars, split into chunks for real-time API
+    // or use long-form async API
+    // Try chunked real-time first (faster for < 3000 chars)
+    if (inputText.length <= 3000) {
+      console.error('Using chunked real-time mode...');
+      const chunks = splitText(inputText, 280);
+      const audioChunks = [];
+      for (let i = 0; i < chunks.length; i++) {
+        console.error(`  Chunk ${i + 1}/${chunks.length} (${chunks[i].length} chars)`);
+        const chunkAudio = await shortFormTTS(chunks[i], speaker);
+        audioChunks.push(chunkAudio);
+        // Rate limiting: small delay between chunks
+        if (i < chunks.length - 1) await new Promise(r => setTimeout(r, 200));
+      }
+      audio = Buffer.concat(audioChunks);
+    } else {
+      console.error('Using long-form async mode...');
+      audio = await longFormTTS(inputText, speaker);
+    }
+  }
+
+  // Ensure output directory exists
+  const outDir = path.dirname(outputFile);
+  if (outDir && outDir !== '.') {
+    fs.mkdirSync(outDir, { recursive: true });
+  }
+
+  fs.writeFileSync(outputFile, audio);
+  const sizeKB = Math.round(audio.length / 1024);
+  console.error(`Done! ${outputFile} (${sizeKB} KB)`);
+  // Print path to stdout for piping
+  console.log(path.resolve(outputFile));
+}
+
+// ── Text splitting (for chunked real-time mode) ──────────────────────────────
+function splitText(text, maxLen) {
+  const chunks = [];
+  // Split on sentence boundaries
+  const sentences = text.split(/(?<=[。！？.!?\n])/);
+  let current = '';
+
+  for (const sentence of sentences) {
+    if (current.length + sentence.length > maxLen && current.length > 0) {
+      chunks.push(current.trim());
+      current = '';
+    }
+    if (sentence.length > maxLen) {
+      // Force split long sentences
+      if (current) { chunks.push(current.trim()); current = ''; }
+      for (let i = 0; i < sentence.length; i += maxLen) {
+        chunks.push(sentence.slice(i, i + maxLen).trim());
+      }
+    } else {
+      current += sentence;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+  return chunks.filter(c => c.length > 0);
+}
+
+main().catch(err => {
+  console.error(`Error: ${err.message}`);
+  process.exit(1);
+});

@@ -4,6 +4,9 @@ import type { Logger } from '../utils/logger.js';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.tiff']);
 
+/** How long to keep output files before cleanup (ms). */
+const RETENTION_MS = 5 * 60 * 1000; // 5 minutes
+
 export interface OutputFile {
   filePath: string;
   fileName: string;
@@ -13,19 +16,48 @@ export interface OutputFile {
 }
 
 export class OutputsManager {
+  /** Tracks directories scheduled for deferred cleanup: dir -> timeout handle */
+  private pendingCleanups = new Map<string, ReturnType<typeof setTimeout>>();
+
   constructor(
     private baseDir: string,
     private logger: Logger,
   ) {}
 
-  /** Create a fresh per-chat outputs directory, clearing any leftovers. */
+  /** Create a fresh per-chat outputs directory, preserving recent files. */
   prepareDir(chatId: string): string {
     const dir = path.join(this.baseDir, chatId);
-    // Remove leftover directory from a previous run
+
+    // Cancel any pending deferred cleanup for this directory
+    const pending = this.pendingCleanups.get(dir);
+    if (pending) {
+      clearTimeout(pending);
+      this.pendingCleanups.delete(dir);
+    }
+
+    // Only remove files older than RETENTION_MS, keep recent ones
     try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch { /* ignore */ }
-    fs.mkdirSync(dir, { recursive: true });
+      if (fs.existsSync(dir)) {
+        const now = Date.now();
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (!entry.isFile()) continue;
+          const filePath = path.join(dir, entry.name);
+          try {
+            const stat = fs.statSync(filePath);
+            if (now - stat.mtimeMs > RETENTION_MS) {
+              fs.unlinkSync(filePath);
+            }
+          } catch { /* ignore individual file errors */ }
+        }
+      } else {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch {
+      // If anything fails, ensure the directory exists
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
     this.logger.debug({ dir }, 'Prepared outputs directory');
     return dir;
   }
@@ -56,12 +88,25 @@ export class OutputsManager {
     return results;
   }
 
-  /** Remove the outputs directory after files have been sent. */
+  /** Schedule deferred cleanup of the outputs directory after RETENTION_MS. */
   cleanup(outputsDir: string): void {
-    try {
-      fs.rmSync(outputsDir, { recursive: true, force: true });
-      this.logger.debug({ outputsDir }, 'Cleaned up outputs directory');
-    } catch { /* ignore */ }
+    // Cancel any existing timer for this dir
+    const existing = this.pendingCleanups.get(outputsDir);
+    if (existing) clearTimeout(existing);
+
+    const timer = setTimeout(() => {
+      this.pendingCleanups.delete(outputsDir);
+      try {
+        fs.rmSync(outputsDir, { recursive: true, force: true });
+        this.logger.debug({ outputsDir }, 'Cleaned up outputs directory (deferred)');
+      } catch { /* ignore */ }
+    }, RETENTION_MS);
+
+    // Don't let the timer keep the process alive
+    timer.unref();
+
+    this.pendingCleanups.set(outputsDir, timer);
+    this.logger.debug({ outputsDir, retentionMs: RETENTION_MS }, 'Scheduled deferred outputs cleanup');
   }
 
   /** Check if a file extension is a text-based format that can be sent as text. */

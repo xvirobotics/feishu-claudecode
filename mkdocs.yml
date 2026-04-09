@@ -71,13 +71,12 @@ plugins:
             - Features:
               - MetaSkill: features/metaskill.md
               - MetaMemory: features/metamemory.md
+              - Web UI: features/web-ui.md
               - Peers Federation: features/peers.md
               - Task Scheduler: features/scheduler.md
               - Wiki Sync: features/wiki-sync.md
-              - Feishu Doc Reader: features/feishu-doc-reader.md
               - WeChat: features/wechat.md
               - Voice Assistant: features/voice-jarvis.md
-              - Web UI: features/web-ui.md
               - Output Files: features/outputs.md
             - Configuration:
               - Environment Variables: configuration/environment-variables.md
@@ -90,7 +89,6 @@ plugins:
               - REST API: reference/api.md
               - mb CLI (Agent Bus): reference/cli-mb.md
               - mm CLI (MetaMemory): reference/cli-mm.md
-              - fd CLI (Feishu Docs): reference/cli-fd.md
               - metabot CLI: reference/cli-metabot.md
             - Deployment:
               - Production: deployment/production.md
@@ -125,13 +123,12 @@ nav:
   - 功能:
     - MetaSkill: features/metaskill.md
     - MetaMemory: features/metamemory.md
+    - Web UI: features/web-ui.md
     - Peers 联邦: features/peers.md
     - 任务调度: features/scheduler.md
     - Wiki 同步: features/wiki-sync.md
-    - 飞书文档阅读: features/feishu-doc-reader.md
     - 微信接入: features/wechat.md
     - 语音助手: features/voice-jarvis.md
-    - Web UI: features/web-ui.md
     - 输出文件: features/outputs.md
   - 配置:
     - 环境变量: configuration/environment-variables.md
@@ -144,7 +141,6 @@ nav:
     - REST API: reference/api.md
     - mb CLI (Agent Bus): reference/cli-mb.md
     - mm CLI (MetaMemory): reference/cli-mm.md
-    - fd CLI (飞书文档): reference/cli-fd.md
     - metabot CLI: reference/cli-metabot.md
   - 部署:
     - 生产部署: deployment/production.md

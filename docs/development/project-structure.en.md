@@ -47,7 +47,7 @@ metabot/
 │   ├── metabot                     # Service management CLI
 │   ├── mb                          # Agent Bus CLI
 │   ├── mm                          # MetaMemory CLI
-│   └── fd                          # Feishu Doc Reader CLI
+│   └── doubao-tts                  # Doubao TTS CLI
 ├── web/                            # Web UI source (React + Vite)
 │   ├── src/
 │   │   ├── components/             # React components

@@ -18,6 +18,7 @@ import { OutputHandler } from './output-handler.js';
 import { CostTracker } from '../utils/cost-tracker.js';
 import { metrics } from '../utils/metrics.js';
 import { splitResponseText } from '../feishu/card-builder.js';
+import type { SessionRegistry } from '../session/session-registry.js';
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
@@ -67,6 +68,10 @@ interface RunningTask {
   startTime: number;
   executionHandle: ExecutionHandle;
   pendingQuestion: PendingQuestion | null;
+  /** Index of the question currently being displayed within pendingQuestion.questions */
+  currentQuestionIndex: number;
+  /** Accumulated answers keyed by question header (for multi-question calls) */
+  collectedAnswers: Record<string, string>;
   cardMessageId: string;
   questionTimeoutId?: ReturnType<typeof setTimeout>;
   processor: StreamProcessor;
@@ -82,6 +87,22 @@ export interface ApiTaskOptions {
   userId?: string;
   sendCards?: boolean;
   freshSession?: boolean;
+  /** Override maxTurns for this task (e.g. 1 for voice mode). */
+  maxTurns?: number;
+  /** Override model for this task (e.g. faster model for voice calls). */
+  model?: string;
+  /** Override allowed tools for this task (empty array = no tools). */
+  allowedTools?: string[];
+  /** Called on every card state update (streaming). `final` is true on the last update. */
+  onUpdate?: (state: CardState, messageId: string, final: boolean) => void;
+  /** Called when Claude asks a question. Return the answer JSON string. */
+  onQuestion?: (question: PendingQuestion) => Promise<string>;
+  /** Called with output files after execution completes (before cleanup). */
+  onOutputFiles?: (files: import('./outputs-manager.js').OutputFile[]) => void;
+  /** Group chat member names — injected into system prompt for inter-bot communication. */
+  groupMembers?: string[];
+  /** Group ID — used for inter-bot communication chatId pattern. */
+  groupId?: string;
 }
 
 export interface ApiTaskResult {
@@ -93,6 +114,19 @@ export interface ApiTaskResult {
   error?: string;
 }
 
+export interface ActivityEventData {
+  type: 'task_started' | 'task_completed' | 'task_failed';
+  botName: string;
+  chatId: string;
+  userId?: string;
+  prompt?: string;
+  responsePreview?: string;
+  costUsd?: number;
+  durationMs?: number;
+  errorMessage?: string;
+  timestamp: number;
+}
+
 export class MessageBridge {
   private executor: ClaudeExecutor;
   private sessionManager: SessionManager;
@@ -101,9 +135,12 @@ export class MessageBridge {
   private commandHandler: CommandHandler;
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
+  private sessionRegistry?: SessionRegistry;
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
+  /** Callback for activity lifecycle events (task started/completed/failed). */
+  onActivityEvent?: (event: ActivityEventData) => void;
 
   constructor(
     private config: BotConfigBase,
@@ -129,13 +166,43 @@ export class MessageBridge {
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
   }
 
+  /** Emit an activity event if a listener is registered. */
+  private emitActivity(event: ActivityEventData): void {
+    try { this.onActivityEvent?.(event); } catch { /* ignore */ }
+  }
+
   /** Inject the doc sync service for /sync commands. */
   setDocSync(docSync: DocSync): void {
     this.commandHandler.setDocSync(docSync);
   }
 
+  /** Inject the session registry for cross-platform session sync. */
+  setSessionRegistry(registry: SessionRegistry): void {
+    this.sessionRegistry = registry;
+  }
+
+  /** Expose session manager for cross-platform session linking. */
+  getSessionManager(): SessionManager {
+    return this.sessionManager;
+  }
+
   isBusy(chatId: string): boolean {
     return this.runningTasks.has(chatId);
+  }
+
+  /** Return info about all currently running tasks (for team status display). */
+  getRunningTasksInfo(): Array<{ chatId: string; startTime: number }> {
+    return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
+      chatId,
+      startTime: task.startTime,
+    }));
+  }
+
+  /** Stop a running task for the given chatId. Returns true if a task was stopped. */
+  stopChatTask(chatId: string): boolean {
+    if (!this.runningTasks.has(chatId)) return false;
+    this.stopTask(chatId);
+    return true;
   }
 
   private stopTask(chatId: string): void {
@@ -284,42 +351,140 @@ export class MessageBridge {
     }
 
     const trimmed = text.trim();
-    const firstQuestion = pending.questions[0];
-    let answerText: string;
+    const currentQuestion = pending.questions[task.currentQuestionIndex];
+    if (!currentQuestion) return;
 
-    if (firstQuestion) {
-      const num = parseInt(trimmed, 10);
-      if (num >= 1 && num <= firstQuestion.options.length) {
-        answerText = firstQuestion.options[num - 1].label;
-      } else {
-        answerText = trimmed;
-      }
+    // Parse answer for the current question
+    let answerText: string;
+    const num = parseInt(trimmed, 10);
+    if (num >= 1 && num <= currentQuestion.options.length) {
+      answerText = currentQuestion.options[num - 1].label;
     } else {
       answerText = trimmed;
     }
 
-    // Only answer the first question (the one whose options were displayed).
-    // If multiple questions arrived in one AskUserQuestion call, the user
-    // only saw and responded to the first; don't duplicate their answer
-    // across all question headers.
-    const answers: Record<string, string> = {};
-    if (firstQuestion) {
-      answers[firstQuestion.header] = answerText;
+    // Store answer for this question
+    task.collectedAnswers[currentQuestion.header] = answerText;
+
+    this.logger.info(
+      { chatId, answer: answerText, questionIndex: task.currentQuestionIndex, total: pending.questions.length, toolUseId: pending.toolUseId },
+      'User answered question',
+    );
+
+    // Check if more questions remain in this AskUserQuestion call
+    if (task.currentQuestionIndex + 1 < pending.questions.length) {
+      task.currentQuestionIndex++;
+      // Reset question timeout for the next question
+      if (task.questionTimeoutId) {
+        clearTimeout(task.questionTimeoutId);
+      }
+      task.questionTimeoutId = setTimeout(() => {
+        this.autoAnswerRemainingQuestions(task);
+      }, QUESTION_TIMEOUT_MS);
+
+      // Update card to show next question
+      const currentState = task.processor.getCurrentState();
+      const nextQ = pending.questions[task.currentQuestionIndex];
+      const displayQuestion: PendingQuestion = {
+        toolUseId: pending.toolUseId,
+        questions: [nextQ],
+      };
+      const progress = `(${task.currentQuestionIndex + 1}/${pending.questions.length})`;
+      await this.sender.updateCard(task.cardMessageId, {
+        ...currentState,
+        status: 'waiting_for_input',
+        responseText: currentState.responseText
+          ? currentState.responseText + `\n\n> **Reply ${progress}:** ${answerText}`
+          : `> **Reply:** ${answerText}`,
+        pendingQuestion: displayQuestion,
+      });
+      return;
     }
-    const answerJson = JSON.stringify({ answers });
+
+    // All questions in this call answered — send combined result
+    const answerJson = JSON.stringify({ answers: task.collectedAnswers });
 
     if (task.questionTimeoutId) {
       clearTimeout(task.questionTimeoutId);
       task.questionTimeoutId = undefined;
     }
     task.pendingQuestion = null;
+    task.currentQuestionIndex = 0;
+    task.collectedAnswers = {};
     task.processor.clearPendingQuestion();
     task.consecutiveAutoAnswers = 0; // user responded — reset loop counter
 
     const sessionId = task.processor.getSessionId() || '';
     task.executionHandle.sendAnswer(pending.toolUseId, sessionId, answerJson);
 
-    this.logger.info({ chatId, answer: answerText, toolUseId: pending.toolUseId }, 'Sent user answer to Claude');
+    this.logger.info({ chatId, answers: task.collectedAnswers, toolUseId: pending.toolUseId }, 'Sent all answers to Claude');
+
+    // Check if there are more queued AskUserQuestion calls
+    const nextPending = task.processor.getPendingQuestion();
+    if (nextPending) {
+      task.pendingQuestion = nextPending;
+      task.currentQuestionIndex = 0;
+      task.collectedAnswers = {};
+
+      // Show next question call
+      const currentState = task.processor.getCurrentState();
+      const displayQuestion: PendingQuestion = {
+        toolUseId: nextPending.toolUseId,
+        questions: [nextPending.questions[0]],
+      };
+      const progress = nextPending.questions.length > 1 ? ` (1/${nextPending.questions.length})` : '';
+      task.questionTimeoutId = setTimeout(() => {
+        this.autoAnswerRemainingQuestions(task);
+      }, QUESTION_TIMEOUT_MS);
+
+      await this.sender.updateCard(task.cardMessageId, {
+        ...currentState,
+        status: 'waiting_for_input',
+        responseText: currentState.responseText
+          ? currentState.responseText + `\n\n> **Reply:** ${answerText}\n\n_Next question${progress}..._`
+          : `> **Reply:** ${answerText}\n\n_Next question${progress}..._`,
+        pendingQuestion: displayQuestion,
+      });
+      return;
+    }
+
+    // No more questions — resume normal execution
+    const answerSummary = Object.values(task.collectedAnswers).length > 0
+      ? Object.values(task.collectedAnswers).join(', ')
+      : answerText;
+    const currentState = task.processor.getCurrentState();
+    await this.sender.updateCard(task.cardMessageId, {
+      ...currentState,
+      status: 'running',
+      responseText: currentState.responseText
+        ? currentState.responseText + `\n\n> **Reply:** ${answerSummary}\n\n_Continuing..._`
+        : `> **Reply:** ${answerSummary}\n\n_Continuing..._`,
+    });
+  }
+
+  /** Auto-answer remaining questions when timeout fires. */
+  private autoAnswerRemainingQuestions(task: RunningTask): void {
+    const pending = task.pendingQuestion;
+    if (!pending) return;
+
+    this.logger.warn({ chatId: task.chatId, toolUseId: pending.toolUseId }, 'Question timeout, auto-answering remaining questions');
+
+    // Fill remaining unanswered questions with timeout message
+    for (let i = task.currentQuestionIndex; i < pending.questions.length; i++) {
+      const q = pending.questions[i];
+      if (!task.collectedAnswers[q.header]) {
+        task.collectedAnswers[q.header] = '用户未及时回复，请自行判断继续';
+      }
+    }
+
+    const answerJson = JSON.stringify({ answers: task.collectedAnswers });
+    task.pendingQuestion = null;
+    task.currentQuestionIndex = 0;
+    task.collectedAnswers = {};
+    task.processor.clearPendingQuestion();
+
+    const sid = task.processor.getSessionId() || '';
+    task.executionHandle.sendAnswer(pending.toolUseId, sid, answerJson);
   }
 
   /** Check if message is a media message with default (auto-generated) text. */
@@ -504,6 +669,8 @@ export class MessageBridge {
       startTime,
       executionHandle,
       pendingQuestion: null,
+      currentQuestionIndex: 0,
+      collectedAnswers: {},
       cardMessageId: messageId,
       processor,
       rateLimiter,
@@ -514,6 +681,7 @@ export class MessageBridge {
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
 
     this.audit.log({ event: 'task_start', botName: this.config.name, chatId, userId, prompt: text });
+    this.emitActivity({ type: 'task_started', botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200), timestamp: startTime });
 
     // Setup timeout
     let timedOut = false;
@@ -569,15 +737,42 @@ export class MessageBridge {
 
             // Check if we hit a waiting_for_input state
             if (state.status === 'waiting_for_input' && state.pendingQuestion) {
-              runningTask.pendingQuestion = state.pendingQuestion;
+              // Only initialize tracking when we see a NEW question call
+              if (!runningTask.pendingQuestion || runningTask.pendingQuestion.toolUseId !== state.pendingQuestion.toolUseId) {
+                runningTask.pendingQuestion = state.pendingQuestion;
+                runningTask.currentQuestionIndex = 0;
+                runningTask.collectedAnswers = {};
+              }
 
               await rateLimiter.flush();
-              await this.sender.updateCard(messageId, state);
 
+              // Show only the current question (not all at once)
+              const pending = runningTask.pendingQuestion;
+              const currentQ = pending.questions[runningTask.currentQuestionIndex];
+              const displayQuestion: PendingQuestion = {
+                toolUseId: pending.toolUseId,
+                questions: currentQ ? [currentQ] : pending.questions,
+              };
+              const progress = pending.questions.length > 1
+                ? ` (${runningTask.currentQuestionIndex + 1}/${pending.questions.length})`
+                : '';
+              await this.sender.updateCard(messageId, {
+                ...state,
+                pendingQuestion: displayQuestion,
+                // Append progress indicator to response if multi-question
+                responseText: progress
+                  ? (state.responseText || '') + (state.responseText ? '\n\n' : '') + `_Question${progress}_`
+                  : state.responseText,
+              });
+
+              // Set/reset timeout for auto-answer with permission loop detection
+              if (runningTask.questionTimeoutId) {
+                clearTimeout(runningTask.questionTimeoutId);
+              }
               runningTask.questionTimeoutId = setTimeout(() => {
                 this.logger.warn({ chatId }, 'Question timeout, auto-answering');
-                const pending = runningTask.pendingQuestion;
-                if (pending) {
+                const pendingQ = runningTask.pendingQuestion;
+                if (pendingQ) {
                   runningTask.consecutiveAutoAnswers++;
                   if (runningTask.consecutiveAutoAnswers >= MAX_CONSECUTIVE_AUTO_ANSWERS) {
                     this.logger.warn({ chatId, count: runningTask.consecutiveAutoAnswers }, 'Permission loop detected, aborting task');
@@ -588,11 +783,7 @@ export class MessageBridge {
                     abortController.abort();
                     return;
                   }
-                  runningTask.pendingQuestion = null;
-                  processor.clearPendingQuestion();
-                  const sid = processor.getSessionId() || '';
-                  const autoAnswer = JSON.stringify({ answers: { _timeout: '用户未及时回复，请自行判断继续' } });
-                  executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
+                  this.autoAnswerRemainingQuestions(runningTask);
                 }
               }, QUESTION_TIMEOUT_MS);
 
@@ -726,11 +917,7 @@ export class MessageBridge {
           const newSid = processor.getSessionId();
           if (newSid) this.sessionManager.setSessionId(chatId, newSid);
           if (state.status === 'complete' || state.status === 'error') break;
-          if (!abortController.signal.aborted) {
-            rateLimiter.schedule(() => {
-              if (!abortController.signal.aborted) this.sender.updateCard(messageId, state);
-            });
-          }
+          rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
         }
         await rateLimiter.cancelAndWait();
       }
@@ -748,11 +935,21 @@ export class MessageBridge {
         botName: this.config.name, chatId, userId, prompt: text,
         durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
       });
+      this.emitActivity({
+        type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+        botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
+        responsePreview: lastState.responseText?.slice(0, 200),
+        costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
+        timestamp: Date.now(),
+      });
       this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
       metrics.incCounter('metabot_tasks_total');
       metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
+
+      // Record in cross-platform session registry
+      this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       // Send completion notification for long-running tasks (>10s) so user gets a Feishu push
       await this.sendCompletionNotice(chatId, lastState, durationMs);
@@ -795,10 +992,18 @@ export class MessageBridge {
             botName: this.config.name, chatId, userId, prompt: text,
             durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
           });
+          this.emitActivity({
+            type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+            botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
+            responsePreview: lastState.responseText?.slice(0, 200),
+            costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
+            timestamp: Date.now(),
+          });
           this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
           metrics.incCounter('metabot_tasks_total');
           metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
+          this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
           await this.sendCompletionNotice(chatId, lastState, durationMs);
           await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
           return; // skip the normal error handling below
@@ -812,6 +1017,10 @@ export class MessageBridge {
       this.audit.log({
         event: 'task_error', botName: this.config.name, chatId, userId, prompt: text,
         durationMs, error: err.message || 'Unknown error',
+      });
+      this.emitActivity({
+        type: 'task_failed', botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
+        errorMessage: err.message || 'Unknown error', durationMs, timestamp: Date.now(),
       });
       this.costTracker.record({ botName: this.config.name, userId, success: false, durationMs });
       metrics.incCounter('metabot_tasks_total');
@@ -901,19 +1110,24 @@ export class MessageBridge {
     const processor = new StreamProcessor(displayPrompt, processorConfig, cwd);
     const rateLimiter = new RateLimiter(1500);
 
+    const initialState: CardState = {
+      status: 'thinking',
+      userPrompt: displayPrompt,
+      responseText: '',
+      toolCalls: [],
+      startTime: taskStartTime,
+    };
+
     let messageId: string | undefined;
     if (sendCards) {
-      const initialState: CardState = {
-        status: 'thinking',
-        userPrompt: displayPrompt,
-        responseText: '',
-        toolCalls: [],
-        startTime: taskStartTime,
-      };
       messageId = await this.sender.sendCard(chatId, initialState);
     }
 
-    const apiContext = { botName: this.config.name, chatId };
+    // Generate a messageId for onUpdate even if sendCards is false
+    const effectiveMessageId = messageId || `api-${chatId}-${Date.now()}`;
+    options.onUpdate?.(initialState, effectiveMessageId, false);
+
+    const apiContext = { botName: this.config.name, chatId, groupMembers: options.groupMembers, groupId: options.groupId };
 
     let executionHandle = this.executor.startExecution({
       prompt,
@@ -922,6 +1136,9 @@ export class MessageBridge {
       abortController,
       outputsDir,
       apiContext,
+      maxTurns: options.maxTurns,
+      model: options.model,
+      allowedTools: options.allowedTools,
     });
 
     const startTime = Date.now();
@@ -930,6 +1147,8 @@ export class MessageBridge {
       startTime,
       executionHandle,
       pendingQuestion: null,
+      currentQuestionIndex: 0,
+      collectedAnswers: {},
       cardMessageId: messageId || '',
       processor,
       rateLimiter,
@@ -940,6 +1159,7 @@ export class MessageBridge {
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
 
     this.audit.log({ event: 'api_task_start', botName: this.config.name, chatId, userId, prompt });
+    this.emitActivity({ type: 'task_started', botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200), timestamp: startTime });
 
     let timedOut = false;
     let idledOut = false;
@@ -989,10 +1209,21 @@ export class MessageBridge {
 
             if (state.status === 'waiting_for_input' && state.pendingQuestion) {
               const pending = state.pendingQuestion;
-              processor.clearPendingQuestion();
-              const sid = processor.getSessionId() || '';
-              const autoAnswer = JSON.stringify({ answers: { _auto: 'Please decide on your own and proceed.' } });
-              executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
+              if (options.onQuestion) {
+                // Notify the caller about the question state
+                options.onUpdate?.(state, effectiveMessageId, false);
+                // Wait for the caller to provide an answer
+                const answerJson = await options.onQuestion(pending);
+                processor.clearPendingQuestion();
+                const sid = processor.getSessionId() || '';
+                executionHandle.sendAnswer(pending.toolUseId, sid, answerJson);
+              } else {
+                // Auto-answer when no onQuestion handler is provided
+                processor.clearPendingQuestion();
+                const sid = processor.getSessionId() || '';
+                const autoAnswer = JSON.stringify({ answers: { _auto: 'Please decide on your own and proceed.' } });
+                executionHandle.sendAnswer(pending.toolUseId, sid, autoAnswer);
+              }
               continue;
             }
 
@@ -1070,6 +1301,7 @@ export class MessageBridge {
           }
           throw streamErr;
         }
+        options.onUpdate?.(lastState, effectiveMessageId, false);
       }
 
       await rateLimiter.cancelAndWait();
@@ -1093,23 +1325,64 @@ export class MessageBridge {
       if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage)) {
         this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
         this.sessionManager.resetSession(chatId);
+        if (sendCards && messageId) {
+          await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: '_Session expired, retrying..._' });
+        }
+
+        const retryHandle = this.executor.startExecution({
+          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+        });
+        executionHandle.finish();
+        runningTask.executionHandle = retryHandle;
+
+        for await (const message of retryHandle.stream) {
+          if (abortController.signal.aborted) break;
+          resetIdleTimer();
+          const state = processor.processMessage(message);
+          lastState = state;
+          const newSid = processor.getSessionId();
+          if (newSid) this.sessionManager.setSessionId(chatId, newSid);
+          if (state.status === 'complete' || state.status === 'error') break;
+          if (sendCards && messageId) {
+            rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
+          }
+          options.onUpdate?.(state, effectiveMessageId, false);
+        }
+        await rateLimiter.cancelAndWait();
       }
 
       if (sendCards && messageId) {
         await this.sendFinalCard(messageId, lastState, chatId);
       }
+      options.onUpdate?.(lastState, effectiveMessageId, true);
 
       await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+
+      // Notify web clients about output files before cleanup
+      if (options.onOutputFiles) {
+        const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+        if (outputFiles.length > 0) options.onOutputFiles(outputFiles);
+      }
 
       const durationMs = Date.now() - startTime;
       this.audit.log({
         event: 'api_task_complete', botName: this.config.name, chatId, userId, prompt,
         durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
       });
+      this.emitActivity({
+        type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+        botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200),
+        responsePreview: lastState.responseText?.slice(0, 200),
+        costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
+        timestamp: Date.now(),
+      });
       this.costTracker.record({ botName: this.config.name, userId, success: lastState.status === 'complete', costUsd: lastState.costUsd, durationMs });
       metrics.incCounter('metabot_api_tasks_total');
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
+
+      // Record in cross-platform session registry
+      this.recordSession(chatId, prompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       return {
         success: lastState.status === 'complete',
@@ -1126,6 +1399,56 @@ export class MessageBridge {
       if (isStaleSessionError(errMsg)) {
         this.logger.info({ chatId }, 'Clearing stale session ID due to conversation not found');
         this.sessionManager.resetSession(chatId);
+        if (sendCards && messageId) {
+          await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: '_Session expired, retrying..._' });
+        }
+
+        try {
+          const retryHandle = this.executor.startExecution({
+            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+          });
+          executionHandle.finish();
+          runningTask.executionHandle = retryHandle;
+
+          for await (const message of retryHandle.stream) {
+            if (abortController.signal.aborted) break;
+            resetIdleTimer();
+            const state = processor.processMessage(message);
+            lastState = state;
+            const newSid = processor.getSessionId();
+            if (newSid) this.sessionManager.setSessionId(chatId, newSid);
+            if (state.status === 'complete' || state.status === 'error') break;
+            if (sendCards && messageId) {
+              rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
+            }
+            options.onUpdate?.(state, effectiveMessageId, false);
+          }
+          await rateLimiter.cancelAndWait();
+
+          if (sendCards && messageId) {
+            await this.sendFinalCard(messageId, lastState, chatId);
+          }
+          options.onUpdate?.(lastState, effectiveMessageId, true);
+
+          await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+
+          if (options.onOutputFiles) {
+            const outputFiles = this.outputsManager.scanOutputs(outputsDir);
+            if (outputFiles.length > 0) options.onOutputFiles(outputFiles);
+          }
+
+          return {
+            success: lastState.status === 'complete',
+            responseText: lastState.responseText,
+            sessionId: processor.getSessionId(),
+            costUsd: lastState.costUsd,
+            durationMs: lastState.durationMs,
+            error: lastState.errorMessage,
+          };
+        } catch (retryErr: any) {
+          this.logger.error({ err: retryErr, chatId }, 'API task retry after stale session also failed');
+          // Fall through to normal error handling
+        }
       }
 
       if (sendCards && messageId) {
@@ -1139,6 +1462,20 @@ export class MessageBridge {
         await rateLimiter.cancelAndWait();
         await this.sendFinalCard(messageId, errorState, chatId);
       }
+
+      const catchErrorState: CardState = {
+        status: 'error',
+        userPrompt: displayPrompt,
+        responseText: lastState.responseText,
+        toolCalls: lastState.toolCalls,
+        errorMessage: err.message || 'Unknown error',
+      };
+      options.onUpdate?.(catchErrorState, effectiveMessageId, true);
+
+      this.emitActivity({
+        type: 'task_failed', botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200),
+        errorMessage: err.message || 'Unknown error', durationMs: Date.now() - startTime, timestamp: Date.now(),
+      });
 
       return {
         success: false,
@@ -1243,6 +1580,25 @@ export class MessageBridge {
    * Card updates don't trigger Feishu mobile push notifications, but new messages do.
    * Only sends for tasks that took longer than 10 seconds.
    */
+  /** Record session and messages in the cross-platform registry. */
+  private recordSession(chatId: string, prompt: string, responseText: string | undefined, claudeSessionId: string | undefined, costUsd: number | undefined, durationMs: number | undefined): void {
+    if (!this.sessionRegistry) return;
+    try {
+      this.sessionRegistry.createOrUpdate({
+        chatId,
+        botName: this.config.name,
+        claudeSessionId,
+        workingDirectory: this.sessionManager.getSession(chatId).workingDirectory,
+        prompt,
+        responseText,
+        costUsd,
+        durationMs,
+      });
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'Failed to record session in registry');
+    }
+  }
+
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
     // Some senders (WeChat) already send the final response as a standalone message, so skip
     if (this.sender.skipCompletionNotice) return;

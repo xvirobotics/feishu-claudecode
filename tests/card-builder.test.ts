@@ -51,7 +51,6 @@ describe('buildCard', () => {
     const note = json.elements.find((e: any) => e.tag === 'note');
     expect(note).toBeDefined();
     expect(note.elements[0].content).toContain('5.0s');
-    expect(note.elements[0].content).toContain('$0.03');
   });
 
   it('renders session info in complete stats note', () => {
@@ -72,7 +71,6 @@ describe('buildCard', () => {
     const content = note.elements[0].content;
     expect(content).toContain('2.0s');
     expect(content).toContain('5 turns');
-    expect(content).toContain('$0.01');
     expect(content).toContain('/home/user/project');
     expect(content).toContain('abcdef12');
   });

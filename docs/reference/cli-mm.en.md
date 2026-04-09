@@ -26,9 +26,10 @@ mm delete DOC_ID                    # delete document
 
 ## Remote Access
 
-By default, `mm` connects to `http://localhost:8100`. Configure remote access:
+By default, `mm` connects to `http://localhost:8100`. For internet-reachable deployments, point it at your HTTPS reverse proxy. If you use a private network such as Tailscale or WireGuard, you can use that private address instead.
 
 ```bash
+# Generate a secret once: openssl rand -hex 32
 # In ~/.metabot/.env or ~/metabot/.env
 META_MEMORY_URL=http://your-server:8100
 API_SECRET=your-secret

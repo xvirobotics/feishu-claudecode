@@ -50,7 +50,10 @@ prompt_yn() {
   fi
   read -r input < "$TTY" || input=""
   input="${input:-$default}"
-  [[ "${input,,}" == "y" || "${input,,}" == "yes" ]]
+  # Use tr for bash 3.x compatibility (macOS ships bash 3.2)
+  local lower
+  lower="$(printf '%s' "$input" | tr '[:upper:]' '[:lower:]')"
+  [[ "$lower" == "y" || "$lower" == "yes" ]]
 }
 
 # ============================================================================
@@ -168,10 +171,18 @@ fi
 # ============================================================================
 step "Phase 4: Removing Claude skills"
 
-for skill in metaskill metamemory metabot feishu-doc; do
+for skill in metaskill metamemory metabot voice feishu-doc; do
   if [[ -d "$SKILLS_DIR/$skill" ]]; then
     rm -rf "$SKILLS_DIR/$skill"
     success "Removed skill: $skill"
+  fi
+done
+
+# Remove lark-cli skills
+for skill in "$SKILLS_DIR"/lark-*; do
+  if [[ -d "$skill" ]]; then
+    rm -rf "$skill"
+    success "Removed skill: $(basename "$skill")"
   fi
 done
 
@@ -179,6 +190,12 @@ done
 if [[ -d "$HOME/.claude/skills/memory" ]]; then
   rm -rf "$HOME/.claude/skills/memory"
   success "Removed legacy skill: memory"
+fi
+
+# Remove lark-cli config
+if [[ -d "$HOME/.lark-cli" ]]; then
+  rm -rf "$HOME/.lark-cli"
+  success "Removed lark-cli config"
 fi
 
 # ============================================================================
@@ -231,7 +248,7 @@ if [[ ${#WORKSPACE_DIRS[@]} -gt 0 ]]; then
     echo ""
     info "Found deployed MetaBot skills in: $ws"
     if prompt_yn "Remove deployed skills from $ws?"; then
-      for skill in metaskill metamemory metabot feishu-doc; do
+      for skill in metaskill metamemory metabot voice; do
         rm -rf "$ws/.claude/skills/$skill" 2>/dev/null || true
       done
       success "Removed deployed skills from $ws"
@@ -253,9 +270,10 @@ echo -e "${NC}"
 echo ""
 echo -e "  ${BOLD}Removed:${NC}"
 echo "    - PM2 processes (metabot, metamemory)"
-echo "    - CLI tools (mm, mb, metabot, fd)"
+echo "    - CLI tools (mm, mb, metabot)"
 echo "    - Shell shortcuts from ~/.bash_aliases"
-echo "    - Claude skills (metaskill, metamemory, metabot, feishu-doc)"
+echo "    - Claude skills (metaskill, metamemory, metabot, lark-cli skills)"
+echo "    - lark-cli config (~/.lark-cli)"
 echo "    - MetaBot directory ($METABOT_HOME)"
 if [[ -d "$HOME/metabot-backup" ]]; then
   echo ""

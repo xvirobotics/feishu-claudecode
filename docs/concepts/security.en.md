@@ -19,7 +19,13 @@ Use `maxBudgetUsd` (per bot in `bots.json` or via `CLAUDE_MAX_BUDGET_USD` env va
 
 ## API Authentication
 
-Set `API_SECRET` in `.env` to enable Bearer token authentication on both the HTTP API server and MetaMemory:
+Set `API_SECRET` in `.env` to enable Bearer token authentication on both the HTTP API server and MetaMemory. Generate a strong random secret first:
+
+```bash
+openssl rand -hex 32
+```
+
+Then put the generated value in `.env`:
 
 ```bash
 API_SECRET=your-secret-token

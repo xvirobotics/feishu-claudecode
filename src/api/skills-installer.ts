@@ -1,22 +1,59 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import * as url from 'node:url';
+import { execFileSync } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
+
+/** Skills installed for all platforms. */
+const COMMON_SKILLS = ['metaskill', 'metamemory', 'metabot', 'phone-call'];
+
+/** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
+ *  symlinked into ~/.claude/skills/ automatically. We copy them to the bot
+ *  working directory so they are available in the Claude Code session. */
+const LARK_CLI_SKILLS = [
+  'lark-base', 'lark-calendar', 'lark-contact', 'lark-doc', 'lark-drive',
+  'lark-event', 'lark-im', 'lark-mail', 'lark-minutes', 'lark-openapi-explorer',
+  'lark-shared', 'lark-sheets', 'lark-skill-maker', 'lark-task', 'lark-vc',
+  'lark-whiteboard', 'lark-wiki', 'lark-workflow-meeting-summary',
+  'lark-workflow-standup-report',
+];
 
 export interface InstallSkillsOptions {
   /** Bot platform — feishu-only skills are skipped for other platforms. */
-  platform?: 'feishu' | 'telegram' | 'wechat';
+  platform?: 'feishu' | 'telegram' | 'web' | 'wechat';
+  /** Feishu app credentials for lark-cli auto-config (feishu only). */
+  feishuAppId?: string;
+  feishuAppSecret?: string;
 }
 
-/**
- * Deploy workspace CLAUDE.md to a new bot's working directory.
- *
- * Skills (metaskill, metamemory, metabot, etc.) are NOT copied per-bot — they
- * live in ~/.claude/skills/ (global) and Claude Code makes them available to
- * all bots automatically.  Copying them per-bot created redundant duplicates
- * that diverged from the global versions over time.
- */
-export function installSkillsToWorkDir(workDir: string, logger: Logger, _options?: InstallSkillsOptions): void {
+export function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): void {
+  const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
+  const destSkillsDir = path.join(workDir, '.claude', 'skills');
+
+  const skillNames = options?.platform === 'feishu'
+    ? [...COMMON_SKILLS, ...LARK_CLI_SKILLS]
+    : COMMON_SKILLS;
+
+  for (const skill of skillNames) {
+    const src = path.join(userSkillsDir, skill);
+
+    if (!fs.existsSync(src)) {
+      logger.debug({ skill }, 'Skill source not found, skipping');
+      continue;
+    }
+
+    const dest = path.join(destSkillsDir, skill);
+    fs.mkdirSync(dest, { recursive: true });
+    fs.cpSync(src, dest, { recursive: true });
+    logger.info({ skill, src, dest }, 'Skill installed to working directory');
+  }
+
+  // For Feishu bots, ensure lark-cli is configured
+  if (options?.platform === 'feishu' && options.feishuAppId && options.feishuAppSecret) {
+    ensureLarkCliConfig(options.feishuAppId, options.feishuAppSecret, logger);
+  }
+
   // Deploy workspace CLAUDE.md if not already present
   const destClaudeMd = path.join(workDir, 'CLAUDE.md');
   if (!fs.existsSync(destClaudeMd)) {
@@ -34,4 +71,52 @@ export function installSkillsToWorkDir(workDir: string, logger: Logger, _options
       }
     }
   }
+}
+
+/**
+ * Ensure lark-cli is configured with Feishu app credentials.
+ * Skips if ~/.lark-cli/config.json already exists.
+ */
+function ensureLarkCliConfig(appId: string, appSecret: string, logger: Logger): void {
+  const configPath = path.join(os.homedir(), '.lark-cli', 'config.json');
+  if (fs.existsSync(configPath)) {
+    logger.debug('lark-cli already configured, skipping');
+    return;
+  }
+
+  // Find lark-cli binary
+  const larkCliBin = findLarkCli();
+  if (!larkCliBin) {
+    logger.warn('lark-cli not found in PATH or ~/.npm-global/bin — skipping config. Run: npm install -g @larksuite/cli');
+    return;
+  }
+
+  try {
+    execFileSync(larkCliBin, ['config', 'init', '--app-id', appId, '--app-secret-stdin', '--brand', 'feishu'], {
+      input: appSecret,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 15_000,
+    });
+    logger.info({ appId }, 'lark-cli configured successfully');
+  } catch (err: any) {
+    logger.warn({ err: err.message }, 'Failed to configure lark-cli — you can run manually: lark-cli config init');
+  }
+}
+
+/** Locate the lark-cli executable. */
+function findLarkCli(): string | null {
+  const candidates = [
+    path.join(os.homedir(), '.npm-global', 'bin', 'lark-cli'),
+    '/usr/local/bin/lark-cli',
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  // Try PATH via which
+  try {
+    const result = execFileSync('which', ['lark-cli'], { stdio: ['pipe', 'pipe', 'pipe'], timeout: 5_000 });
+    const p = result.toString().trim();
+    if (p) return p;
+  } catch { /* not in PATH */ }
+  return null;
 }

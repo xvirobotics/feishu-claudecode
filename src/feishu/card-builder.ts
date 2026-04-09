@@ -359,8 +359,8 @@ export function buildCard(state: CardState): string {
     });
   }
 
-  // Stats note
-  if (state.status === 'complete' || state.status === 'error') {
+  // Stats note — show context usage during all states, full stats on complete/error
+  {
     const parts: string[] = [];
     if (state.model) {
       parts.push(state.model.replace(/^claude-/, ''));
@@ -371,22 +371,19 @@ export function buildCard(state: CardState): string {
     if (state.effort) {
       parts.push(`effort:${state.effort}`);
     }
-    if (state.durationMs !== undefined) {
-      parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
-    }
-    if (state.numTurns !== undefined) {
-      parts.push(`${state.numTurns} turns`);
-    }
-    if (state.costUsd !== undefined) {
-      parts.push(`$${state.costUsd.toFixed(2)}`);
-    }
     if (state.totalTokens && state.contextWindow) {
       const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
       const tokensK = state.totalTokens >= 1000
         ? `${(state.totalTokens / 1000).toFixed(1)}k`
         : `${state.totalTokens}`;
       const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      parts.push(`${tokensK}/${ctxK} (${pct}%)`);
+      parts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
+    }
+    if (state.durationMs !== undefined) {
+      parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);
+    }
+    if (state.numTurns !== undefined) {
+      parts.push(`${state.numTurns} turns`);
     }
     if (state.workingDirectory) {
       const dir = state.workingDirectory;

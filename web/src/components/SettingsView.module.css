@@ -1,0 +1,276 @@
+/* ============================================================
+   SettingsView — "NEXUS"
+   ============================================================ */
+
+.container {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 44px 28px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.header { margin-bottom: 40px; }
+
+.title {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-0);
+  letter-spacing: -0.6px;
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--text-1);
+}
+
+/* Sections */
+.section { margin-bottom: 36px; }
+
+.sectionTitle {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 14px;
+  padding-left: 2px;
+  font-family: var(--font-mono);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.sectionHeader .sectionTitle {
+  margin-bottom: 0;
+}
+
+/* Cards */
+.card {
+  background: var(--surface-1);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.cardItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.cardItem:last-child { border-bottom: none; }
+
+.cardItemLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cardItemLabel {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-0);
+  letter-spacing: -0.1px;
+}
+
+.cardItemDesc {
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+
+/* Toggle */
+.toggle {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  border-radius: 13px;
+  background: var(--surface-3);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  transition: background var(--duration-base), border-color var(--duration-base), box-shadow var(--duration-base);
+  flex-shrink: 0;
+}
+
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-2);
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), background var(--duration-base);
+}
+
+.toggleOn {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(0, 214, 143, 0.25);
+}
+
+.toggleOn::after {
+  transform: translateX(20px);
+  background: #fff;
+}
+
+/* Buttons */
+.btn {
+  padding: 9px 20px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: all var(--duration-fast);
+}
+
+.btnOutline {
+  background: transparent;
+  color: var(--text-1);
+  border: 1px solid var(--glass-border);
+}
+.btnOutline:hover {
+  background: var(--surface-hover);
+  color: var(--text-0);
+  border-color: var(--glass-border-hover);
+}
+
+.btnAccent {
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  padding: 6px 14px;
+}
+.btnAccent:hover {
+  box-shadow: 0 0 12px rgba(0, 214, 143, 0.3);
+}
+
+.btnSmall {
+  padding: 5px 12px;
+  font-size: 11px;
+}
+
+.btnDanger {
+  background: var(--red-soft);
+  color: var(--red);
+  border: 1px solid rgba(239, 68, 68, 0.12);
+}
+.btnDanger:hover { background: rgba(239, 68, 68, 0.15); }
+
+/* Connection badge */
+.connBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: var(--r-full);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.connBadgeOnline {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.connBadgeOffline {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.connDot { width: 6px; height: 6px; border-radius: 50%; }
+.connDotOn { background: var(--green); box-shadow: 0 0 8px rgba(34, 197, 94, 0.5); }
+.connDotOff { background: var(--red); }
+
+/* Bot list */
+.botList { display: flex; flex-direction: column; }
+
+.botItem {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--glass-border);
+}
+.botItem:last-child { border-bottom: none; }
+
+.botDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.botDotOnline { background: var(--green); box-shadow: 0 0 8px rgba(34, 197, 94, 0.5); }
+.botDotOffline { background: var(--text-2); }
+
+.botInfo { flex: 1; min-width: 0; }
+.botName { font-size: 14px; font-weight: 500; color: var(--text-0); letter-spacing: -0.1px; }
+.botMeta { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
+
+.botActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Font size segmented control */
+.fontSizeGroup {
+  display: flex;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.fontSizeBtn {
+  width: 36px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+
+.fontSizeBtn:hover {
+  color: var(--text-0);
+}
+
+.fontSizeBtnActive {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(0, 214, 143, 0.2);
+}
+
+/* Version */
+.version {
+  text-align: center;
+  margin-top: 48px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-2);
+}
+.version a { color: var(--accent-text); text-decoration: none; }
+.version a:hover { text-decoration: underline; }
+
+@media (max-width: 768px) {
+  .container { padding: 28px 18px; }
+  .title { font-size: 22px; }
+}
