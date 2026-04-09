@@ -25,7 +25,7 @@ MetaBot sets it free. It gives every agent a Claude Code brain, persistent share
 | **Agent Bus** | REST API on port 9100. Agents talk to each other via `mb talk`. Create/remove bots at runtime. |
 | **Peers** | Federation system for cross-instance bot discovery and task routing. |
 | **Task Scheduler** | One-time delays and recurring cron jobs. Timezone-aware, persists across restarts. |
-| **CLI Tools** | `metabot`, `mm`, `mb`, and `fd` commands for management, memory, agent bus, and Feishu docs. |
+| **CLI Tools** | `metabot`, `mm`, `mb` commands for management, memory, and agent bus. |
 
 ## Quick Install
 

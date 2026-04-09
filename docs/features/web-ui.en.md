@@ -13,9 +13,13 @@ The Web UI is a React SPA served at `/web/` on your MetaBot server. It connects 
 - **Real-time streaming chat** — WebSocket-based streaming with tool call display
 - **Markdown rendering** — Syntax highlighting, code blocks, tables
 - **Phone call voice mode** — Tap the phone icon for hands-free voice conversation with VAD
+- **RTC real-time calls** — Two-way voice/video calls via VolcEngine RTC
+- **Group chat** — Multiple agents in one conversation with @mention routing
 - **Interactive questions** — Respond to Claude's pending questions inline
 - **Session management** — Multiple sessions, reset, bot switching
 - **MetaMemory browser** — Browse and search knowledge base documents
+- **Team dashboard** — View agent organization status overview
+- **File support** — Upload/download files with inline preview
 - **Dark/light themes** — System-aware with manual toggle
 - **Responsive design** — Works on desktop and mobile
 
@@ -138,7 +142,12 @@ Browser → WebSocket (/ws?token=API_SECRET)
 | `web/src/store.ts` | Zustand store (auth, sessions, bots, theme) |
 | `web/src/hooks/useWebSocket.ts` | WebSocket with auto-reconnect + exponential backoff |
 | `web/src/components/ChatView.tsx` | Main chat interface + phone call overlay |
+| `web/src/components/VoiceView.tsx` | Phone call mode with VAD |
+| `web/src/components/RtcCallOverlay.tsx` | RTC video/voice call UI |
 | `web/src/components/MemoryView.tsx` | MetaMemory document browser |
+| `web/src/components/TeamDashboard.tsx` | Team status overview |
+| `web/src/components/InputBar.tsx` | Message input with file attachment |
+| `web/src/components/MessageList.tsx` | Real-time message streaming |
 | `web/src/theme.css` | Design system with CSS custom properties |
 
 ### Static File Serving

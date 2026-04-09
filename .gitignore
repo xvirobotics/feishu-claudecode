@@ -10,3 +10,9 @@ data/
 src/skills/gpu-cluster/
 .claude/
 .worktrees/*.skill
+site/
+ios/MetaBot/.build/
+ios/MetaBot/.swiftpm/
+ios/MetaBot/Pods/
+ios/MetaBot/MetaBot.xcworkspace/xcuserdata/
+ios/AuthKey*.p8

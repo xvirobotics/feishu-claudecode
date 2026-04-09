@@ -39,7 +39,7 @@ export class StreamProcessor {
   private durationMs: number | undefined;
   private numTurns: number | undefined;
   private _imagePaths: Set<string> = new Set();
-  private _pendingQuestion: PendingQuestion | null = null;
+  private _pendingQuestions: PendingQuestion[] = [];
   private _autoRespondTools: AutoRespondTool[] = [];
   private _planFilePath: string | null = null;
   private _config: StreamProcessorConfig;
@@ -102,7 +102,7 @@ export class StreamProcessor {
 
     // Determine running status
     const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
-    const status = this._pendingQuestion
+    const status = this._pendingQuestions.length > 0
       ? 'waiting_for_input'
       : hasActiveTools ? 'running' : this.responseText ? 'running' : 'thinking';
 
@@ -117,7 +117,7 @@ export class StreamProcessor {
       startTime: this._config.startTime,
       costUsd: this.costUsd,
       durationMs: this.durationMs,
-      pendingQuestion: this._pendingQuestion || undefined,
+      pendingQuestion: this._pendingQuestions[0] || undefined,
       model: this._config.model,
       thinking: this._config.thinking,
       effort: this._config.effort,
@@ -345,12 +345,12 @@ export class StreamProcessor {
         const mu = message.modelUsage[primaryModel];
         this._model = primaryModel;
         this._contextWindow = mu.contextWindow;
-        // Sum tokens across all models
-        let totalTokens = 0;
+        // Use input tokens as current context usage (reflects actual context window occupation)
+        let inputTokens = 0;
         for (const m of models) {
-          totalTokens += (message.modelUsage![m].inputTokens ?? 0) + (message.modelUsage![m].outputTokens ?? 0);
+          inputTokens += (message.modelUsage![m].inputTokens ?? 0);
         }
-        this._totalTokens = totalTokens;
+        this._totalTokens = inputTokens;
       }
     }
 
@@ -443,15 +443,18 @@ export class StreamProcessor {
       multiSelect: Boolean(q.multiSelect),
     }));
 
-    this._pendingQuestion = { toolUseId, questions: parsed };
+    // Queue instead of overwrite — supports multiple AskUserQuestion calls
+    this._pendingQuestions.push({ toolUseId, questions: parsed });
   }
 
+  /** Remove the first pending question (after it's been fully answered). */
   clearPendingQuestion(): void {
-    this._pendingQuestion = null;
+    this._pendingQuestions.shift();
   }
 
+  /** Peek at the first pending question without removing it. */
   getPendingQuestion(): PendingQuestion | null {
-    return this._pendingQuestion;
+    return this._pendingQuestions[0] ?? null;
   }
 
   /**
@@ -465,6 +468,34 @@ export class StreamProcessor {
     this._autoRespondTools = [];
     return tools;
   }
+
+  /** Return the current card state without processing a new message. */
+  getCurrentState(): CardState {
+    const hasActiveTools = this.toolCalls.some((t) => t.status === 'running');
+    const status = this._pendingQuestions.length > 0
+      ? 'waiting_for_input'
+      : hasActiveTools ? 'running' : this.responseText ? 'running' : 'thinking';
+    return {
+      status,
+      userPrompt: this.userPrompt,
+      responseText: this.responseText,
+      thinkingText: this.thinkingText || undefined,
+      toolCalls: [...this.toolCalls],
+      toolSummaries: this.toolSummaries.length > 0 ? [...this.toolSummaries] : undefined,
+      subagentTasks: this.subagentTasks.size > 0 ? [...this.subagentTasks.values()] : undefined,
+      startTime: this._config.startTime,
+      costUsd: this.costUsd,
+      durationMs: this.durationMs,
+      pendingQuestion: this._pendingQuestions[0] || undefined,
+      model: this._config.model,
+      thinking: this._config.thinking,
+      effort: this._config.effort,
+      sessionId: this.sessionId,
+      workingDirectory: this.workingDirectory,
+      numTurns: this.numTurns,
+    };
+  }
+
 
   getSessionId(): string | undefined {
     return this.sessionId;

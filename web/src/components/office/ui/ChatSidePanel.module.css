@@ -1,0 +1,96 @@
+/* ChatSidePanel — Right-side chat overlay */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  height: 100%;
+  background: var(--bg-primary, #1a1a2e);
+  border-left: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  background: var(--bg-secondary, #16162a);
+  flex-shrink: 0;
+}
+
+.headerInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.botIcon {
+  font-size: 20px;
+}
+
+.botMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.botName {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary, #e0e0e0);
+}
+
+.statusBadge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  color: #fff;
+  width: fit-content;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #999);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.closeBtn:hover {
+  color: var(--text-primary, #e0e0e0);
+}
+
+.description {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  flex-shrink: 0;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.inputArea {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border-color, rgba(255,255,255,0.1));
+}
+
+/* Mobile: full screen overlay */
+@media (max-width: 768px) {
+  .panel {
+    width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+  }
+}

@@ -47,7 +47,7 @@ metabot/
 │   ├── metabot                     # 服务管理 CLI
 │   ├── mb                          # Agent 总线 CLI
 │   ├── mm                          # MetaMemory CLI
-│   └── fd                          # 飞书文档阅读 CLI
+│   └── doubao-tts                  # 豆包 TTS CLI
 ├── web/                            # Web UI 源码（React + Vite）
 │   ├── src/
 │   │   ├── components/             # React 组件

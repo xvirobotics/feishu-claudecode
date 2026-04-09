@@ -39,24 +39,30 @@ npm start                            # run compiled output (dist/index.js)
 - **Feishu** uses WebSocket (persistent connection) — no incoming port needed
 - **Telegram** uses long polling — no incoming port needed
 
-The only port that needs to be accessible is the API port (`9100` by default) if you want remote CLI access or Peers federation.
+For remote CLI access or Peers federation, do not expose the raw API ports (`9100` / `8100`) directly on the public internet. Prefer HTTPS behind Caddy, or keep the services on a private network such as Tailscale or WireGuard.
 
 ## Remote CLI Access
 
-Configure CLI tools to connect to a remote MetaBot instance:
+Generate a strong API secret first:
+
+```bash
+openssl rand -hex 32
+```
+
+Then configure CLI tools to connect through your HTTPS reverse proxy for internet-reachable deployments:
 
 ```bash
 # In ~/.metabot/.env
-METABOT_URL=http://your-server:9100
-META_MEMORY_URL=http://your-server:8100
+METABOT_URL=https://metabot.yourdomain.com
+META_MEMORY_URL=https://memory.yourdomain.com
 API_SECRET=your-secret
 ```
 
-This allows `mb` and `mm` commands to work from any machine.
+This allows `mb` and `mm` commands to work from any machine while keeping TLS termination at the proxy. If your servers are reachable only over a private network such as Tailscale or WireGuard, use those private addresses instead.
 
 ## HTTPS with Caddy
 
-HTTPS is required for the Web UI's phone call voice mode on mobile browsers (microphone access needs a secure context). [Caddy](https://caddyserver.com/) is the recommended reverse proxy — it handles Let's Encrypt certificates automatically.
+HTTPS is required for the Web UI's phone call voice mode on mobile browsers (microphone access needs a secure context), and it is also the recommended default for remote CLI access and Peers federation. [Caddy](https://caddyserver.com/) is the recommended reverse proxy — it handles Let's Encrypt certificates automatically.
 
 ```bash
 # Install Caddy
@@ -69,6 +75,10 @@ sudo tee /etc/caddy/Caddyfile > /dev/null << 'EOF'
 metabot.yourdomain.com {
     reverse_proxy localhost:9100
 }
+
+memory.yourdomain.com {
+    reverse_proxy localhost:8100
+}
 EOF
 sudo systemctl restart caddy
 ```
@@ -78,6 +88,6 @@ sudo systemctl restart caddy
 - A domain with an A record pointing to your server's public IP
 - Ports 80 and 443 open for Let's Encrypt validation
 
-Caddy automatically obtains and renews certificates. WebSocket connections (`/ws`) are proxied transparently — no additional configuration needed.
+Caddy automatically obtains and renews certificates. WebSocket connections (`/ws`) are proxied transparently — no additional configuration needed. Use the same HTTPS hostnames for `METABOT_URL`, `META_MEMORY_URL`, and remote peer entries in `METABOT_PEERS`.
 
 For full setup details, see the [Web UI docs](../features/web-ui.md#https-setup).

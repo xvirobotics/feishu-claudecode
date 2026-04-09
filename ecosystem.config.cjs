@@ -11,6 +11,9 @@ module.exports = {
       // Watch disabled — use `metabot restart` to apply code changes manually
       watch: false,
 
+      // Graceful shutdown — give destroy() enough time to send restart cards
+      kill_timeout: 8000,
+
       // Auto-restart on crash
       autorestart: true,
       max_restarts: 10,

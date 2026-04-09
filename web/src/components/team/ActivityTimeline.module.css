@@ -1,0 +1,100 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 4px 0;
+}
+
+.event {
+  display: flex;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  transition: background 150ms;
+}
+
+.event:hover {
+  background: var(--bg-hover, rgba(255, 255, 255, 0.04));
+}
+
+.iconCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-top: 3px;
+  min-width: 20px;
+}
+
+.line {
+  flex: 1;
+  width: 1px;
+  min-height: 8px;
+  background: var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.event:last-child .line {
+  display: none;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.botName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.prompt {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  display: flex;
+  gap: 10px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.metaItem {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.errorMsg {
+  color: var(--color-error, #ef4444);
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+}
+
+.emptyText {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}

@@ -1,0 +1,91 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1a1a2e;
+  overflow: hidden;
+}
+
+.loading,
+.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-secondary, #999);
+  font-size: 14px;
+}
+
+.error {
+  color: #f44336;
+}
+
+/* ── Status Bar ── */
+
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px;
+  background: var(--bg-secondary, #16162a);
+  border-bottom: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+}
+
+.stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.statValue {
+  font-weight: 600;
+  color: var(--text-primary, #e0e0e0);
+}
+
+.statBusy {
+  font-weight: 600;
+  color: #ff9800;
+}
+
+.statIdle {
+  font-weight: 600;
+  color: #4caf50;
+}
+
+.hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-tertiary, #666);
+}
+
+/* ── Main layout ── */
+
+.main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.canvasArea {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+/* ── Mobile ── */
+
+@media (max-width: 768px) {
+  .statusBar {
+    gap: 10px;
+    padding: 6px 12px;
+    font-size: 11px;
+    flex-wrap: wrap;
+  }
+
+  .hint {
+    display: none;
+  }
+}

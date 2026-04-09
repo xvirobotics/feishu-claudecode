@@ -35,11 +35,17 @@ echo "Long text" | mb voice -o output.mp3
 
 ### Available Providers & Voices
 
+**Edge TTS (default, free, no key needed):**
+- `zh-CN-XiaoyiNeural` (default) — Female Chinese
+- `zh-CN-YunxiNeural` — Male Chinese
+- `zh-CN-XiaoxiaoNeural` — Female Chinese
+- `en-US-JennyNeural` — Female English
+
 **Doubao (default when Volcengine keys configured):**
 - `zh_female_wanqudashu_moon_bigtts` (default) — Female Chinese
 - Other Volcengine voice IDs from the TTS console
 
-**OpenAI (fallback):**
+**OpenAI (when OPENAI_API_KEY set):**
 - `alloy` (default), `echo`, `fable`, `onyx`, `nova`, `shimmer`
 
 **ElevenLabs (when ELEVENLABS_API_KEY set):**
@@ -48,7 +54,7 @@ echo "Long text" | mb voice -o output.mp3
 ### Text Limits
 
 - Doubao: ~300 Chinese characters (longer text is auto-truncated)
-- OpenAI / ElevenLabs: ~4000 characters
+- OpenAI / ElevenLabs / Edge: ~4000 characters
 
 ### Guidelines
 

@@ -10,7 +10,7 @@ All configuration is via `.env` file or system environment variables. Copy `.env
 | `FEISHU_APP_ID` | — | Feishu app ID (single-bot mode) |
 | `FEISHU_APP_SECRET` | — | Feishu app secret (single-bot mode) |
 | `API_PORT` | `9100` | HTTP API port |
-| `API_SECRET` | — | Bearer token auth for API and MetaMemory |
+| `API_SECRET` | — | Bearer token auth for API and MetaMemory. Generate one with `openssl rand -hex 32` |
 | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 
 ## Claude Code
@@ -58,7 +58,7 @@ Falls back to the first Feishu bot's credentials if not set.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `METABOT_PEERS` | — | Comma-separated peer URLs |
+| `METABOT_PEERS` | — | Comma-separated peer URLs. Prefer HTTPS for internet-reachable peers; use plain HTTP only for localhost or a private overlay network |
 | `METABOT_PEER_SECRETS` | — | Comma-separated peer secrets (positional match) |
 | `METABOT_PEER_NAMES` | auto | Comma-separated peer names |
 | `METABOT_PEER_POLL_INTERVAL_MS` | `30000` | Peer poll interval |
@@ -67,8 +67,8 @@ Falls back to the first Feishu bot's credentials if not set.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `METABOT_URL` | `http://localhost:9100` | MetaBot API URL (for CLI) |
-| `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL (for CLI) |
+| `METABOT_URL` | `http://localhost:9100` | MetaBot API URL for CLI. The default is local HTTP; for remote access prefer an HTTPS reverse proxy or a private-network address |
+| `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL for CLI. The default is local HTTP; for remote access prefer an HTTPS reverse proxy or a private-network address |
 
 ## Voice
 

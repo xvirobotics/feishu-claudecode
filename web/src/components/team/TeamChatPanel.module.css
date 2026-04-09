@@ -1,0 +1,90 @@
+/* ── TeamChatPanel ── */
+
+.panel {
+  width: 400px;
+  min-width: 400px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+  border-left: 1px solid var(--glass-border);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--glass-border);
+  flex-shrink: 0;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.headerLabel {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.headerBot {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-0);
+}
+
+.closeBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  transition: background var(--duration-fast), color var(--duration-fast);
+}
+.closeBtn:hover {
+  background: var(--surface-hover);
+  color: var(--text-0);
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.inputArea {
+  flex-shrink: 0;
+  border-top: 1px solid var(--glass-border);
+}
+
+/* Medium screens: overlay */
+@media (max-width: 1200px) {
+  .panel {
+    position: fixed;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    box-shadow: var(--shadow-xl);
+  }
+}
+
+/* Mobile: full screen */
+@media (max-width: 768px) {
+  .panel {
+    width: 100%;
+    min-width: 100%;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+  }
+}

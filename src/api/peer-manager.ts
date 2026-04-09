@@ -1,4 +1,5 @@
 import type { Logger } from '../utils/logger.js';
+import { proxyFetch } from '../utils/http.js';
 import type { PeerConfig } from '../config.js';
 import type { BotInfo } from './bot-registry.js';
 
@@ -79,7 +80,7 @@ export class PeerManager {
     }
 
     try {
-      const response = await fetch(url, {
+      const response = await proxyFetch(url, {
         headers,
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
@@ -178,7 +179,7 @@ export class PeerManager {
       headers['Authorization'] = `Bearer ${peer.secret}`;
     }
 
-    const response = await fetch(url, {
+    const response = await proxyFetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

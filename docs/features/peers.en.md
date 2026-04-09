@@ -22,6 +22,8 @@ Peers enables a **federated architecture** where multiple MetaBot instances disc
 
 Configure peers via **either** method — or use both (they are merged and deduplicated by URL):
 
+For peers on remote servers, prefer HTTPS URLs fronted by Caddy or another TLS reverse proxy. Plain `http://` is best kept to `localhost` or a private overlay network such as Tailscale or WireGuard.
+
 === "Environment Variables (.env)"
 
     The simplest way — just add to your `.env` file. Works with both single-bot and multi-bot mode.
