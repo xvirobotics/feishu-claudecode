@@ -8,16 +8,40 @@ export class MessageSender {
     private logger: Logger,
   ) {}
 
+  /**
+   * Retry a Feishu API call on transient gateway errors (502, 503).
+   * Retries up to 2 times with 1s / 2s delay.
+   */
+  private async withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    const maxRetries = 2;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        const status = err?.response?.status ?? err?.httpCode ?? err?.code;
+        if (attempt < maxRetries && (status === 502 || status === 503)) {
+          const delay = (attempt + 1) * 1000;
+          this.logger.warn({ label, attempt: attempt + 1, status, delay }, 'Feishu transient error, retrying');
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        throw err;
+      }
+    }
+  }
+
   async sendCard(chatId: string, cardContent: string): Promise<string | undefined> {
     try {
-      const resp = await this.client.im.v1.message.create({
-        params: { receive_id_type: 'chat_id' },
-        data: {
-          receive_id: chatId,
-          content: cardContent,
-          msg_type: 'interactive',
-        },
-      });
+      const resp = await this.withRetry('sendCard', () =>
+        this.client.im.v1.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: {
+            receive_id: chatId,
+            content: cardContent,
+            msg_type: 'interactive',
+          },
+        }),
+      );
 
       const messageId = resp?.data?.message_id;
       if (!messageId) {
@@ -32,10 +56,12 @@ export class MessageSender {
 
   async updateCard(messageId: string, cardContent: string): Promise<void> {
     try {
-      await this.client.im.v1.message.patch({
-        path: { message_id: messageId },
-        data: { content: cardContent },
-      });
+      await this.withRetry('updateCard', () =>
+        this.client.im.v1.message.patch({
+          path: { message_id: messageId },
+          data: { content: cardContent },
+        }),
+      );
     } catch (err) {
       this.logger.error({ err, messageId }, 'Failed to update card');
     }
@@ -180,14 +206,16 @@ export class MessageSender {
 
   async sendText(chatId: string, text: string): Promise<void> {
     try {
-      await this.client.im.v1.message.create({
-        params: { receive_id_type: 'chat_id' },
-        data: {
-          receive_id: chatId,
-          content: JSON.stringify({ text }),
-          msg_type: 'text',
-        },
-      });
+      await this.withRetry('sendText', () =>
+        this.client.im.v1.message.create({
+          params: { receive_id_type: 'chat_id' },
+          data: {
+            receive_id: chatId,
+            content: JSON.stringify({ text }),
+            msg_type: 'text',
+          },
+        }),
+      );
     } catch (err) {
       this.logger.error({ err, chatId }, 'Failed to send text');
     }
