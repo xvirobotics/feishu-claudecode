@@ -96,6 +96,7 @@ Full-featured browser-based chat interface. Access at `https://your-server/web/`
 | **Agent Bus** | Agents talk to each other via `mb talk`. Create/remove bots at runtime |
 | **Task Scheduler** | Cron recurring tasks + one-time delays, persisted across restarts, auto-retries when busy |
 | **Feishu Lark CLI** | 200+ commands covering docs, messaging, calendar, tasks, and 8 more domains. 19 AI Agent Skills |
+| **Skill Hub** | Cross-instance skill sharing registry. `mb skills` to publish, discover, and install skills with FTS5 search |
 | **Peers** | Cross-instance bot discovery and task routing. `mb talk alice/backend-bot` routes automatically |
 | **Voice Assistant** | Jarvis mode -- "Hey Siri, Jarvis" from AirPods for hands-free agent control |
 
@@ -340,6 +341,12 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `GET` | `/api/stats` | Cost & usage stats |
 | `GET` | `/api/metrics` | Prometheus metrics |
 | `POST` | `/api/tts` | Text-to-speech |
+| `GET` | `/api/skills` | List skills (local + peer) |
+| `GET` | `/api/skills/search?q=` | Full-text search skills |
+| `GET` | `/api/skills/:name` | Get skill details |
+| `POST` | `/api/skills` | Publish a skill |
+| `POST` | `/api/skills/:name/install` | Install skill to a bot |
+| `DELETE` | `/api/skills/:name` | Remove a skill |
 
 </details>
 
@@ -370,6 +377,12 @@ mb stats                            # cost & usage stats
 lark-cli docs +fetch --doc <feishu-url>
 lark-cli im +messages-send --chat-id oc_xxx --text "Hi"
 lark-cli calendar +agenda --as user
+
+# Skill Hub
+mb skills                             # list all skills
+mb skills search <query>              # search skills
+mb skills publish <bot> <skill>       # publish a bot's skill
+mb skills install <skill> <bot>       # install skill to a bot
 
 # Text-to-Speech
 mb voice "Hello world" --play
