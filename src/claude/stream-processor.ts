@@ -30,6 +30,9 @@ export class StreamProcessor {
   private _model: string | undefined;
   private _totalTokens: number | undefined;
   private _contextWindow: number | undefined;
+  // Track per-API-call usage from stream events for accurate context window display
+  private _lastInputTokens: number | undefined;
+  private _lastOutputTokens: number | undefined;
 
   constructor(private userPrompt: string) {}
 
@@ -108,7 +111,23 @@ export class StreamProcessor {
     const event = message.event;
     if (!event) return;
 
-    // Only process top-level stream events
+    // Track message_start/message_delta from ALL levels (not just top-level)
+    // because these carry per-API-call token usage needed for context display
+    if (event.type === 'message_start') {
+      const usage = (event as any).message?.usage;
+      if (usage) {
+        this._lastInputTokens = (usage.input_tokens ?? 0)
+          + (usage.cache_read_input_tokens ?? 0)
+          + (usage.cache_creation_input_tokens ?? 0);
+      }
+    } else if (event.type === 'message_delta') {
+      const usage = (event as any).usage;
+      if (usage?.output_tokens != null) {
+        this._lastOutputTokens = usage.output_tokens;
+      }
+    }
+
+    // Only process top-level stream events for content
     if (message.parent_tool_use_id !== null && message.parent_tool_use_id !== undefined) {
       return;
     }
@@ -147,12 +166,18 @@ export class StreamProcessor {
         const mu = message.modelUsage[primaryModel];
         this._model = primaryModel;
         this._contextWindow = mu.contextWindow;
-        // Use input tokens as current context usage (reflects actual context window occupation)
-        let inputTokens = 0;
-        for (const m of models) {
-          inputTokens += (message.modelUsage![m].inputTokens ?? 0);
+        // Use last API call's tokens from stream events (accurate context window occupation)
+        // Falls back to cumulative modelUsage input+output if stream events weren't captured
+        if (this._lastInputTokens != null) {
+          this._totalTokens = this._lastInputTokens + (this._lastOutputTokens ?? 0);
+        } else {
+          let totalTokens = 0;
+          for (const m of models) {
+            totalTokens += (message.modelUsage![m].inputTokens ?? 0);
+            totalTokens += (message.modelUsage![m].outputTokens ?? 0);
+          }
+          this._totalTokens = totalTokens;
         }
-        this._totalTokens = inputTokens;
       }
     }
 
