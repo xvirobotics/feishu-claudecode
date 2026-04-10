@@ -114,6 +114,39 @@ Read Feishu documents (standalone docx and wiki pages) and convert them to Markd
 
 When Claude enters plan mode and writes a plan to `.claude/plans/*.md`, the plan content is automatically sent to the Feishu user as a separate card message when `ExitPlanMode` is triggered. This is handled by `StreamProcessor` tracking plan file paths and `MessageBridge.sendPlanContent()` reading and sending the file.
 
+### Skill Hub (Cross-Bot Skill Sharing)
+
+A centralized skill registry that allows bots to publish, discover, and install skills across MetaBot instances.
+
+**Architecture**: SQLite + FTS5 store (same pattern as MetaMemory/SyncStore). Skills are stored with SKILL.md content + optional `references/` tar bundle. Cross-instance discovery via PeerManager polling.
+
+**Key modules:**
+- **`src/api/skill-hub-store.ts`** — `SkillHubStore` class with SQLite backend. FTS5 full-text search across name, description, tags, and content. Methods: `publish()` (upsert, bumps version), `get()`, `list()`, `search()`, `remove()`, `getContent()`.
+- **`src/api/routes/skill-hub-routes.ts`** — REST API endpoints for skill CRUD, publish-from-bot, install, and search.
+- **`src/api/skills-installer.ts`** — `installSkillFromHub()` writes SKILL.md + extracts references tar to a bot's `.claude/skills/` directory.
+- **`src/skills/skill-hub/SKILL.md`** — Bot-facing skill for autonomous skill discovery and installation.
+
+**API endpoints:**
+- `GET /api/skills` — List all skills (local + peer)
+- `GET /api/skills/search?q=` — Full-text search
+- `GET /api/skills/:name` — Get skill details (falls back to peers)
+- `POST /api/skills` — Publish a skill directly (with skillMd in body)
+- `POST /api/skills/:name/publish-from-bot` — Publish from a bot's working directory
+- `POST /api/skills/:name/install` — Install a skill to a bot
+- `DELETE /api/skills/:name` — Remove a skill
+
+**CLI (`mb` shortcut):**
+```bash
+mb skills                                  # List all skills
+mb skills search <query>                   # Search by keyword
+mb skills get <name>                       # Get skill details
+mb skills publish <botName> <skillName>    # Publish a bot's skill
+mb skills install <skillName> <botName>    # Install to a bot
+mb skills remove <name>                    # Unpublish
+```
+
+**Cross-instance**: PeerManager fetches skills alongside bots during 30s polling. Peer skills appear in list/search results with `peerName`/`peerUrl` fields. Install from peer: `mb skills install <skill> <bot> peer:<peerName>`.
+
 ### Session Isolation
 
 Sessions are keyed by `chatId` (not `userId`), so each group chat and DM gets its own independent session, working directory, and conversation history. Group chats with exactly 2 members (1 user + 1 bot) are treated like DMs — no @mention required. This lets users "fork" a bot by creating multiple small group chats, each with its own session. The member count is cached for 5 minutes to avoid excessive API calls.
