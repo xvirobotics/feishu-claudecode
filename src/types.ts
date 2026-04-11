@@ -33,6 +33,8 @@ export interface CardState {
   totalTokens?: number;
   /** Context window size of the primary model */
   contextWindow?: number;
+  /** Cumulative session cost (USD), accumulated across queries until /reset */
+  sessionCostUsd?: number;
 }
 
 export interface IncomingMessage {

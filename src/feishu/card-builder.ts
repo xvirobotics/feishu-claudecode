@@ -92,6 +92,9 @@ export function buildCard(state: CardState): string {
       parts.push(`ctx: ${tokensK}/${ctxK} (${pct}%)`);
     }
     if (state.status === 'complete' || state.status === 'error') {
+      if (state.sessionCostUsd != null) {
+        parts.push(`$${state.sessionCostUsd.toFixed(2)}`);
+      }
       if (state.model) {
         parts.push(state.model.replace(/^claude-/, ''));
       }
