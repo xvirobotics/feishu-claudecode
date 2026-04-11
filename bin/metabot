@@ -67,12 +67,13 @@ cmd_update() {
   mkdir -p "$SKILLS_DIR"
   info "Updating skills..."
   local src=""
-  for skill in metaskill metamemory metabot voice; do
+  for skill in metaskill metamemory metabot voice skill-hub; do
     case "$skill" in
       metaskill)  src="$METABOT_HOME/src/skills/metaskill" ;;
       metamemory) src="$METABOT_HOME/src/memory/skill" ;;
       metabot)    src="$METABOT_HOME/src/skills/metabot" ;;
       voice)      src="$METABOT_HOME/src/skills/voice" ;;
+      skill-hub)  src="$METABOT_HOME/src/skills/skill-hub" ;;
       *)          src="" ;;
     esac
     if [[ -n "$src" && -d "$src" ]]; then
@@ -106,7 +107,7 @@ cmd_update() {
       mkdir -p "$ws_skills_dir"
 
       # Copy common skills
-      for skill in metaskill metamemory metabot voice; do
+      for skill in metaskill metamemory metabot voice skill-hub; do
         if [[ -d "$SKILLS_DIR/$skill" ]]; then
           mkdir -p "$ws_skills_dir/$skill"
           cp -r "$SKILLS_DIR/$skill/." "$ws_skills_dir/$skill/"
