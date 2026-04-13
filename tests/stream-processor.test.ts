@@ -71,7 +71,8 @@ describe('StreamProcessor', () => {
       duration_ms: 1200,
     }));
     expect(state.status).toBe('complete');
-    expect(state.responseText).toBe('Done!');
+    expect(state.responseText).toBe('');
+    expect(state.resultSummary).toBe('Done!');
     expect(state.costUsd).toBe(0.05);
     expect(state.durationMs).toBe(1200);
   });
@@ -111,6 +112,40 @@ describe('StreamProcessor', () => {
     }));
     expect(state.status).toBe('error');
     expect(state.errorMessage).toBe('Something failed; Another error');
+  });
+
+  it('deduplicates resultSummary when result matches last turn text', () => {
+    const p = new StreamProcessor('hi');
+    // Simulate assistant message (sets _lastSentTurnText)
+    p.processMessage(msg({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: { content: [{ type: 'text', text: 'The answer is 42.' }] },
+    }));
+    // Result echoes the same text — should be suppressed
+    const state = p.processMessage(msg({
+      type: 'result',
+      subtype: 'success',
+      result: 'The answer is 42.',
+    }));
+    expect(state.status).toBe('complete');
+    expect(state.resultSummary).toBeUndefined();
+  });
+
+  it('keeps resultSummary when result differs from last turn text', () => {
+    const p = new StreamProcessor('hi');
+    p.processMessage(msg({
+      type: 'assistant',
+      parent_tool_use_id: null,
+      message: { content: [{ type: 'text', text: 'Working on it...' }] },
+    }));
+    const state = p.processMessage(msg({
+      type: 'result',
+      subtype: 'success',
+      result: 'Task complete — 3 files modified.',
+    }));
+    expect(state.status).toBe('complete');
+    expect(state.resultSummary).toBe('Task complete — 3 files modified.');
   });
 
   it('detects AskUserQuestion and sets waiting_for_input', () => {

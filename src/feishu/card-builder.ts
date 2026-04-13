@@ -420,9 +420,11 @@ export function buildCard(state: CardState): string {
     header: {
       template: config.color,
       title: {
-        content: elapsed && (state.status === 'thinking' || state.status === 'running')
-          ? `${config.icon} ${config.title} (${elapsed})`
-          : `${config.icon} ${config.title}`,
+        content: state.cardTitle
+          ? `${config.icon} ${state.cardTitle}`
+          : elapsed && (state.status === 'thinking' || state.status === 'running')
+            ? `${config.icon} ${config.title} (${elapsed})`
+            : `${config.icon} ${config.title}`,
         tag: 'plain_text',
       },
     },
@@ -508,12 +510,7 @@ export function buildTextCard(title: string, content: string, color: string = 'b
         tag: 'plain_text',
       },
     },
-    elements: [
-      {
-        tag: 'markdown',
-        content,
-      },
-    ],
+    elements: splitMarkdownWithTables(content),
   };
   return JSON.stringify(card);
 }

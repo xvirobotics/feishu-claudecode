@@ -127,6 +127,43 @@ describe('buildCard', () => {
     const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('truncated'));
     expect(md).toBeDefined();
   });
+
+  it('uses cardTitle to override default header title', () => {
+    const state: CardState = {
+      status: 'complete',
+      userPrompt: 'task',
+      responseText: '_See 💬 messages above for full response_',
+      toolCalls: [],
+      cardTitle: '📊 Result',
+    };
+    const json = JSON.parse(buildCard(state));
+    expect(json.header.title.content).toBe('🟢 📊 Result');
+  });
+
+  it('uses cardTitle for frozen turn card (e.g. Turn 1)', () => {
+    const state: CardState = {
+      status: 'complete',
+      userPrompt: 'task',
+      responseText: '',
+      toolCalls: [],
+      cardTitle: 'Turn 1',
+    };
+    const json = JSON.parse(buildCard(state));
+    expect(json.header.title.content).toBe('🟢 Turn 1');
+  });
+
+  it('shows thinking placeholder when status is thinking and no responseText', () => {
+    const state: CardState = {
+      status: 'thinking',
+      userPrompt: 'task',
+      responseText: '',
+      toolCalls: [],
+      startTime: Date.now(),
+    };
+    const json = JSON.parse(buildCard(state));
+    const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('thinking'));
+    expect(md).toBeDefined();
+  });
 });
 
 describe('buildHelpCard', () => {
