@@ -2,13 +2,17 @@ import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
-import { SessionManager } from '../claude/session-manager.js';
+import { SessionManager, type UserSession } from '../claude/session-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
 
+/** Callback to enter pending session selection mode in MessageBridge. */
+export type SessionSwitchCallback = (chatId: string, sessions: UserSession[]) => void;
+
 export class CommandHandler {
   private docSync: DocSync | null = null;
+  private onSessionSwitch: SessionSwitchCallback | null = null;
 
   constructor(
     private config: BotConfigBase,
@@ -24,6 +28,11 @@ export class CommandHandler {
   /** Set the doc sync service (optional, only available for Feishu bots). */
   setDocSync(docSync: DocSync): void {
     this.docSync = docSync;
+  }
+
+  /** Set the session switch callback for /switch selection mode. */
+  setSessionSwitchCallback(onSwitch: SessionSwitchCallback): void {
+    this.onSessionSwitch = onSwitch;
   }
 
   /** Returns true if the message was handled as a command, false otherwise. */
@@ -43,6 +52,8 @@ export class CommandHandler {
           '`/reset` - Clear session, start fresh',
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
+          '`/sessions` - List recent sessions',
+          '`/switch [N]` - Switch to a previous session',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
           '',
@@ -63,7 +74,7 @@ export class CommandHandler {
 
       case '/reset':
         this.sessionManager.resetSession(chatId);
-        await this.sender.sendTextNotice(chatId, '✅ Session Reset', 'Conversation cleared. Working directory preserved.', 'green');
+        await this.sender.sendTextNotice(chatId, '✅ Session Reset', 'Conversation cleared. Use `/sessions` to switch back to a previous session.', 'green');
         return true;
 
       case '/stop': {
@@ -99,6 +110,62 @@ export class CommandHandler {
       case '/sync': {
         const args = text.slice('/sync'.length).trim();
         await this.handleSyncCommand(chatId, args);
+        return true;
+      }
+
+      case '/sessions': {
+        const sessions = this.sessionManager.listSessions(chatId);
+        if (sessions.length === 0) {
+          await this.sender.sendTextNotice(chatId, '📋 Sessions', 'No sessions found.');
+          return true;
+        }
+        const activeIndex = this.sessionManager.getActiveIndex(chatId);
+        const lines = sessions.map((s, i) => {
+          const title = (s.title || '(untitled)').slice(0, 40);
+          const current = i === activeIndex ? ' 👈' : '';
+          return `**${i + 1}.** ${title}${current}`;
+        });
+        lines.push('', 'Use `/switch N` to switch to a session.');
+        await this.sender.sendTextNotice(chatId, '📋 Sessions', lines.join('\n'));
+        return true;
+      }
+
+      case '/switch': {
+        const sessions = this.sessionManager.listSessions(chatId);
+        if (sessions.length <= 1) {
+          await this.sender.sendTextNotice(chatId, '📋 Switch', 'Only one session exists. Use `/reset` to create a new one.', 'orange');
+          return true;
+        }
+        const switchArg = text.slice('/switch'.length).trim();
+
+        if (switchArg) {
+          // Direct switch by number
+          const num = parseInt(switchArg, 10);
+          if (isNaN(num) || num < 1 || num > sessions.length) {
+            await this.sender.sendTextNotice(chatId, '❌ Invalid', `Please enter a number between 1 and ${sessions.length}.`, 'red');
+            return true;
+          }
+          const target = sessions[num - 1];
+          if (!target.sessionId) {
+            await this.sender.sendTextNotice(chatId, '❌ Cannot Switch', 'This session has no conversation to resume.', 'red');
+            return true;
+          }
+          this.sessionManager.switchSession(chatId, num - 1);
+          await this.sender.sendTextNotice(chatId, '✅ Switched', `Switched to: **${(target.title || '(untitled)').slice(0, 40)}**`, 'green');
+          return true;
+        }
+
+        // No argument: show list and enter selection mode
+        const activeIndex = this.sessionManager.getActiveIndex(chatId);
+        const lines = sessions.map((s, i) => {
+          const title = (s.title || '(untitled)').slice(0, 40);
+          const current = i === activeIndex ? ' 👈' : '';
+          return `**${i + 1}.** ${title}${current}`;
+        });
+        lines.push('', '_Reply with a number to switch, or send any other message to cancel._');
+        await this.sender.sendTextNotice(chatId, '📋 Switch Session', lines.join('\n'));
+        // Enter selection mode
+        this.onSessionSwitch?.(chatId, sessions);
         return true;
       }
 

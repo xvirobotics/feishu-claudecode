@@ -109,6 +109,7 @@ export class MessageBridge {
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
+  private pendingSessionSwitch = new Map<string, { sessions: import('../claude/session-manager.js').UserSession[]; timerId: ReturnType<typeof setTimeout> }>();
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
 
@@ -149,6 +150,16 @@ export class MessageBridge {
   /** Inject the session registry for cross-platform session sync. */
   setSessionRegistry(registry: SessionRegistry): void {
     this.sessionRegistry = registry;
+    this.commandHandler.setSessionSwitchCallback((chatId, sessions) => {
+      // Clear any existing pending selection
+      const existing = this.pendingSessionSwitch.get(chatId);
+      if (existing) clearTimeout(existing.timerId);
+      // Set new pending selection with 60s timeout
+      const timerId = setTimeout(() => {
+        this.pendingSessionSwitch.delete(chatId);
+      }, 60_000);
+      this.pendingSessionSwitch.set(chatId, { sessions, timerId });
+    });
   }
 
   /** Expose session manager for cross-platform session linking. */
@@ -227,6 +238,27 @@ export class MessageBridge {
     const task = this.runningTasks.get(chatId);
     if (task && task.pendingQuestion) {
       await this.handleAnswer(msg, task);
+      return;
+    }
+
+    // Check if there's a pending session switch selection
+    const pendingSwitch = this.pendingSessionSwitch.get(chatId);
+    if (pendingSwitch) {
+      clearTimeout(pendingSwitch.timerId);
+      this.pendingSessionSwitch.delete(chatId);
+      const num = parseInt(text.trim(), 10);
+      if (!isNaN(num) && num >= 1 && num <= pendingSwitch.sessions.length) {
+        const target = pendingSwitch.sessions[num - 1];
+        if (target.sessionId) {
+          this.sessionManager.switchSession(chatId, num - 1);
+          await this.sender.sendTextNotice(chatId, '✅ Switched', `Switched to: **${(target.title || '(untitled)').slice(0, 40)}**`, 'green');
+        } else {
+          await this.sender.sendTextNotice(chatId, '❌ Cannot Switch', 'This session has no conversation to resume.', 'red');
+        }
+      } else {
+        // Non-numeric or out-of-range: cancel selection and process normally
+        await this.executeQuery(msg);
+      }
       return;
     }
 
@@ -632,6 +664,8 @@ export class MessageBridge {
 
     this.audit.log({ event: 'task_start', botName: this.config.name, chatId, userId, prompt: text });
     this.emitActivity({ type: 'task_started', botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200), timestamp: startTime });
+    // Record first message as session title
+    this.sessionManager.setTitle(chatId, (text || '').replace(/\n/g, ' ').slice(0, 60));
 
     // Setup timeout
     let timedOut = false;
@@ -818,8 +852,9 @@ export class MessageBridge {
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
-      // Record in cross-platform session registry
-      this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
+      // Record in cross-platform session registry (use virtual chatId for isolation)
+      const registryChatId = this.sessionManager.getVirtualChatId(chatId);
+      this.recordSession(registryChatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       // Send completion notification for long-running tasks (>10s) so user gets a Feishu push
       await this.sendCompletionNotice(chatId, lastState, durationMs);
@@ -873,7 +908,7 @@ export class MessageBridge {
           metrics.incCounter('metabot_tasks_total');
           metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
-          this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
+          this.recordSession(this.sessionManager.getVirtualChatId(chatId), displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
           await this.sendCompletionNotice(chatId, lastState, durationMs);
           await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
           return; // skip the normal error handling below
@@ -1157,8 +1192,8 @@ export class MessageBridge {
       metrics.observeHistogram('metabot_task_duration_seconds', durationMs / 1000);
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
-      // Record in cross-platform session registry
-      this.recordSession(chatId, prompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
+      // Record in cross-platform session registry (use virtual chatId for isolation)
+      this.recordSession(this.sessionManager.getVirtualChatId(chatId), prompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       return {
         success: lastState.status === 'complete',
