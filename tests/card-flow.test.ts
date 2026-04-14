@@ -111,6 +111,38 @@ describe('recreateCard — turn content in frozen card', () => {
 
     expect(sender.updateCard).toHaveBeenCalledTimes(2);
   });
+
+  it('schedules background retry when both freeze attempts fail', async () => {
+    vi.useFakeTimers();
+    const sender = mockSender();
+    const bridge = makeBridge(sender);
+
+    (sender.updateCard as any).mockRejectedValue(new Error('rate limited'));
+
+    const state: CardState = { status: 'running', userPrompt: 'test', responseText: '', toolCalls: [] };
+    // Don't await directly — need to advance fake timers for the 1s retry delay inside recreateCard
+    const promise = (bridge as any).recreateCard('chat1', 'old_card', state, 'Turn 1', 'content');
+    await vi.advanceTimersByTimeAsync(1000); // resolve the 1s retry delay
+    await promise;
+
+    // 2 sync attempts failed, new card created
+    expect(sender.updateCard).toHaveBeenCalledTimes(2);
+    expect(sender.sendCard).toHaveBeenCalledTimes(1);
+
+    // Background retry fires at 3s
+    (sender.updateCard as any).mockResolvedValueOnce(undefined);
+    await vi.advanceTimersByTimeAsync(3000);
+
+    // 2 sync + 1 background = 3 total
+    expect(sender.updateCard).toHaveBeenCalledTimes(3);
+    expect(sender.updateCard).toHaveBeenLastCalledWith('old_card', expect.objectContaining({
+      status: 'complete',
+      responseText: 'content',
+      cardTitle: 'Turn 1',
+    }));
+
+    vi.useRealTimers();
+  });
 });
 
 describe('sendFinalCard — multi-turn vs single-turn', () => {

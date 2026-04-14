@@ -1623,11 +1623,19 @@ export class MessageBridge {
         responseText: lastTurnText || '',
         cardTitle: `Turn ${turnCount}`,
       };
+      let frozen = false;
       try {
         await this.sender.updateCard(messageId, freezeState);
+        frozen = true;
       } catch {
         await new Promise((r) => setTimeout(r, 1000));
-        try { await this.sender.updateCard(messageId, freezeState); } catch { this.logger.warn({ messageId }, 'Freeze failed after retry — card may stay running'); }
+        try {
+          await this.sender.updateCard(messageId, freezeState);
+          frozen = true;
+        } catch { /* will retry in background */ }
+      }
+      if (!frozen) {
+        this.backgroundFreezeRetry(messageId, freezeState);
       }
 
       // Result card shows the SDK summary (if any), otherwise a pointer to the turn cards.
@@ -1711,27 +1719,58 @@ export class MessageBridge {
   private async recreateCard(chatId: string, oldMessageId: string, state: CardState, turnLabel?: string, turnText?: string): Promise<string> {
     // Freeze old card with the completed turn's content so the card itself shows the response.
     const freezeState = { ...state, status: 'complete' as const, responseText: turnText || '', cardTitle: turnLabel };
+    let frozen = false;
     try {
       await this.sender.updateCard(oldMessageId, freezeState);
-    } catch {
-      // Retry once — if the freeze fails the old card stays "running", which is a visible glitch
+      frozen = true;
+    } catch (err) {
+      // Retry once before creating the new card
       await new Promise((r) => setTimeout(r, 1000));
       try {
         await this.sender.updateCard(oldMessageId, freezeState);
-      } catch { this.logger.warn({ oldMessageId }, 'recreateCard freeze failed after retry'); }
+        frozen = true;
+      } catch (err2) {
+        this.logger.warn({ oldMessageId, err: (err2 as Error).message }, 'recreateCard freeze failed after retry, will retry in background');
+      }
     }
     // Create new card at bottom for next turn
+    let newId: string | undefined;
     try {
-      const newId = await this.sender.sendCard(chatId, {
+      newId = await this.sender.sendCard(chatId, {
         status: 'thinking',
         userPrompt: state.userPrompt,
         responseText: '',
         toolCalls: [],
         startTime: state.startTime,
-      });
-      if (newId) return newId;
+      }) || undefined;
     } catch { /* fall back to old card */ }
-    return oldMessageId;
+    // Background retries for failed freeze — non-blocking so it doesn't delay the response
+    if (!frozen) {
+      this.backgroundFreezeRetry(oldMessageId, freezeState);
+    }
+    return newId || oldMessageId;
+  }
+
+  /** Fire-and-forget retries to freeze a card that failed during recreateCard. */
+  private backgroundFreezeRetry(messageId: string, freezeState: CardState): void {
+    const delays = [3000, 5000, 10000];
+    let attempt = 0;
+    const retry = () => {
+      if (attempt >= delays.length) {
+        this.logger.error({ messageId }, 'Background freeze gave up — card may stay stuck in running state');
+        return;
+      }
+      setTimeout(async () => {
+        try {
+          await this.sender.updateCard(messageId, freezeState);
+          this.logger.info({ messageId, attempt }, 'Background freeze succeeded');
+        } catch {
+          attempt++;
+          retry();
+        }
+      }, delays[attempt]);
+    };
+    retry();
   }
 
   /**
