@@ -95,15 +95,17 @@ export function createEventDispatcher(
         const messageId = message.message_id;
 
         // In group chats, only respond when the bot is @mentioned
-        // Exception: 2-member groups (1 user + 1 bot) are treated like DMs
+        // Exceptions: 2-member groups are treated like DMs; groupNoMention mode skips @mention check
         const mentions = message.mentions;
         if (chatType === 'group') {
           const botMentioned = mentions?.some(
             (m: any) => !botOpenId || m.id?.open_id === botOpenId,
           );
           if (!botMentioned) {
-            // Check if this is a private-like group (only 2 members)
-            if (messageSender && await isPrivateLikeGroup(chatId, messageSender)) {
+            // groupNoMention mode: respond to all messages without @mention
+            if (config.groupNoMention) {
+              logger.debug({ chatId }, 'Group no-mention mode enabled, processing without @mention');
+            } else if (messageSender && await isPrivateLikeGroup(chatId, messageSender)) {
               logger.debug({ chatId }, 'Private-like group (2 members), processing without @mention');
             } else if (msgType === 'image' || msgType === 'file') {
               // Cache media messages for later retrieval when user @mentions bot

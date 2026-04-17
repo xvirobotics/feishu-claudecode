@@ -793,6 +793,32 @@ export class MessageBridge {
         await rateLimiter.cancelAndWait();
       }
 
+      // Auto-retry with fresh session on context overflow (e.g. third-party models without compaction)
+      if (lastState.status === 'error' && isContextOverflowError(lastState.errorMessage) && session.sessionId) {
+        this.logger.info({ chatId }, 'Context overflow detected, retrying with fresh session');
+        this.sessionManager.resetSession(chatId);
+        lastState = { ...lastState, status: 'running', errorMessage: undefined };
+        await this.sender.updateCard(messageId, { ...lastState, responseText: '_Context limit reached, starting fresh session..._' });
+
+        const retryHandle = this.executor.startExecution({
+          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: session.model,
+        });
+        executionHandle.finish();
+        runningTask.executionHandle = retryHandle;
+
+        for await (const message of retryHandle.stream) {
+          if (abortController.signal.aborted) break;
+          resetIdleTimer();
+          const state = processor.processMessage(message);
+          lastState = state;
+          const newSid = processor.getSessionId();
+          if (newSid) this.sessionManager.setSessionId(chatId, newSid);
+          if (state.status === 'complete' || state.status === 'error') break;
+          rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
+        }
+        await rateLimiter.cancelAndWait();
+      }
+
       await this.sendFinalCard(messageId, lastState, chatId);
 
       // Audit + cost tracking
@@ -830,12 +856,14 @@ export class MessageBridge {
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'Claude execution error');
 
-      // Auto-retry with fresh session when Claude can't find the conversation
+      // Auto-retry with fresh session when Claude can't find the conversation or context overflows
       const errMsg: string = err.message || '';
-      if (isStaleSessionError(errMsg) && session.sessionId) {
-        this.logger.info({ chatId }, 'Stale session detected in catch, retrying with fresh session');
+      if ((isStaleSessionError(errMsg) || isContextOverflowError(errMsg)) && session.sessionId) {
+        const isOverflow = isContextOverflowError(errMsg);
+        this.logger.info({ chatId, isOverflow }, isOverflow ? 'Context overflow in catch, retrying with fresh session' : 'Stale session detected in catch, retrying with fresh session');
         this.sessionManager.resetSession(chatId);
-        await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: '_Session expired, retrying..._' });
+        const retryMsg = isOverflow ? '_Context limit reached, starting fresh session..._' : '_Session expired, retrying..._';
+        await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
 
         try {
           const retryHandle = this.executor.startExecution({
@@ -1098,12 +1126,14 @@ export class MessageBridge {
         }
       }
 
-      // Auto-retry with fresh session when Claude can't find the conversation
-      if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage) && session.sessionId) {
-        this.logger.info({ chatId }, 'API task: stale session detected, retrying with fresh session');
+      // Auto-retry with fresh session when Claude can't find the conversation or context overflows
+      if (lastState.status === 'error' && (isStaleSessionError(lastState.errorMessage) || isContextOverflowError(lastState.errorMessage)) && session.sessionId) {
+        const isOverflow = isContextOverflowError(lastState.errorMessage);
+        this.logger.info({ chatId, isOverflow }, isOverflow ? 'API task: context overflow, retrying with fresh session' : 'API task: stale session detected, retrying with fresh session');
         this.sessionManager.resetSession(chatId);
+        const retryMsg = isOverflow ? '_Context limit reached, starting fresh session..._' : '_Session expired, retrying..._';
         if (sendCards && messageId) {
-          await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: '_Session expired, retrying..._' });
+          await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
         }
 
         const retryHandle = this.executor.startExecution({
@@ -1172,13 +1202,15 @@ export class MessageBridge {
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'API task execution error');
 
-      // Auto-retry with fresh session when Claude can't find the conversation
+      // Auto-retry with fresh session when Claude can't find the conversation or context overflows
       const errMsg: string = err.message || '';
-      if (isStaleSessionError(errMsg) && session.sessionId) {
-        this.logger.info({ chatId }, 'API task: stale session in catch, retrying with fresh session');
+      if ((isStaleSessionError(errMsg) || isContextOverflowError(errMsg)) && session.sessionId) {
+        const isOverflow = isContextOverflowError(errMsg);
+        this.logger.info({ chatId, isOverflow }, isOverflow ? 'API task: context overflow in catch, retrying with fresh session' : 'API task: stale session in catch, retrying with fresh session');
         this.sessionManager.resetSession(chatId);
+        const retryMsg = isOverflow ? '_Context limit reached, starting fresh session..._' : '_Session expired, retrying..._';
         if (sendCards && messageId) {
-          await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: '_Session expired, retrying..._' });
+          await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
         }
 
         try {
@@ -1415,5 +1447,10 @@ export class MessageBridge {
 export function isStaleSessionError(errorMessage?: string): boolean {
   if (!errorMessage) return false;
   return /no conversation found|conversation not found|session id|invalid session|multiple.*tool_result.*blocks|each tool_use must have a single result/i.test(errorMessage);
+}
+
+export function isContextOverflowError(errorMessage?: string): boolean {
+  if (!errorMessage) return false;
+  return /context.window.exceeds.limit|context.length.exceeded|context.too.long|max.context.length|token.limit.exceeded|maximum.context/i.test(errorMessage);
 }
 
