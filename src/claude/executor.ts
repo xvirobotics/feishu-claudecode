@@ -246,7 +246,8 @@ export class ClaudeExecutor {
       queryOptions.resume = sessionId;
     }
 
-    // Enable 1M context window for Opus 4.6 and Sonnet 4.6
+    // Beta flags are ignored by the SDK on OAuth/Pro-Max auth. For 1M context,
+    // use the model-name suffix `[1m]` (e.g. `claude-opus-4-7[1m]`) instead.
     queryOptions.betas = ['context-1m-2025-08-07'];
 
     return queryOptions;

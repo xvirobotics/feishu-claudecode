@@ -43,6 +43,7 @@ export class CommandHandler {
           '`/reset` - Clear session, start fresh',
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
+          '`/model` - Show current model; `/model list` - Available models; `/model <name>` - Switch',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
           '',
@@ -81,10 +82,12 @@ export class CommandHandler {
       case '/status': {
         const session = this.sessionManager.getSession(chatId);
         const isRunning = !!this.getRunningTask(chatId);
+        const activeModel = session.model || this.config.claude.model || '_default_';
         await this.sender.sendTextNotice(chatId, '📊 Status', [
           `**User:** \`${userId}\``,
           `**Working Directory:** \`${session.workingDirectory}\``,
           `**Session:** ${session.sessionId ? `\`${session.sessionId.slice(0, 8)}...\`` : '_None_'}`,
+          `**Model:** \`${activeModel}\`${session.model ? ' (session override)' : ''}`,
           `**Running:** ${isRunning ? 'Yes ⏳' : 'No'}`,
         ].join('\n'));
         return true;
@@ -99,6 +102,12 @@ export class CommandHandler {
       case '/sync': {
         const args = text.slice('/sync'.length).trim();
         await this.handleSyncCommand(chatId, args);
+        return true;
+      }
+
+      case '/model': {
+        const args = text.slice('/model'.length).trim();
+        await this.handleModelCommand(chatId, args);
         return true;
       }
 
@@ -217,5 +226,73 @@ export class CommandHandler {
       default:
         await this.sender.sendTextNotice(chatId, '📝 Sync', 'Usage:\n- `/sync` — Sync all documents to Feishu Wiki\n- `/sync status` — Show sync status', 'blue');
     }
+  }
+
+  private async handleModelCommand(chatId: string, args: string): Promise<void> {
+    const session = this.sessionManager.getSession(chatId);
+    const botDefault = this.config.claude.model;
+
+    // No args — show current model
+    if (!args) {
+      const active = session.model || botDefault || '_default_';
+      const lines = [
+        `**Active:** \`${active}\`${session.model ? ' (session override)' : ''}`,
+        `**Bot default:** \`${botDefault || '_unset_'}\``,
+        '',
+        'Usage:',
+        '- `/model list` — Show available models',
+        '- `/model <name>` — Set session model (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`)',
+        '- `/model reset` — Clear override, use bot default',
+      ];
+      await this.sender.sendTextNotice(chatId, '🤖 Model', lines.join('\n'));
+      return;
+    }
+
+    // List available models
+    if (args.toLowerCase() === 'list' || args.toLowerCase() === 'ls') {
+      const active = session.model || botDefault;
+      const models = [
+        { id: 'claude-opus-4-7', label: 'Opus 4.7', note: 'Most capable · 200k context' },
+        { id: 'claude-opus-4-7[1m]', label: 'Opus 4.7 (1M)', note: '1M context window' },
+        { id: 'claude-opus-4-6', label: 'Opus 4.6', note: '200k context' },
+        { id: 'claude-opus-4-6[1m]', label: 'Opus 4.6 (1M)', note: '1M context window' },
+        { id: 'claude-sonnet-4-6', label: 'Sonnet 4.6', note: 'Balanced · 200k context' },
+        { id: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 (1M)', note: '1M context window' },
+        { id: 'claude-haiku-4-5', label: 'Haiku 4.5', note: 'Fastest · 200k context' },
+      ];
+      const lines = ['**Available Claude models:**', ''];
+      for (const m of models) {
+        const marker = m.id === active ? ' ✅' : '';
+        lines.push(`- \`${m.id}\` — ${m.label} · ${m.note}${marker}`);
+      }
+      lines.push('');
+      lines.push('_Tip: append `[1m]` to a model name to enable the 1M context window. Only Opus 4.7/4.6 and Sonnet 4.6 support it._');
+      lines.push('Use `/model <name>` to switch.');
+      await this.sender.sendTextNotice(chatId, '🤖 Available Models', lines.join('\n'));
+      return;
+    }
+
+    // Reset — clear the override
+    if (args.toLowerCase() === 'reset' || args.toLowerCase() === 'clear' || args.toLowerCase() === 'default') {
+      this.sessionManager.setSessionModel(chatId, undefined);
+      const fallback = botDefault || '_default_';
+      await this.sender.sendTextNotice(
+        chatId,
+        '✅ Model Reset',
+        `Session override cleared. Using bot default: \`${fallback}\``,
+        'green',
+      );
+      return;
+    }
+
+    // Set the model (use only the first token, ignore trailing junk)
+    const newModel = args.split(/\s+/)[0];
+    this.sessionManager.setSessionModel(chatId, newModel);
+    await this.sender.sendTextNotice(
+      chatId,
+      '✅ Model Set',
+      `Session model set to \`${newModel}\`. It will take effect on the next message.`,
+      'green',
+    );
   }
 }

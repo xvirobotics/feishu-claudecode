@@ -13,6 +13,8 @@ export interface UserSession {
   cumulativeCostUsd: number;
   /** Cumulative duration (ms) across all queries in this session */
   cumulativeDurationMs: number;
+  /** Per-session model override (e.g. "claude-opus-4-7"). Falls back to bot default when undefined. */
+  model?: string;
 }
 
 interface PersistedSession {
@@ -22,6 +24,7 @@ interface PersistedSession {
   cumulativeTokens?: number;
   cumulativeCostUsd?: number;
   cumulativeDurationMs?: number;
+  model?: string;
 }
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -92,6 +95,14 @@ export class SessionManager {
     this.saveToDisk();
   }
 
+  /** Set per-session model override. Pass undefined to clear. */
+  setSessionModel(chatId: string, model: string | undefined): void {
+    const session = this.getSession(chatId);
+    session.model = model;
+    this.logger.info({ chatId, model }, 'Session model override updated');
+    this.saveToDisk();
+  }
+
   /** Accumulate token/cost/duration from a completed query into the session totals. */
   addUsage(chatId: string, tokens: number, costUsd: number, durationMs: number): void {
     const session = this.getSession(chatId);
@@ -133,15 +144,16 @@ export class SessionManager {
     try {
       const data: Record<string, PersistedSession> = {};
       for (const [chatId, session] of this.sessions) {
-        // Only persist sessions that have a sessionId (active Claude sessions)
-        if (session.sessionId) {
+        // Persist sessions that have either a sessionId or a model override
+        if (session.sessionId || session.model) {
           data[chatId] = {
-            sessionId: session.sessionId,
+            sessionId: session.sessionId || '',
             workingDirectory: session.workingDirectory,
             lastUsed: session.lastUsed,
             cumulativeTokens: session.cumulativeTokens,
             cumulativeCostUsd: session.cumulativeCostUsd,
             cumulativeDurationMs: session.cumulativeDurationMs,
+            model: session.model,
           };
         }
       }
@@ -162,12 +174,13 @@ export class SessionManager {
         // Skip expired sessions
         if (now - persisted.lastUsed > SESSION_TTL_MS) continue;
         this.sessions.set(chatId, {
-          sessionId: persisted.sessionId,
+          sessionId: persisted.sessionId || undefined,
           workingDirectory: persisted.workingDirectory,
           lastUsed: persisted.lastUsed,
           cumulativeTokens: persisted.cumulativeTokens ?? 0,
           cumulativeCostUsd: persisted.cumulativeCostUsd ?? 0,
           cumulativeDurationMs: persisted.cumulativeDurationMs ?? 0,
+          model: persisted.model,
         });
         loaded++;
       }

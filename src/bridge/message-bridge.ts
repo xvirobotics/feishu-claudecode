@@ -609,6 +609,7 @@ export class MessageBridge {
       abortController,
       outputsDir,
       apiContext,
+      model: session.model,
     });
 
     const rateLimiter = new RateLimiter(1500);
@@ -774,7 +775,7 @@ export class MessageBridge {
 
         // Retry execution without sessionId
         const retryHandle = this.executor.startExecution({
-          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: session.model,
         });
         executionHandle.finish();
         runningTask.executionHandle = retryHandle;
@@ -838,7 +839,7 @@ export class MessageBridge {
 
         try {
           const retryHandle = this.executor.startExecution({
-            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: session.model,
           });
           executionHandle.finish();
           runningTask.executionHandle = retryHandle;
@@ -974,7 +975,7 @@ export class MessageBridge {
       outputsDir,
       apiContext,
       maxTurns: options.maxTurns,
-      model: options.model,
+      model: options.model ?? session.model,
       allowedTools: options.allowedTools,
     });
 
@@ -1106,7 +1107,7 @@ export class MessageBridge {
         }
 
         const retryHandle = this.executor.startExecution({
-          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: options.model ?? session.model,
         });
         executionHandle.finish();
         runningTask.executionHandle = retryHandle;
@@ -1182,7 +1183,7 @@ export class MessageBridge {
 
         try {
           const retryHandle = this.executor.startExecution({
-            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext,
+            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: options.model ?? session.model,
           });
           executionHandle.finish();
           runningTask.executionHandle = retryHandle;
@@ -1363,7 +1364,7 @@ export class MessageBridge {
     const costStr = state.sessionCostUsd ? ` · $${state.sessionCostUsd.toFixed(2)}` : (state.costUsd ? ` · $${state.costUsd.toFixed(2)}` : '');
     const statusWord = state.status === 'complete' ? 'Done' : 'Failed';
 
-    // Model display name: strip "claude-" prefix for brevity (e.g. "opus-4-6")
+    // Model display name: strip "claude-" prefix for brevity (e.g. "opus-4-7")
     const modelStr = state.model
       ? ` · ${state.model.replace(/^claude-/, '')}`
       : '';
