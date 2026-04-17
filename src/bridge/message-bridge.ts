@@ -448,9 +448,11 @@ export class MessageBridge {
       return;
     }
 
-    // No more questions — resume normal execution
-    const answerSummary = Object.values(task.collectedAnswers).length > 0
-      ? Object.values(task.collectedAnswers).join(', ')
+    // No more questions — resume normal execution.
+    // Use the `collectedAnswers` snapshot captured above, NOT task.collectedAnswers
+    // (which was reset to {} just before resolveQuestion for the next question cycle).
+    const answerSummary = Object.values(collectedAnswers).length > 0
+      ? Object.values(collectedAnswers).join(', ')
       : answerText;
     const currentState = task.processor.getCurrentState();
     await this.sender.updateCard(task.cardMessageId, {
@@ -1644,12 +1646,21 @@ export class MessageBridge {
       for (let attempt = 0; attempt < FINAL_CARD_RETRIES; attempt++) {
         try {
           if (attempt > 0) await new Promise((r) => setTimeout(r, FINAL_CARD_BASE_DELAY_MS));
-          await this.sender.sendCard(chatId, resultState);
-          succeeded = true;
-          break;
+          // sendCard swallows transport errors and returns undefined on failure,
+          // so we must check the returned message_id — not just rely on no-throw
+          // — otherwise all-retries-failed would be misreported as success and
+          // the text fallback below would never fire.
+          const resultMessageId = await this.sender.sendCard(chatId, resultState);
+          if (resultMessageId) {
+            succeeded = true;
+            break;
+          }
+          const delay = FINAL_CARD_BASE_DELAY_MS * Math.pow(2, attempt);
+          this.logger.warn({ attempt, delay }, 'Result card send returned no message_id, retrying');
+          await new Promise((r) => setTimeout(r, delay));
         } catch {
           const delay = FINAL_CARD_BASE_DELAY_MS * Math.pow(2, attempt);
-          this.logger.warn({ attempt, delay }, 'Result card send failed, retrying');
+          this.logger.warn({ attempt, delay }, 'Result card send threw, retrying');
           await new Promise((r) => setTimeout(r, delay));
         }
       }
