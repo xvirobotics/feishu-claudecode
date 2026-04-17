@@ -776,11 +776,15 @@ export class MessageBridge {
     let lastState: CardState = initialState;
     let retryAttempt = 0;
 
-    // Periodic timer to update card during thinking/running (shows elapsed time)
+    // Periodic timer to update card during thinking/running (shows elapsed time).
+    // The limiter itself drops schedule() calls while paused (see recreateCard
+    // wrapping below), so this timer does not need to know about the recreate
+    // lifecycle — pausing at the critical section is enough to kill the
+    // freeze-race without extra coordination here.
     const thinkingTimerId = setInterval(() => {
       if (lastState.startTime && (lastState.status === 'thinking' || lastState.status === 'running')) {
         // Re-render the card with updated elapsed time
-        rateLimiter.schedule(() => this.sender.updateCard(messageId, lastState));
+        rateLimiter.schedule(() => this.sender.updateCard(messageId, lastState).catch(() => false));
       }
     }, 3000);
 
@@ -899,18 +903,30 @@ export class MessageBridge {
               break;
             }
 
-            // Deferred recreate: move card to bottom when new content starts after turn flush
+            // Deferred recreate: move card to bottom when new content starts after turn flush.
+            // Pause the limiter so the thinkingTimer (and any other concurrent
+            // schedule() caller) cannot enqueue an updateCard(oldMessageId,
+            // runningState) that would land on the server AFTER the freeze
+            // and revert the old card — a race flush() alone cannot close
+            // because new thunks are scheduled DURING recreateCard, outside
+            // flush()'s horizon.
             if (needsRecreate && state.responseText) {
               await rateLimiter.flush();
-              messageId = await this.recreateCard(chatId, messageId, state, `Turn ${turnCount}`, turnBuffer);
+              rateLimiter.pause();
+              try {
+                messageId = await this.recreateCard(chatId, messageId, state, `Turn ${turnCount}`, turnBuffer);
+              } finally {
+                rateLimiter.resume();
+              }
               needsRecreate = false;
               turnBuffer = '';
             }
 
-            // Throttled card update for non-final states
-            rateLimiter.schedule(() => {
-              this.sender.updateCard(messageId, state).catch(() => {});
-            });
+            // Throttled card update for non-final states. Return the promise
+            // so rateLimiter.flush() can await the in-flight update before
+            // recreateCard freezes the card — otherwise the stale update can
+            // land after the freeze and revert it to thinking/running state.
+            rateLimiter.schedule(() => this.sender.updateCard(messageId, state).catch(() => false));
           }
           // Stream ended normally
           streamDone = true;
@@ -1009,11 +1025,16 @@ export class MessageBridge {
           if (state.status === 'complete' || state.status === 'error') break;
           if (needsRecreate && state.responseText) {
             await rateLimiter.flush();
-            messageId = await this.recreateCard(chatId, messageId, state, `Turn ${turnCount}`, turnBuffer);
+            rateLimiter.pause();
+            try {
+              messageId = await this.recreateCard(chatId, messageId, state, `Turn ${turnCount}`, turnBuffer);
+            } finally {
+              rateLimiter.resume();
+            }
             needsRecreate = false;
             turnBuffer = '';
           }
-          rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
+          rateLimiter.schedule(() => this.sender.updateCard(messageId, state).catch(() => false));
         }
         await rateLimiter.cancelAndWait();
       }
@@ -1089,11 +1110,16 @@ export class MessageBridge {
             if (state.status === 'complete' || state.status === 'error') break;
             if (needsRecreate && state.responseText) {
               await rateLimiter.flush();
-              messageId = await this.recreateCard(chatId, messageId, state, `Turn ${turnCount}`, turnBuffer);
+              rateLimiter.pause();
+              try {
+                messageId = await this.recreateCard(chatId, messageId, state, `Turn ${turnCount}`, turnBuffer);
+              } finally {
+                rateLimiter.resume();
+              }
               needsRecreate = false;
               turnBuffer = '';
             }
-            rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
+            rateLimiter.schedule(() => this.sender.updateCard(messageId, state).catch(() => false));
           }
           await rateLimiter.cancelAndWait();
           if (turnBuffer && !needsRecreate) ++turnCount;
@@ -1386,9 +1412,7 @@ export class MessageBridge {
                 needsRecreate = false;
                 turnBuffer = '';
               }
-              rateLimiter.schedule(() => {
-                this.sender.updateCard(messageId!, state).catch(() => {});
-              });
+              rateLimiter.schedule(() => this.sender.updateCard(messageId!, state).catch(() => false));
             }
           }
           streamDone = true;
@@ -1490,7 +1514,7 @@ export class MessageBridge {
               needsRecreate = false;
               turnBuffer = '';
             }
-            rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
+            rateLimiter.schedule(() => this.sender.updateCard(messageId!, state).catch(() => false));
           }
           options.onUpdate?.(state, effectiveMessageId, false);
         }
@@ -1580,7 +1604,7 @@ export class MessageBridge {
                 needsRecreate = false;
                 turnBuffer = '';
               }
-              rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
+              rateLimiter.schedule(() => this.sender.updateCard(messageId!, state).catch(() => false));
             }
             options.onUpdate?.(state, effectiveMessageId, false);
           }
