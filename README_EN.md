@@ -315,12 +315,15 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 |---------|-------------|
 | `/reset` | Clear session |
 | `/stop` | Abort current task |
-| `/status` | Session info |
+| `/status` | Session info (includes current model) |
+| `/model` | Show current model; `/model list` — available models; `/model <name>` — switch; `/model reset` — restore default |
 | `/memory list` | Browse knowledge tree |
 | `/memory search <query>` | Search knowledge base |
 | `/sync` | Sync MetaMemory to Feishu Wiki |
 | `/metaskill ...` | Generate agent teams, agents, or skills |
 | `/help` | Show help |
+
+> **Model switching**: Each session can pick its own model. Append `[1m]` to the model name to enable the 1M context window (only Opus 4.7/4.6 and Sonnet 4.6 support it), e.g. `/model claude-opus-4-7[1m]`. OAuth/Pro-Max users must use this suffix — the SDK silently drops beta headers under that auth mode.
 
 <details>
 <summary><strong>API Reference</strong></summary>
