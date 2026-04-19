@@ -593,10 +593,12 @@ cp "$METABOT_HOME/src/skills/voice/SKILL.md" "$SKILLS_DIR/voice/SKILL.md"
 success "voice skill installed → $SKILLS_DIR/voice"
 
 # Install skill-hub skill (bundled in src/skills/skill-hub/)
-info "Installing skill-hub skill..."
-mkdir -p "$SKILLS_DIR/skill-hub"
-cp "$METABOT_HOME/src/skills/skill-hub/SKILL.md" "$SKILLS_DIR/skill-hub/SKILL.md"
-success "skill-hub skill installed → $SKILLS_DIR/skill-hub"
+if [[ -d "$METABOT_HOME/src/skills/skill-hub" ]]; then
+  info "Installing skill-hub skill..."
+  mkdir -p "$SKILLS_DIR/skill-hub"
+  cp -r "$METABOT_HOME/src/skills/skill-hub/." "$SKILLS_DIR/skill-hub/"
+  success "skill-hub skill installed → $SKILLS_DIR/skill-hub"
+fi
 
 # Detect Feishu bots
 HAS_FEISHU=false
@@ -609,13 +611,19 @@ elif [[ "$SKIP_CONFIG" == "true" && -f "$METABOT_HOME/bots.json" ]]; then
   fi
 fi
 
-# Install lark-cli and AI Agent skills — only when Feishu is configured
+# Install lark-cli and AI Agent skills — only when Feishu is configured.
+# On re-runs (update flow), skip the prompt when lark skills are already present.
 SETUP_LARK_CLI=false
 if [[ "$HAS_FEISHU" == "true" ]]; then
-  echo ""
-  info "lark-cli provides 19 AI Agent skills for Feishu (docs, sheets, calendar, IM, etc.)"
-  if prompt_yn "Install lark-cli and Feishu AI Agent skills?" "y"; then
+  if [[ -d "$SKILLS_DIR/lark-doc" ]]; then
+    info "lark-cli skills already installed — refreshing"
     SETUP_LARK_CLI=true
+  else
+    echo ""
+    info "lark-cli provides 19 AI Agent skills for Feishu (docs, sheets, calendar, IM, etc.)"
+    if prompt_yn "Install lark-cli and Feishu AI Agent skills?" "y"; then
+      SETUP_LARK_CLI=true
+    fi
   fi
 fi
 
@@ -748,169 +756,18 @@ fi
 METAMEMORY_INSTALLED=true
 success "MetaMemory will start automatically with MetaBot on port 8100"
 
-# Install mm() shell shortcut for MetaMemory CLI
+# Clean up legacy inline mm()/mb() bash functions from ~/.bash_aliases.
+# These were superseded by the standalone executables at ~/.local/bin/{mm,mb},
+# but a shell function shadows a PATH executable, so leaving the legacy blocks
+# in place masks new subcommands (e.g. `mb skills`). Authoritative CLIs live in
+# bin/{mm,mb,metabot} and are copied to ~/.local/bin below.
 BASH_ALIASES="$HOME/.bash_aliases"
-if ! grep -q 'mm()' "$BASH_ALIASES" 2>/dev/null; then
-  info "Installing mm() shell shortcut..."
-  cat >> "$BASH_ALIASES" << 'MMEOF'
-
-# MetaMemory shortcuts (installed by MetaBot)
-export MEMORY_URL="http://localhost:8100"
-export MEMORY_AUTH="Authorization: Bearer ${MEMORY_ADMIN_TOKEN:-${MEMORY_TOKEN:-${MEMORY_SECRET:-${API_SECRET:-changeme}}}}"
-
-mm() {
-  local cmd="${1:-help}"
-  shift 2>/dev/null
-  case "$cmd" in
-    search|s)
-      curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/search?q=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$*'))")"
-      ;;
-    get|g)
-      curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents/$1"
-      ;;
-    list|ls)
-      curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/documents?folder_id=${1:-root}&limit=50"
-      ;;
-    folders|f)
-      curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/folders"
-      ;;
-    create|c)
-      local title="$1"; shift
-      local content="$*"
-      curl -s -X POST "$MEMORY_URL/api/documents" \
-        -H "$MEMORY_AUTH" -H "Content-Type: application/json" \
-        -d "{\"title\":\"$title\",\"folder_id\":\"root\",\"content\":\"$content\"}"
-      ;;
-    health|h)
-      curl -s -H "$MEMORY_AUTH" "$MEMORY_URL/api/health"
-      ;;
-    *)
-      echo "mm - MetaMemory CLI"
-      echo "  mm search <query>       - Search documents"
-      echo "  mm get <doc_id>         - Get document by ID"
-      echo "  mm list [folder_id]     - List documents (default: root)"
-      echo "  mm folders              - List folder tree"
-      echo "  mm create <title> <md>  - Create a document"
-      echo "  mm health               - Health check"
-      ;;
-  esac
-}
-MMEOF
-  # Patch the actual API_SECRET into the file
-  if [[ -n "${API_SECRET:-}" ]]; then
-    sed_i "s|\${API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
-  fi
-  success "mm() shortcut installed"
-else
-  info "mm() shortcut already exists, skipping"
+if [[ -f "$BASH_ALIASES" ]] && grep -qE '^# (MetaMemory|MetaBot API) shortcuts \(installed by MetaBot\)$' "$BASH_ALIASES" 2>/dev/null; then
+  info "Removing legacy inline mm()/mb() functions from $BASH_ALIASES..."
+  sed_i -e '/^# MetaMemory shortcuts (installed by MetaBot)$/,/^}$/d' \
+        -e '/^# MetaBot API shortcuts (installed by MetaBot)$/,/^}$/d' "$BASH_ALIASES"
+  success "Legacy inline shortcuts removed (CLI lives at ~/.local/bin/{mm,mb})"
 fi
-
-# Install mb() shell shortcut for MetaBot API (Agent Bus, Scheduling, Bot Management)
-if ! grep -q 'mb()' "$BASH_ALIASES" 2>/dev/null; then
-  info "Installing mb() shell shortcut..."
-  cat >> "$BASH_ALIASES" << 'MBEOF'
-
-# MetaBot API shortcuts (installed by MetaBot)
-export METABOT_URL="http://localhost:${METABOT_API_PORT:-9100}"
-export METABOT_AUTH="Authorization: Bearer ${METABOT_API_SECRET:-changeme}"
-
-mb() {
-  local cmd="${1:-help}"
-  shift 2>/dev/null
-  case "$cmd" in
-    # --- Bot management ---
-    bots|b)
-      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots"
-      ;;
-    bot)
-      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots/$1" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/bots/$1"
-      ;;
-    # --- Task delegation ---
-    task|t)
-      local bot="$1" chat="$2"; shift 2 2>/dev/null
-      local prompt="$*"
-      if [[ -z "$bot" || -z "$chat" || -z "$prompt" ]]; then
-        echo "Usage: mb task <botName> <chatId> <prompt>"
-        return 1
-      fi
-      curl -s -X POST "$METABOT_URL/api/tasks" \
-        -H "$METABOT_AUTH" -H "Content-Type: application/json" \
-        -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"prompt\":\"$prompt\",\"sendCards\":true}"
-      ;;
-    # --- Scheduling ---
-    schedule|sched|sc)
-      local subcmd="${1:-list}"; shift 2>/dev/null
-      case "$subcmd" in
-        list|ls)
-          curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/schedule" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/schedule"
-          ;;
-        add|a)
-          local bot="$1" chat="$2" delay="$3"; shift 3 2>/dev/null
-          local prompt="$*"
-          if [[ -z "$bot" || -z "$chat" || -z "$delay" || -z "$prompt" ]]; then
-            echo "Usage: mb schedule add <botName> <chatId> <delaySeconds> <prompt>"
-            return 1
-          fi
-          curl -s -X POST "$METABOT_URL/api/schedule" \
-            -H "$METABOT_AUTH" -H "Content-Type: application/json" \
-            -d "{\"botName\":\"$bot\",\"chatId\":\"$chat\",\"delaySeconds\":$delay,\"prompt\":\"$prompt\"}"
-          ;;
-        cancel|rm)
-          if [[ -z "$1" ]]; then echo "Usage: mb schedule cancel <id>"; return 1; fi
-          curl -s -X DELETE "$METABOT_URL/api/schedule/$1" -H "$METABOT_AUTH"
-          ;;
-        *)
-          echo "mb schedule - Task scheduling"
-          echo "  mb schedule list                                    - List pending tasks"
-          echo "  mb schedule add <bot> <chatId> <delaySec> <prompt>  - Schedule a task"
-          echo "  mb schedule cancel <id>                             - Cancel a task"
-          ;;
-      esac
-      ;;
-    # --- Health ---
-    health|h)
-      curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health" | python3 -m json.tool 2>/dev/null || curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health"
-      ;;
-    # --- Help ---
-    *)
-      echo "mb - MetaBot API CLI"
-      echo ""
-      echo "  Bots:"
-      echo "    mb bots                          - List all bots"
-      echo "    mb bot <name>                    - Get bot details"
-      echo ""
-      echo "  Tasks:"
-      echo "    mb task <bot> <chatId> <prompt>  - Delegate task to a bot"
-      echo ""
-      echo "  Scheduling:"
-      echo "    mb schedule list                 - List pending scheduled tasks"
-      echo "    mb schedule add <bot> <chatId> <delaySec> <prompt>"
-      echo "    mb schedule cancel <id>          - Cancel a scheduled task"
-      echo ""
-      echo "  System:"
-      echo "    mb health                        - Health check"
-      ;;
-  esac
-}
-MBEOF
-  # Patch the actual secrets into the file
-  if [[ -n "${API_PORT:-}" ]]; then
-    sed_i "s|\${METABOT_API_PORT:-9100}|${API_PORT}|g" "$BASH_ALIASES"
-  fi
-  if [[ -n "${API_SECRET:-}" ]]; then
-    sed_i "s|\${METABOT_API_SECRET:-changeme}|${API_SECRET}|g" "$BASH_ALIASES"
-  fi
-  success "mb() shortcut installed"
-else
-  info "mb() shortcut already exists, skipping"
-fi
-
-# Ensure ~/.bashrc sources ~/.bash_aliases (Ubuntu default, but not universal)
-if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'bash_aliases' "$HOME/.bashrc"; then
-  echo -e '\n# Load bash aliases\nif [ -f ~/.bash_aliases ]; then\n    . ~/.bash_aliases\nfi' >> "$HOME/.bashrc"
-fi
-# Source it in the current shell so mm/mb work immediately after install
-source "$BASH_ALIASES" 2>/dev/null || true
 
 # Install mm/mb/metabot as standalone executables in ~/.local/bin (no source needed)
 LOCAL_BIN="$HOME/.local/bin"

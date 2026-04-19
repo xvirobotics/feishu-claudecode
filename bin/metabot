@@ -23,122 +23,16 @@ cmd_update() {
     exit 1
   fi
 
-  # Always re-exec from the repo copy before doing anything.
-  # This prevents the running script (e.g. ~/.local/bin/metabot) from being
-  # overwritten mid-execution when we copy CLI tools later.
-  if [[ -z "${METABOT_REEXEC:-}" ]] && [[ -f "$METABOT_HOME/bin/metabot" ]]; then
-    export METABOT_REEXEC=1
-    exec "$METABOT_HOME/bin/metabot" update
+  if [[ ! -f "$METABOT_HOME/install.sh" ]]; then
+    error "install.sh not found at $METABOT_HOME/install.sh"
+    exit 1
   fi
 
-  info "Pulling latest code..."
-  cd "$METABOT_HOME"
-  local old_head
-  old_head="$(git rev-parse HEAD)"
-  git pull --ff-only || { error "git pull failed"; exit 1; }
-
-  # Re-exec if git pull updated this script (the repo copy we're running from)
-  if ! git diff --quiet "$old_head" HEAD -- bin/metabot 2>/dev/null; then
-    info "metabot CLI updated, re-launching with new version..."
-    exec "$METABOT_HOME/bin/metabot" update
-  fi
-
-  info "Installing dependencies..."
-  npm install --production=false
-
-  info "Building..."
-  npm run build
-
-  # Update CLI tools in ~/.local/bin
-  LOCAL_BIN="$HOME/.local/bin"
-  if [[ -d "$LOCAL_BIN" ]]; then
-    info "Updating CLI tools..."
-    for cli in mb mm metabot; do
-      if [[ -f "$METABOT_HOME/bin/$cli" ]]; then
-        cp "$METABOT_HOME/bin/$cli" "$LOCAL_BIN/$cli"
-        chmod +x "$LOCAL_BIN/$cli"
-      fi
-    done
-    success "CLI tools updated"
-  fi
-
-  # Update skills in ~/.claude/skills
-  SKILLS_DIR="$HOME/.claude/skills"
-  mkdir -p "$SKILLS_DIR"
-  info "Updating skills..."
-  local src=""
-  for skill in metaskill metamemory metabot voice skill-hub; do
-    case "$skill" in
-      metaskill)  src="$METABOT_HOME/src/skills/metaskill" ;;
-      metamemory) src="$METABOT_HOME/src/memory/skill" ;;
-      metabot)    src="$METABOT_HOME/src/skills/metabot" ;;
-      voice)      src="$METABOT_HOME/src/skills/voice" ;;
-      skill-hub)  src="$METABOT_HOME/src/skills/skill-hub" ;;
-      *)          src="" ;;
-    esac
-    if [[ -n "$src" && -d "$src" ]]; then
-      mkdir -p "$SKILLS_DIR/$skill"
-      cp -r "$src/." "$SKILLS_DIR/$skill/"
-    fi
-  done
-  # Clean up legacy feishu-doc skill
-  if [[ -d "$SKILLS_DIR/feishu-doc" ]]; then
-    rm -rf "$SKILLS_DIR/feishu-doc"
-    info "Removed legacy feishu-doc skill"
-  fi
-
-  # Update lark-cli skills only if previously installed (opt-in via install.sh)
-  local has_lark_skills=false
-  if [[ -d "$SKILLS_DIR/lark-doc" ]]; then
-    has_lark_skills=true
-  fi
-  success "Skills updated"
-
-  # Update workspace skills if bots.json exists
-  if [[ -f "$METABOT_HOME/bots.json" ]] && command -v node &>/dev/null; then
-    local work_dir
-    work_dir=$(node -e "
-      const c=JSON.parse(require('fs').readFileSync('$METABOT_HOME/bots.json','utf-8'));
-      const b=[...(c.feishuBots||[]),...(c.telegramBots||[]),...(c.wechatBots||[])];
-      if(b[0])console.log(b[0].defaultWorkingDirectory);
-    " 2>/dev/null || true)
-    if [[ -n "$work_dir" ]]; then
-      local ws_skills_dir="$work_dir/.claude/skills"
-      mkdir -p "$ws_skills_dir"
-
-      # Copy common skills
-      for skill in metaskill metamemory metabot voice skill-hub; do
-        if [[ -d "$SKILLS_DIR/$skill" ]]; then
-          mkdir -p "$ws_skills_dir/$skill"
-          cp -r "$SKILLS_DIR/$skill/." "$ws_skills_dir/$skill/"
-        fi
-      done
-      # Copy lark-cli skills if previously installed
-      if [[ "$has_lark_skills" == "true" ]]; then
-        for lark_skill in lark-base lark-calendar lark-contact lark-doc lark-drive lark-event lark-im lark-mail lark-minutes lark-openapi-explorer lark-shared lark-sheets lark-skill-maker lark-task lark-vc lark-whiteboard lark-wiki lark-workflow-meeting-summary lark-workflow-standup-report; do
-          if [[ -d "$SKILLS_DIR/$lark_skill" ]]; then
-            mkdir -p "$ws_skills_dir/$lark_skill"
-            cp -r "$SKILLS_DIR/$lark_skill/." "$ws_skills_dir/$lark_skill/"
-          fi
-        done
-      fi
-      # Clean up legacy feishu-doc in workspace
-      if [[ -d "$ws_skills_dir/feishu-doc" ]]; then
-        rm -rf "$ws_skills_dir/feishu-doc"
-      fi
-      # Update CLAUDE.md
-      if [[ -f "$METABOT_HOME/src/workspace/CLAUDE.md" ]]; then
-        cp "$METABOT_HOME/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
-      fi
-      success "Workspace skills updated"
-    fi
-  fi
-
-  info "Restarting MetaBot..."
-  pm2 restart metabot 2>/dev/null || pm2 start ecosystem.config.cjs
-  pm2 save --force 2>/dev/null || true
-
-  success "MetaBot updated and restarted!"
+  # Re-exec via install.sh so update and fresh-install go through the same code path.
+  # install.sh Phase 2 handles the git pull (and re-execs itself if install.sh
+  # was updated); Phase 4 skips the interactive prompts when .env exists.
+  info "Delegating to $METABOT_HOME/install.sh (single source of truth)..."
+  exec bash "$METABOT_HOME/install.sh"
 }
 
 cmd_start()   { pm2 start "$METABOT_HOME/ecosystem.config.cjs"; pm2 save --force 2>/dev/null || true; }
