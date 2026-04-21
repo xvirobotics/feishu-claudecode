@@ -9,6 +9,17 @@ import type { IncomingMessage } from '../types.js';
 
 export type MessageHandler = (msg: IncomingMessage) => void;
 
+/** Payload delivered when a user clicks a button on an interactive card. */
+export interface CardActionEvent {
+  chatId: string;
+  userId: string;
+  messageId: string;
+  /** Arbitrary value object set by the card builder on the clicked button. */
+  value: Record<string, unknown>;
+}
+
+export type CardActionHandler = (event: CardActionEvent) => void;
+
 // Cache for group member counts (to avoid calling Feishu API on every message)
 const MEMBER_COUNT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const memberCountCache = new Map<string, { count: number; ts: number }>();
@@ -66,8 +77,45 @@ export function createEventDispatcher(
   onMessage: MessageHandler,
   botOpenId?: string,
   messageSender?: MessageSender,
+  onCardAction?: CardActionHandler,
 ): lark.EventDispatcher {
   const dispatcher = new lark.EventDispatcher({});
+
+  // Register the card action trigger handler (fired when a user clicks a button
+  // on an interactive card). The lark SDK types omit this event so we cast.
+  if (onCardAction) {
+    (dispatcher as unknown as {
+      register: (handlers: Record<string, (data: unknown) => unknown>) => void;
+    }).register({
+      'card.action.trigger': (data: unknown) => {
+        try {
+          const d = data as {
+            operator?: { open_id?: string };
+            action?: { value?: unknown };
+            context?: { open_message_id?: string; open_chat_id?: string };
+          };
+          const userId = d.operator?.open_id;
+          const messageId = d.context?.open_message_id;
+          const chatId = d.context?.open_chat_id;
+          const raw = d.action?.value;
+          if (!userId || !messageId || !chatId || !raw || typeof raw !== 'object') {
+            logger.warn({ data }, 'Card action missing required fields');
+            return { toast: { type: 'error', content: 'Invalid card action' } };
+          }
+          onCardAction({
+            chatId,
+            userId,
+            messageId,
+            value: raw as Record<string, unknown>,
+          });
+          return { toast: { type: 'success', content: '已收到' } };
+        } catch (err) {
+          logger.error({ err }, 'Error handling card action');
+          return { toast: { type: 'error', content: 'Internal error' } };
+        }
+      },
+    });
+  }
 
   dispatcher.register({
     'im.message.receive_v1': async (data: any) => {

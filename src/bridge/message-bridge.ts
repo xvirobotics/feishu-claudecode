@@ -201,6 +201,52 @@ export class MessageBridge {
     });
   }
 
+  /**
+   * Handle a user click on an interactive card button (currently only used for
+   * AskUserQuestion answer buttons). The click is converted into the same
+   * synthetic reply that a numeric text-reply would produce, then handed to
+   * handleAnswer so both paths go through the exact same flow.
+   */
+  async handleCardAction(event: {
+    chatId: string;
+    userId: string;
+    messageId: string;
+    value: Record<string, unknown>;
+  }): Promise<void> {
+    const { chatId, userId, messageId, value } = event;
+    const task = this.runningTasks.get(chatId);
+    if (!task || !task.pendingQuestion) {
+      this.logger.debug({ chatId, userId }, 'Card action but no pending question — ignoring');
+      return;
+    }
+    if (value.action !== 'answer_question') {
+      this.logger.debug({ chatId, action: value.action }, 'Unknown card action — ignoring');
+      return;
+    }
+    if (value.toolUseId !== task.pendingQuestion.toolUseId) {
+      this.logger.warn(
+        { chatId, expected: task.pendingQuestion.toolUseId, got: value.toolUseId },
+        'Card action targets a stale question — ignoring',
+      );
+      return;
+    }
+    const optionIndex =
+      typeof value.optionIndex === 'number' ? value.optionIndex : -1;
+    const currentQ = task.pendingQuestion.questions[task.currentQuestionIndex];
+    if (!currentQ || optionIndex < 0 || optionIndex >= currentQ.options.length) {
+      this.logger.warn({ chatId, optionIndex }, 'Card action has invalid optionIndex — ignoring');
+      return;
+    }
+    const syntheticMsg: IncomingMessage = {
+      messageId,
+      chatId,
+      chatType: 'card_action',
+      userId,
+      text: String(optionIndex + 1),
+    };
+    await this.handleAnswer(syntheticMsg, task);
+  }
+
   async handleMessage(msg: IncomingMessage): Promise<void> {
     const { chatId, text } = msg;
 

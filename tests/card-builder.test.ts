@@ -89,6 +89,21 @@ describe('buildCard', () => {
     expect(qEl).toBeDefined();
     expect(qEl.content).toContain('Production');
     expect(qEl.content).toContain('Staging');
+    // update_multi must be set so Feishu accepts card updates after an action click
+    expect(json.config.update_multi).toBe(true);
+    // Interactive buttons: one action element with one button per option
+    const actionEl = json.elements.find((e: any) => e.tag === 'action');
+    expect(actionEl).toBeDefined();
+    expect(actionEl.actions).toHaveLength(2);
+    expect(actionEl.actions[0].tag).toBe('button');
+    expect(actionEl.actions[0].text.content).toContain('Production');
+    expect(actionEl.actions[0].value).toEqual({
+      action: 'answer_question',
+      toolUseId: 'q1',
+      questionIndex: 0,
+      optionIndex: 0,
+    });
+    expect(actionEl.actions[1].value.optionIndex).toBe(1);
   });
 
   it('truncates long content', () => {

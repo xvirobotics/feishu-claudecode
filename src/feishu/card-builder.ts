@@ -52,23 +52,38 @@ export function buildCard(state: CardState): string {
     });
   }
 
-  // Pending question section
+  // Pending question section — interactive buttons + text-fallback hint
   if (state.pendingQuestion) {
     elements.push({ tag: 'hr' });
-    const questionLines: string[] = [];
-    for (const q of state.pendingQuestion.questions) {
-      questionLines.push(`**[${q.header}] ${q.question}**`);
-      questionLines.push('');
-      q.options.forEach((opt, i) => {
-        questionLines.push(`**${i + 1}.** ${opt.label} — _${opt.description}_`);
+    state.pendingQuestion.questions.forEach((q, qi) => {
+      // Question prompt
+      const descLines = q.options.map(
+        (opt, i) => `**${i + 1}.** ${opt.label} — _${opt.description}_`,
+      );
+      elements.push({
+        tag: 'markdown',
+        content: [`**[${q.header}] ${q.question}**`, '', ...descLines].join('\n'),
       });
-      questionLines.push(`**${q.options.length + 1}.** Other（输入自定义回答）`);
-      questionLines.push('');
-    }
-    questionLines.push('_回复数字选择，或直接输入自定义答案_');
+      // Interactive buttons: one per option + an explicit "Other" button
+      const actions = q.options.map((opt, oi) => ({
+        tag: 'button',
+        text: { tag: 'plain_text', content: `${oi + 1}. ${opt.label}` },
+        type: 'primary',
+        value: {
+          action: 'answer_question',
+          toolUseId: state.pendingQuestion!.toolUseId,
+          questionIndex: qi,
+          optionIndex: oi,
+        },
+      }));
+      elements.push({
+        tag: 'action',
+        actions,
+      });
+    });
     elements.push({
       tag: 'markdown',
-      content: questionLines.join('\n'),
+      content: '_点击按钮选择，或直接输入自定义答案_',
     });
   }
 
@@ -116,7 +131,9 @@ export function buildCard(state: CardState): string {
   }
 
   const card = {
-    config: { wide_screen_mode: true },
+    // update_multi lets us re-render the same card after an action click
+    // without hitting Feishu error 108002 ("card has already been updated").
+    config: { wide_screen_mode: true, update_multi: true },
     header: {
       template: config.color,
       title: {
