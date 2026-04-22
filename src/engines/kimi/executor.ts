@@ -1,4 +1,5 @@
-import { createSession, isLoggedIn } from '@moonshot-ai/kimi-agent-sdk';
+import { readFileSync } from 'node:fs';
+import { createSession, isLoggedIn, KimiPaths, parseConfig } from '@moonshot-ai/kimi-agent-sdk';
 import type { Session, Turn, StreamEvent, RunResult } from '@moonshot-ai/kimi-agent-sdk';
 import type { BotConfigBase } from '../../config.js';
 import type { Logger } from '../../utils/logger.js';
@@ -90,12 +91,16 @@ export class KimiExecutor {
 
     // Local state used when accumulating deltas for the final assistant message
     const kimiOpts = this.config.kimi ?? {};
+    const rawModel = session.model ?? options.model ?? kimiOpts.model ?? this.resolveDefaultModel();
     const state: TurnState = {
       sessionId: session.sessionId,
       accumulatedText: '',
       openToolCalls: new Map(),
       startTime: Date.now(),
-      model: session.model ?? options.model ?? kimiOpts.model ?? 'kimi-for-coding',
+      // Use the user-facing display name when available (e.g. "Kimi-k2.6"
+      // instead of "kimi-for-coding") so the Feishu card footer matches what
+      // users see in the Kimi CLI.
+      model: this.resolveDisplayName(rawModel) ?? rawModel,
       // Kimi for Coding ships with a 256k context window. Override per-bot via
       // `kimi.contextWindow` in bots.json if you're on a different model.
       contextWindow: kimiOpts.contextWindow ?? 262144,
@@ -196,6 +201,49 @@ export class KimiExecutor {
       yoloMode: true,
       executable: kimiOpts.executable,
     });
+  }
+
+  /** Read the Kimi CLI's default model ID from `~/.kimi/config.toml`. */
+  private resolveDefaultModel(): string {
+    try {
+      const cfg = parseConfig();
+      if (cfg.defaultModel) return cfg.defaultModel;
+    } catch (err) {
+      this.logger.warn({ err }, 'Kimi parseConfig failed — falling back to kimi-for-coding');
+    }
+    return 'kimi-for-coding';
+  }
+
+  /**
+   * Look up `display_name` for `modelId` in the Kimi config TOML. The SDK's
+   * `parseConfig()` only exposes `id`/`name`/`capabilities` — `display_name`
+   * lives in the raw file, so we regex-scan the relevant [models."…"] block.
+   * Returns undefined when the section or key isn't present.
+   */
+  private resolveDisplayName(modelId: string): string | undefined {
+    try {
+      const toml = readFileSync(KimiPaths.config, 'utf-8');
+      // Split on section headers at line start; each piece begins with the
+      // section name (e.g. `models."kimi-code/kimi-for-coding"]`) followed by
+      // the section body. This avoids confusing `[` in array values with
+      // section boundaries.
+      const sections = toml.split(/^\[/m);
+      for (const section of sections) {
+        // Match either [models."id"] or [models."prefix/id"]
+        const headerMatch = section.match(/^models\."([^"]+)"\]/);
+        if (!headerMatch) continue;
+        const sectionId = headerMatch[1];
+        const shortId = sectionId.includes('/')
+          ? sectionId.slice(sectionId.lastIndexOf('/') + 1)
+          : sectionId;
+        if (sectionId !== modelId && shortId !== modelId) continue;
+        const displayName = section.match(/^\s*display_name\s*=\s*"([^"]+)"/m);
+        if (displayName) return displayName[1];
+      }
+      return undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   private buildPromptWithContext(
