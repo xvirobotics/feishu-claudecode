@@ -37,14 +37,42 @@
 | 字段 | 必填 | 默认值 | 说明 |
 |------|------|--------|------|
 | `name` | 是 | — | Bot 标识名 |
-| `defaultWorkingDirectory` | 是 | — | Claude 工作目录 |
+| `defaultWorkingDirectory` | 是 | — | Agent 工作目录 |
+| `engine` | 否 | `"claude"` | Agent 引擎 — `"claude"` 或 `"kimi"` |
 | `feishuAppId` / `feishuAppSecret` | 飞书 | — | 飞书应用凭证 |
 | `telegramBotToken` | Telegram | — | Telegram Bot Token |
 | `maxTurns` | 否 | 不限 | 每次请求最大轮次 |
-| `maxBudgetUsd` | 否 | 不限 | 每次请求费用上限 |
-| `model` | 否 | SDK 默认 | Claude 模型 |
-| `allowedTools` | 否 | `Read,Edit,Write,Glob,Grep,Bash` | Claude 工具白名单 |
+| `maxBudgetUsd` | 否 | 不限 | 每次请求费用上限（仅 Claude — Kimi 走订阅） |
+| `model` | 否 | SDK 默认 | 默认模型 ID（引擎相关） |
+| `allowedTools` | 否 | `Read,Edit,Write,Glob,Grep,Bash` | 工具白名单（仅 Claude） |
 | `outputsBaseDir` | 否 | `/tmp/metabot-outputs` | 输出文件目录 |
+| `kimi` | 否 | — | Kimi 专用配置（仅当 `engine: "kimi"` 时） — 见下方 |
+
+### Kimi 引擎选项
+
+当 `engine: "kimi"` 时，`kimi` 对象用于配置 Kimi CLI 行为：
+
+```json
+{
+  "name": "coding-bot",
+  "engine": "kimi",
+  "feishuAppId": "cli_xxx",
+  "feishuAppSecret": "...",
+  "defaultWorkingDirectory": "/home/user/project",
+  "kimi": {
+    "model": "kimi-for-coding",
+    "thinking": true
+  }
+}
+```
+
+| 字段 | 默认值 | 说明 |
+|------|--------|------|
+| `kimi.model` | `kimi-for-coding` | Kimi 模型 ID |
+| `kimi.thinking` | `false` | 启用思考模式（展示推理过程） |
+| `kimi.executable` | (自动) | 覆盖 `kimi` CLI 二进制路径 |
+
+Kimi 需要先执行一次 `kimi login`（安装 `uv tool install kimi-cli` 后，在另外的终端运行）。授权与 Kimi CLI 共享 — 无需 API Key。
 
 ## 工作原理
 
