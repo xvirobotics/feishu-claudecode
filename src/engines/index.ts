@@ -12,8 +12,12 @@ import { KimiEngine } from './kimi/index.js';
  *   2. `METABOT_ENGINE` env var (global default)
  *   3. `'claude'` (fallback)
  */
-export function createEngine(config: BotConfigBase, logger: Logger): Engine {
-  const name = resolveEngineName(config);
+export function createEngine(
+  config: BotConfigBase,
+  logger: Logger,
+  override?: EngineName,
+): Engine {
+  const name = override ?? resolveEngineName(config);
   switch (name) {
     case 'claude':
       return new ClaudeEngine(config, logger);
@@ -26,7 +30,8 @@ export function createEngine(config: BotConfigBase, logger: Logger): Engine {
   }
 }
 
-function resolveEngineName(config: BotConfigBase): EngineName {
+/** Resolve the default engine for a bot config (no session override). */
+export function resolveEngineName(config: BotConfigBase): EngineName {
   const explicit = config.engine;
   if (explicit) return explicit;
   const envDefault = process.env.METABOT_ENGINE as EngineName | undefined;

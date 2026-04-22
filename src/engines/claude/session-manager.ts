@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { Logger } from '../../utils/logger.js';
+import type { EngineName } from '../types.js';
 
 export interface UserSession {
   sessionId: string | undefined;
@@ -15,6 +16,8 @@ export interface UserSession {
   cumulativeDurationMs: number;
   /** Per-session model override (e.g. "claude-opus-4-7"). Falls back to bot default when undefined. */
   model?: string;
+  /** Per-session engine override ("claude" | "kimi"). Falls back to bot default when undefined. */
+  engine?: EngineName;
 }
 
 interface PersistedSession {
@@ -25,6 +28,7 @@ interface PersistedSession {
   cumulativeCostUsd?: number;
   cumulativeDurationMs?: number;
   model?: string;
+  engine?: EngineName;
 }
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -103,6 +107,22 @@ export class SessionManager {
     this.saveToDisk();
   }
 
+  /**
+   * Set per-session engine override. Pass undefined to clear and fall back
+   * to the bot's configured engine. Switching engines also clears the prior
+   * `sessionId` (engines track conversation state in different stores) and
+   * any stale model override, so the next turn starts a fresh session.
+   */
+  setSessionEngine(chatId: string, engine: EngineName | undefined): void {
+    const session = this.getSession(chatId);
+    if (session.engine === engine) return;
+    session.engine = engine;
+    session.sessionId = undefined;
+    session.model = undefined;
+    this.logger.info({ chatId, engine }, 'Session engine override updated (session reset)');
+    this.saveToDisk();
+  }
+
   /** Accumulate token/cost/duration from a completed query into the session totals. */
   addUsage(chatId: string, tokens: number, costUsd: number, durationMs: number): void {
     const session = this.getSession(chatId);
@@ -144,8 +164,8 @@ export class SessionManager {
     try {
       const data: Record<string, PersistedSession> = {};
       for (const [chatId, session] of this.sessions) {
-        // Persist sessions that have either a sessionId or a model override
-        if (session.sessionId || session.model) {
+        // Persist sessions that have a sessionId, model, or engine override
+        if (session.sessionId || session.model || session.engine) {
           data[chatId] = {
             sessionId: session.sessionId || '',
             workingDirectory: session.workingDirectory,
@@ -154,6 +174,7 @@ export class SessionManager {
             cumulativeCostUsd: session.cumulativeCostUsd,
             cumulativeDurationMs: session.cumulativeDurationMs,
             model: session.model,
+            engine: session.engine,
           };
         }
       }
@@ -181,6 +202,7 @@ export class SessionManager {
           cumulativeCostUsd: persisted.cumulativeCostUsd ?? 0,
           cumulativeDurationMs: persisted.cumulativeDurationMs ?? 0,
           model: persisted.model,
+          engine: persisted.engine,
         });
         loaded++;
       }
