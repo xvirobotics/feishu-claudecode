@@ -126,3 +126,7 @@ Write the complete agent markdown file to the chosen path. The file structure is
 - Make the agent proactive in seeking clarification when requirements are ambiguous.
 
 After writing the file, confirm the file path and briefly explain how to use the new agent (it will be auto-discovered by Claude Code).
+
+### Engine Compatibility Note
+
+`.claude/agents/*.md` files are discovered only by the **Claude engine**. Under the **Kimi engine**, subagent definitions in this directory are not loaded — Kimi only ships with the builtin `default`/`okabe` subagents. If the target bot uses `engine: "kimi"` in `bots.json`, this agent will have no effect; the main session must handle its role inline. Tell the user this when the bot is Kimi-backed.

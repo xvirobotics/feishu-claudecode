@@ -278,6 +278,9 @@ else
   success "PM2 already installed"
 fi
 
+# Claude and Kimi CLI installs are driven by the engine choice in Phase 4.
+# We still ensure the Claude CLI is present as a default convenience, since
+# most users start with Claude and may mix engines later.
 if command -v claude &>/dev/null; then
   success "Claude CLI found: $(command -v claude)"
 else
@@ -289,6 +292,36 @@ else
     warn "Claude CLI install failed. Install manually: sudo npm install -g @anthropic-ai/claude-code"
   fi
 fi
+
+# Install uv + kimi-cli helper. Used by the Kimi engine path below.
+install_kimi_cli() {
+  if command -v kimi &>/dev/null; then
+    success "Kimi CLI found: $(command -v kimi)"
+    return 0
+  fi
+  # Need uv first (kimi-cli is a Python tool distributed via uv)
+  if ! command -v uv &>/dev/null; then
+    info "Installing uv (required by kimi-cli)..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh >/dev/null 2>&1 || true
+    # uv installs to ~/.local/bin — make sure it's on PATH for this script
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v uv &>/dev/null; then
+      warn "uv install failed. Install manually from https://astral.sh/uv and re-run."
+      return 1
+    fi
+    success "uv installed: $(uv --version)"
+  fi
+  info "Installing kimi-cli via uv..."
+  if uv tool install kimi-cli 2>&1 | tail -3; then
+    export PATH="$HOME/.local/bin:$PATH"
+    if command -v kimi &>/dev/null; then
+      success "Kimi CLI installed: $(command -v kimi)"
+      return 0
+    fi
+  fi
+  warn "Kimi CLI install failed. Install manually: uv tool install kimi-cli"
+  return 1
+}
 
 # ============================================================================
 # Phase 4: Interactive configuration
@@ -312,18 +345,40 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
   mkdir -p "$WORK_DIR"
   success "Working directory: ${WORK_DIR}"
 
-  # ------ 4b: Claude AI authentication ------
+  # ------ 4b: Engine selection ------
   echo ""
-  echo -e "${BOLD}Claude AI Authentication:${NC}"
-  echo "  1) Claude Code Subscription (OAuth — run 'claude login' after install)"
-  echo "  2) Anthropic API Key (sk-ant-...)"
-  echo "  3) Third-party provider (Kimi/Moonshot, DeepSeek, GLM, etc.)"
-  prompt_choice AUTH_CHOICE "1"
+  echo -e "${BOLD}Agent Engine:${NC}"
+  echo "  1) Claude Code (Anthropic)"
+  echo "  2) Kimi (Moonshot AI — requires kimi-cli login, uses your subscription)"
+  prompt_choice ENGINE_CHOICE "1"
 
+  BOT_ENGINE="claude"
   CLAUDE_AUTH_ENV_LINES=""
   CLAUDE_AUTH_METHOD="subscription"
 
+  if [[ "$ENGINE_CHOICE" == "2" ]]; then
+    BOT_ENGINE="kimi"
+    CLAUDE_AUTH_METHOD="kimi"
+    echo ""
+    info "Installing kimi-cli..."
+    install_kimi_cli || warn "Continuing despite kimi-cli install failure — you can install it later."
+    info "After install, run 'kimi login' in a separate terminal to authenticate."
+    # Skip the Claude provider prompt entirely for Kimi — it has its own auth.
+    AUTH_CHOICE="kimi"
+  else
+    # ------ 4b-claude: Claude AI authentication ------
+    echo ""
+    echo -e "${BOLD}Claude AI Authentication:${NC}"
+    echo "  1) Claude Code Subscription (OAuth — run 'claude login' after install)"
+    echo "  2) Anthropic API Key (sk-ant-...)"
+    echo "  3) Third-party provider (Kimi/Moonshot, DeepSeek, GLM, etc.)"
+    prompt_choice AUTH_CHOICE "1"
+  fi
+
   case "$AUTH_CHOICE" in
+    kimi)
+      : # handled above
+      ;;
     1)
       CLAUDE_AUTH_METHOD="subscription"
       info "Using Claude Code Subscription. Run 'claude login' after install."
@@ -500,25 +555,31 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
 
   if [[ "$SETUP_FEISHU" == "true" ]]; then
     FEISHU_BOTS_JSON=$(node -e "
-      console.log(JSON.stringify([{
+      const engine = process.argv[5];
+      const bot = {
         name: process.argv[1],
         feishuAppId: process.argv[2],
         feishuAppSecret: process.argv[3],
-        defaultWorkingDirectory: process.argv[4]
-      }], null, 2))
-    " "$BOT_NAME" "$FEISHU_APP_ID" "$FEISHU_APP_SECRET" "$WORK_DIR")
+        defaultWorkingDirectory: process.argv[4],
+      };
+      if (engine === 'kimi') { bot.engine = 'kimi'; bot.kimi = { thinking: true }; }
+      console.log(JSON.stringify([bot], null, 2))
+    " "$BOT_NAME" "$FEISHU_APP_ID" "$FEISHU_APP_SECRET" "$WORK_DIR" "${BOT_ENGINE:-claude}")
   fi
 
   if [[ "$SETUP_TELEGRAM" == "true" ]]; then
     TG_NAME="$BOT_NAME"
     [[ "$SETUP_FEISHU" == "true" ]] && TG_NAME="${BOT_NAME}-telegram"
     TELEGRAM_BOTS_JSON=$(node -e "
-      console.log(JSON.stringify([{
+      const engine = process.argv[4];
+      const bot = {
         name: process.argv[1],
         telegramBotToken: process.argv[2],
-        defaultWorkingDirectory: process.argv[3]
-      }], null, 2))
-    " "$TG_NAME" "$TELEGRAM_BOT_TOKEN" "$WORK_DIR")
+        defaultWorkingDirectory: process.argv[3],
+      };
+      if (engine === 'kimi') { bot.engine = 'kimi'; bot.kimi = { thinking: true }; }
+      console.log(JSON.stringify([bot], null, 2))
+    " "$TG_NAME" "$TELEGRAM_BOT_TOKEN" "$WORK_DIR" "${BOT_ENGINE:-claude}")
   fi
 
   if [[ "$SETUP_WECHAT" == "true" ]]; then
@@ -526,11 +587,14 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
     # Append suffix if other platforms are also configured
     [[ "$SETUP_FEISHU" == "true" || "$SETUP_TELEGRAM" == "true" ]] && WX_NAME="${BOT_NAME}-wechat"
     WECHAT_BOTS_JSON=$(node -e "
-      console.log(JSON.stringify([{
+      const engine = process.argv[3];
+      const bot = {
         name: process.argv[1],
-        defaultWorkingDirectory: process.argv[2]
-      }], null, 2))
-    " "$WX_NAME" "$WORK_DIR")
+        defaultWorkingDirectory: process.argv[2],
+      };
+      if (engine === 'kimi') { bot.engine = 'kimi'; bot.kimi = { thinking: true }; }
+      console.log(JSON.stringify([bot], null, 2))
+    " "$WX_NAME" "$WORK_DIR" "${BOT_ENGINE:-claude}")
   fi
 
   node -e "
@@ -702,10 +766,16 @@ if [[ -n "${DEPLOY_WORK_DIR:-}" ]]; then
     fi
   done
 
-  # Deploy CLAUDE.md to working directory
+  # Deploy CLAUDE.md to working directory (+ AGENTS.md symlink for Kimi engine)
   if [[ -f "$METABOT_HOME/src/workspace/CLAUDE.md" ]]; then
     cp "$METABOT_HOME/src/workspace/CLAUDE.md" "$DEPLOY_WORK_DIR/CLAUDE.md"
     success "Deployed CLAUDE.md → $DEPLOY_WORK_DIR/CLAUDE.md"
+    # Kimi engine reads AGENTS.md not CLAUDE.md — symlink so both engines see the same doc
+    if [[ ! -e "$DEPLOY_WORK_DIR/AGENTS.md" ]]; then
+      (cd "$DEPLOY_WORK_DIR" && ln -s CLAUDE.md AGENTS.md 2>/dev/null) \
+        && success "Linked AGENTS.md → CLAUDE.md (for Kimi engine compatibility)" \
+        || warn "Could not create AGENTS.md symlink"
+    fi
   fi
 else
   warn "Could not determine working directory, skipping workspace deployment"
@@ -1009,6 +1079,7 @@ if [[ "${SKIP_CONFIG}" == "false" ]]; then
   echo -e "  ${BOLD}Working Dir:${NC}    ${WORK_DIR}"
   echo -e "  ${BOLD}API:${NC}            http://localhost:${API_PORT}"
   echo -e "  ${BOLD}API Secret:${NC}     ${API_SECRET:0:8}...${API_SECRET: -4}"
+  echo -e "  ${BOLD}Engine:${NC}         ${BOT_ENGINE:-claude}"
   echo -e "  ${BOLD}Auth Method:${NC}    ${CLAUDE_AUTH_METHOD}"
   if [[ "${CLAUDE_AUTH_METHOD}" == "third_party" ]]; then
     echo -e "  ${BOLD}Provider:${NC}       ${PROVIDER_NAME}"
@@ -1032,6 +1103,10 @@ if [[ "${SKIP_CONFIG}" == "false" ]]; then
   STEP_NUM=1
   if [[ "${CLAUDE_AUTH_METHOD}" == "subscription" ]]; then
     echo "    ${STEP_NUM}. Run 'claude login' in a separate terminal"
+    STEP_NUM=$((STEP_NUM + 1))
+  fi
+  if [[ "${CLAUDE_AUTH_METHOD}" == "kimi" ]]; then
+    echo "    ${STEP_NUM}. Run 'kimi login' in a separate terminal (https://kimi.com to sign up)"
     STEP_NUM=$((STEP_NUM + 1))
   fi
   if [[ "$SETUP_FEISHU" == "true" ]]; then

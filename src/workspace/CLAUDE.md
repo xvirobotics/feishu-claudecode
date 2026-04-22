@@ -1,6 +1,6 @@
 # MetaBot Workspace
 
-This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs Claude Code with full tool access.
+This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs the Claude Code or Kimi agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi"`).
 
 ## Available Skills
 

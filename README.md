@@ -287,6 +287,46 @@ ANTHROPIC_AUTH_TOKEN=你的key
 </details>
 
 <details>
+<summary><strong>Kimi 引擎（原生支持 Kimi 订阅）</strong></summary>
+
+除了走 Anthropic 兼容 API，MetaBot 也内置了**原生 Kimi 引擎**，直接使用你的 Kimi 订阅（经由 kimi-cli 登录），无需 API Key。每个 Bot 可以独立选择引擎：
+
+```json
+{
+  "feishuBots": [
+    {
+      "name": "bulma",
+      "engine": "kimi",
+      "feishuAppId": "cli_xxx",
+      "feishuAppSecret": "secret",
+      "defaultWorkingDirectory": "/path/to/workdir",
+      "kimi": { "thinking": true }
+    }
+  ]
+}
+```
+
+**前置条件**：
+1. 安装 [uv](https://astral.sh/uv)，然后 `uv tool install kimi-cli`
+2. 运行 `kimi login` 完成订阅授权
+3. 将 Bot 配置中 `engine` 设为 `"kimi"`
+
+**引擎差异**：
+
+| 功能 | Claude | Kimi |
+|------|--------|------|
+| 流式卡片 / 工具调用展示 | ✅ | ✅（通过事件翻译） |
+| 权限模式 | `bypassPermissions` | `yoloMode: true` |
+| 工作区说明文档 | `CLAUDE.md` | `AGENTS.md`（安装脚本会自动建软链） |
+| `.claude/skills/` 自动加载 | ✅ | ✅（Kimi CLI 自带 brand fallback） |
+| `.claude/agents/*.md` 子 Agent | ✅ | ❌（Kimi 仅内置 `default`/`okabe`） |
+| MCP 服务器配置 | `.mcp.json` 项目级 | `~/.kimi/mcp.json` 用户级 |
+
+安装脚本 (`install.sh`) 会在引擎选择步骤询问 Claude vs Kimi，选 Kimi 时自动装 uv + kimi-cli 并写入正确的 `bots.json`。
+
+</details>
+
+<details>
 <summary><strong>cc-switch 兼容</strong></summary>
 
 兼容 [cc-switch](https://github.com/farion1231/cc-switch)、[cc-switch-cli](https://github.com/SaladDay/cc-switch-cli)、[CCS](https://github.com/kaitranntt/ccs) 等认证切换工具。用 `cc switch` 切换 API/订阅模式后，MetaBot **无需重启**即可生效。
