@@ -317,46 +317,6 @@ ANTHROPIC_AUTH_TOKEN=your-key
 </details>
 
 <details>
-<summary><strong>Kimi engine (native Kimi subscription)</strong></summary>
-
-In addition to the Anthropic-compatible API route, MetaBot ships a **first-class Kimi engine** that uses your Kimi subscription directly (via `kimi-cli` login) — no API key required. Engine choice is per-bot:
-
-```json
-{
-  "feishuBots": [
-    {
-      "name": "bulma",
-      "engine": "kimi",
-      "feishuAppId": "cli_xxx",
-      "feishuAppSecret": "secret",
-      "defaultWorkingDirectory": "/path/to/workdir",
-      "kimi": { "thinking": true }
-    }
-  ]
-}
-```
-
-**Prerequisites:**
-1. Install [uv](https://astral.sh/uv), then `uv tool install kimi-cli`
-2. Run `kimi login` to authenticate your subscription
-3. Set `engine: "kimi"` on the bot config
-
-**Engine differences:**
-
-| Feature | Claude | Kimi |
-|---------|--------|------|
-| Streaming card / tool-call display | ✅ | ✅ (events are translated) |
-| Permission mode | `bypassPermissions` | `yoloMode: true` |
-| Workspace instructions file | `CLAUDE.md` | `AGENTS.md` (installer symlinks `CLAUDE.md` → `AGENTS.md`) |
-| `.claude/skills/` auto-discovery | ✅ | ✅ (Kimi CLI brand fallback) |
-| `.claude/agents/*.md` subagents | ✅ | ❌ (Kimi only ships builtin `default`/`okabe`) |
-| MCP server config | `.mcp.json` (project) | `~/.kimi/mcp.json` (user-level) |
-
-`install.sh` asks which engine to use; selecting Kimi installs uv + kimi-cli and writes the correct `bots.json`.
-
-</details>
-
-<details>
 <summary><strong>cc-switch compatibility</strong></summary>
 
 Compatible with [cc-switch](https://github.com/farion1231/cc-switch), [cc-switch-cli](https://github.com/SaladDay/cc-switch-cli), [CCS](https://github.com/kaitranntt/ccs). Switching via `cc switch` takes effect **without restarting** MetaBot.
