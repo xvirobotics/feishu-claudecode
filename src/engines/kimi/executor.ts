@@ -89,11 +89,16 @@ export class KimiExecutor {
     }
 
     // Local state used when accumulating deltas for the final assistant message
+    const kimiOpts = this.config.kimi ?? {};
     const state: TurnState = {
       sessionId: session.sessionId,
       accumulatedText: '',
       openToolCalls: new Map(),
       startTime: Date.now(),
+      model: session.model ?? options.model ?? kimiOpts.model ?? 'kimi-for-coding',
+      // Kimi for Coding ships with a 256k context window. Override per-bot via
+      // `kimi.contextWindow` in bots.json if you're on a different model.
+      contextWindow: kimiOpts.contextWindow ?? 262144,
     };
 
     const logger = this.logger;
@@ -235,6 +240,13 @@ interface TurnState {
   /** Kimi streams tool arguments across ToolCall + ToolCallPart events. */
   openToolCalls: Map<string, { name: string; argsBuffer: string }>;
   startTime: number;
+  /** Model ID used by the Kimi session (surfaced to the card's stats footer). */
+  model: string;
+  /** Context window size (tokens) — used when emitting modelUsage. */
+  contextWindow: number;
+  /** Last seen StatusUpdate token breakdown (summed into totalTokens). */
+  lastInputTokens?: number;
+  lastOutputTokens?: number;
 }
 
 function translateEvent(event: StreamEvent, state: TurnState, logger: Logger): SDKMessage[] {
@@ -313,7 +325,29 @@ function translateEvent(event: StreamEvent, state: TurnState, logger: Logger): S
     }
 
     case 'StatusUpdate': {
-      // Token usage is tracked but we don't emit until RunResult.
+      // Kimi emits cumulative token usage and context usage on each step.
+      // We cache the latest values so the result message can report them as
+      // modelUsage (which the StreamProcessor reads to populate context/model
+      // stats on the Feishu card).
+      const payload = event.payload as {
+        context_usage?: number | null;
+        token_usage?: {
+          input_other: number;
+          output: number;
+          input_cache_read: number;
+          input_cache_creation: number;
+        } | null;
+      };
+      if (payload.token_usage) {
+        state.lastInputTokens = payload.token_usage.input_other
+          + payload.token_usage.input_cache_read
+          + payload.token_usage.input_cache_creation;
+        state.lastOutputTokens = payload.token_usage.output;
+      } else if (typeof payload.context_usage === 'number') {
+        // Fallback: only a single cumulative number is available.
+        state.lastInputTokens = payload.context_usage;
+        state.lastOutputTokens = 0;
+      }
       return [];
     }
 
@@ -362,6 +396,26 @@ function buildResultMessage(result: RunResult, state: TurnState): SDKMessage {
     : result.status === 'cancelled'
       ? 'error_cancelled'
       : 'error_max_steps';
+
+  // Mimic Claude's `modelUsage` shape so StreamProcessor can extract model,
+  // contextWindow, and totalTokens without any engine-specific branching.
+  // Kimi runs on a subscription — leave costUSD at 0 (the card omits $0).
+  const inputTokens = state.lastInputTokens ?? 0;
+  const outputTokens = state.lastOutputTokens ?? 0;
+  const modelUsage: Record<string, {
+    contextWindow: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUSD: number;
+  }> = {
+    [state.model]: {
+      contextWindow: state.contextWindow,
+      inputTokens,
+      outputTokens,
+      costUSD: 0,
+    },
+  };
+
   return {
     type: 'result',
     subtype,
@@ -370,8 +424,9 @@ function buildResultMessage(result: RunResult, state: TurnState): SDKMessage {
     result: state.accumulatedText,
     is_error: isError,
     num_turns: result.steps,
+    modelUsage,
     // Cost is unknown for Kimi (subscription model, no per-call price emitted).
-    // Leave undefined — the card will omit the cost line.
+    // Leave total_cost_usd undefined — the card will omit the cost line.
   };
 }
 

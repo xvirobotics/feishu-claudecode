@@ -48,7 +48,7 @@ export function buildCard(state: CardState): string {
   } else if (state.status === 'thinking') {
     elements.push({
       tag: 'markdown',
-      content: '_Claude is thinking..._',
+      content: '_Thinking..._',
     });
   }
 
@@ -111,7 +111,8 @@ export function buildCard(state: CardState): string {
         parts.push(`$${state.sessionCostUsd.toFixed(2)}`);
       }
       if (state.model) {
-        parts.push(state.model.replace(/^claude-/, ''));
+        // Strip common vendor prefixes to keep the badge short
+        parts.push(state.model.replace(/^(claude-|kimi-)/, ''));
       }
       if (state.durationMs !== undefined) {
         parts.push(`${(state.durationMs / 1000).toFixed(1)}s`);

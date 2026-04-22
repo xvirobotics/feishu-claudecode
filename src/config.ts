@@ -35,6 +35,8 @@ export interface BotConfigBase {
     model?: string;
     thinking?: boolean;
     apiKey?: string;
+    /** Context window size in tokens (defaults to 262144 — Kimi for Coding default). */
+    contextWindow?: number;
   };
 }
 
@@ -123,6 +125,8 @@ export interface KimiJsonConfig {
   model?: string;
   thinking?: boolean;
   apiKey?: string;
+  /** Context window size in tokens (defaults to 262144 — Kimi for Coding default). */
+  contextWindow?: number;
 }
 
 /** Fields shared across all bot JSON entries (engine selection, Kimi overrides). */

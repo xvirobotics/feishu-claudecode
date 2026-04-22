@@ -13,7 +13,7 @@ describe('buildCard', () => {
     const json = JSON.parse(buildCard(state));
     expect(json.header.template).toBe('blue');
     expect(json.header.title.content).toContain('Thinking');
-    expect(json.elements.some((e: any) => e.tag === 'markdown' && e.content.includes('thinking'))).toBe(true);
+    expect(json.elements.some((e: any) => e.tag === 'markdown' && /thinking/i.test(e.content))).toBe(true);
   });
 
   it('builds running card with tool calls', () => {

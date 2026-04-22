@@ -52,7 +52,7 @@ function renderCardHtml(state: CardState): string {
   if (state.responseText) {
     parts.push(markdownToTelegramHtml(state.responseText));
   } else if (state.status === 'thinking') {
-    parts.push('<i>Claude is thinking...</i>');
+    parts.push('<i>Thinking...</i>');
   }
 
   // Pending question
