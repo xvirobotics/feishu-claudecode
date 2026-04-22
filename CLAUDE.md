@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode since there's no terminal for interactive approval.
+MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode (or `auto` mode when running as root) since there's no terminal for interactive approval.
 
 ## Commands
 
@@ -328,9 +328,9 @@ This is the step-by-step procedure to configure a Feishu bot for this bridge ser
 
 ### "Error: Claude Code process exited with code 1"
 
-The bot starts but replies with this error when you message it. This means the Agent SDK's subprocess (`claude`) failed to launch properly.
+The bot starts but replies with this error when you message it. This means the Agent SDK's subprocess (`claude`) failed to launch properly. There are two causes:
 
-**Cause**: Claude CLI is not authenticated. The SDK spawns `claude` as a child process — if it has no valid credentials, it exits immediately with code 1.
+**Cause A: Claude CLI is not authenticated.** The SDK spawns `claude` as a child process — if it has no valid credentials, it exits immediately with code 1.
 
 **Fix** (run in a **separate terminal**, not inside Claude Code):
 
@@ -348,6 +348,8 @@ Then restart the service:
 pkill -f "tsx src/index.ts"
 cd /path/to/metabot && npm run dev
 ```
+
+**Cause B: Running as root/sudo.** Claude Code blocks `--dangerously-skip-permissions` under root privileges. Check `pm2 logs metabot` for: `--dangerously-skip-permissions cannot be used with root/sudo privileges`. MetaBot automatically switches to `permissionMode: auto` when it detects root — ensure you're on a version that includes this fix.
 
 ### Service won't connect to Feishu
 
