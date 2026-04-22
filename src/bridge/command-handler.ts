@@ -235,18 +235,25 @@ export class CommandHandler {
 
   private async handleModelCommand(chatId: string, args: string): Promise<void> {
     const session = this.sessionManager.getSession(chatId);
-    const botDefault = this.config.claude.model;
+    const engine = this.config.engine ?? 'claude';
+    const botDefault =
+      engine === 'kimi' ? this.config.kimi?.model : this.config.claude.model;
 
     // No args — show current model
     if (!args) {
       const active = session.model || botDefault || '_default_';
+      const exampleModels =
+        engine === 'kimi'
+          ? '`kimi-for-coding`, `kimi-k2`'
+          : '`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`';
       const lines = [
+        `**Engine:** \`${engine}\``,
         `**Active:** \`${active}\`${session.model ? ' (session override)' : ''}`,
         `**Bot default:** \`${botDefault || '_unset_'}\``,
         '',
         'Usage:',
         '- `/model list` — Show available models',
-        '- `/model <name>` — Set session model (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`)',
+        `- \`/model <name>\` — Set session model (e.g. ${exampleModels})`,
         '- `/model reset` — Clear override, use bot default',
       ];
       await this.sender.sendTextNotice(chatId, '🤖 Model', lines.join('\n'));
@@ -256,7 +263,7 @@ export class CommandHandler {
     // List available models
     if (args.toLowerCase() === 'list' || args.toLowerCase() === 'ls') {
       const active = session.model || botDefault;
-      const models = [
+      const claudeModels = [
         { id: 'claude-opus-4-7', label: 'Opus 4.7', note: 'Most capable · 200k context' },
         { id: 'claude-opus-4-7[1m]', label: 'Opus 4.7 (1M)', note: '1M context window' },
         { id: 'claude-opus-4-6', label: 'Opus 4.6', note: '200k context' },
@@ -265,13 +272,23 @@ export class CommandHandler {
         { id: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 (1M)', note: '1M context window' },
         { id: 'claude-haiku-4-5', label: 'Haiku 4.5', note: 'Fastest · 200k context' },
       ];
-      const lines = ['**Available Claude models:**', ''];
+      const kimiModels = [
+        { id: 'kimi-for-coding', label: 'Kimi for Coding', note: 'Subscription default · 256k context · thinking' },
+        { id: 'kimi-k2', label: 'Kimi K2', note: 'Legacy coding model' },
+      ];
+      const models = engine === 'kimi' ? kimiModels : claudeModels;
+      const header = engine === 'kimi' ? '**Available Kimi models:**' : '**Available Claude models:**';
+      const lines = [header, ''];
       for (const m of models) {
         const marker = m.id === active ? ' ✅' : '';
         lines.push(`- \`${m.id}\` — ${m.label} · ${m.note}${marker}`);
       }
       lines.push('');
-      lines.push('_Tip: append `[1m]` to a model name to enable the 1M context window. Only Opus 4.7/4.6 and Sonnet 4.6 support it._');
+      if (engine === 'claude') {
+        lines.push('_Tip: append `[1m]` to a model name to enable the 1M context window. Only Opus 4.7/4.6 and Sonnet 4.6 support it._');
+      } else {
+        lines.push('_Tip: leave unset to use the kimi-cli default (recommended for subscription users — the server picks the best available)._');
+      }
       lines.push('Use `/model <name>` to switch.');
       await this.sender.sendTextNotice(chatId, '🤖 Available Models', lines.join('\n'));
       return;
