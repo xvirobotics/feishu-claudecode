@@ -6,9 +6,8 @@ import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import type { DocSync } from '../sync/doc-sync.js';
-import { ClaudeExecutor, type ExecutionHandle } from '../claude/executor.js';
-import { StreamProcessor } from '../claude/stream-processor.js';
-import { SessionManager } from '../claude/session-manager.js';
+import type { Engine, Executor, ExecutionHandle } from '../engines/index.js';
+import { createEngine, StreamProcessor, SessionManager } from '../engines/index.js';
 import { RateLimiter } from './rate-limiter.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
@@ -98,7 +97,8 @@ export interface ActivityEventData {
 }
 
 export class MessageBridge {
-  private executor: ClaudeExecutor;
+  private engine: Engine;
+  private executor: Executor;
   private sessionManager: SessionManager;
   private outputsManager: OutputsManager;
   private audit: AuditLogger;
@@ -119,7 +119,8 @@ export class MessageBridge {
     memoryServerUrl: string,
     memorySecret?: string,
   ) {
-    this.executor = new ClaudeExecutor(config, logger);
+    this.engine = createEngine(config, logger);
+    this.executor = this.engine.createExecutor();
     this.sessionManager = new SessionManager(config.claude.defaultWorkingDirectory, logger, config.name);
     this.outputsManager = new OutputsManager(config.claude.outputsBaseDir, logger);
     this.audit = new AuditLogger(logger);

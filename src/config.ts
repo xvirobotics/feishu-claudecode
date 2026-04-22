@@ -3,7 +3,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-/** Shared config fields used by MessageBridge and ClaudeExecutor (platform-agnostic). */
+/** Agent engine backing a bot. `claude` uses Claude Code; `kimi` uses Kimi Code (Phase 2). */
+export type EngineName = 'claude' | 'kimi';
+
+/** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
 export interface BotConfigBase {
   name: string;
   description?: string;
@@ -12,6 +15,8 @@ export interface BotConfigBase {
   maxConcurrentTasks?: number;
   budgetLimitDaily?: number;
   ttsVoice?: string;
+  /** Agent engine. Defaults to 'claude' for backward compatibility. */
+  engine?: EngineName;
   claude: {
     defaultWorkingDirectory: string;
     maxTurns: number | undefined;
@@ -23,6 +28,13 @@ export interface BotConfigBase {
     apiKey: string | undefined;
     outputsBaseDir: string;
     downloadsDir: string;
+  };
+  /** Kimi-specific overrides. Populated only when engine === 'kimi'. Phase 2. */
+  kimi?: {
+    executable?: string;
+    model?: string;
+    thinking?: boolean;
+    apiKey?: string;
   };
 }
 
@@ -105,7 +117,21 @@ function expandUserPath(value: string): string {
 
 // --- Feishu JSON entry (used in bots.json) ---
 
-export interface FeishuBotJsonEntry {
+/** Kimi-specific overrides in bots.json. */
+export interface KimiJsonConfig {
+  executable?: string;
+  model?: string;
+  thinking?: boolean;
+  apiKey?: string;
+}
+
+/** Fields shared across all bot JSON entries (engine selection, Kimi overrides). */
+interface EngineJsonFields {
+  engine?: EngineName;
+  kimi?: KimiJsonConfig;
+}
+
+export interface FeishuBotJsonEntry extends EngineJsonFields {
   name: string;
   description?: string;
   specialties?: string[];
@@ -136,6 +162,8 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     ...(entry.groupNoMention ? { groupNoMention: true } : {}),
+    ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(entry.kimi ? { kimi: entry.kimi } : {}),
     feishu: {
       appId: entry.feishuAppId,
       appSecret: entry.feishuAppSecret,
@@ -146,7 +174,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
 
 // --- Telegram JSON entry (used in bots.json) ---
 
-export interface TelegramBotJsonEntry {
+export interface TelegramBotJsonEntry extends EngineJsonFields {
   name: string;
   description?: string;
   specialties?: string[];
@@ -173,6 +201,8 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
     ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
+    ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(entry.kimi ? { kimi: entry.kimi } : {}),
     telegram: {
       botToken: entry.telegramBotToken,
     },
@@ -182,7 +212,7 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
 
 // --- Web bot JSON entry (used in bots.json — no IM credentials needed) ---
 
-export interface WebBotJsonEntry {
+export interface WebBotJsonEntry extends EngineJsonFields {
   name: string;
   description?: string;
   specialties?: string[];
@@ -207,13 +237,15 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
     ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
+    ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(entry.kimi ? { kimi: entry.kimi } : {}),
     claude: buildClaudeConfig(entry),
   };
 }
 
 // --- WeChat JSON entry (used in bots.json) ---
 
-export interface WechatBotJsonEntry {
+export interface WechatBotJsonEntry extends EngineJsonFields {
   name: string;
   description?: string;
   ilinkBaseUrl?: string;
@@ -231,6 +263,8 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(entry.kimi ? { kimi: entry.kimi } : {}),
     wechat: {
       ilinkBaseUrl: entry.ilinkBaseUrl,
       botToken: entry.wechatBotToken,

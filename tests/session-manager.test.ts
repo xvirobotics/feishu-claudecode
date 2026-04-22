@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { SessionManager } from '../src/claude/session-manager.js';
+import { SessionManager } from '../src/engines/claude/session-manager.js';
 
 function createLogger() {
   return { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn(), child: vi.fn() } as any;

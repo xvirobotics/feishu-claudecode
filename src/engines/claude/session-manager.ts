@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import type { Logger } from '../utils/logger.js';
+import type { Logger } from '../../utils/logger.js';
 
 export interface UserSession {
   sessionId: string | undefined;

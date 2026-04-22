@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { StreamProcessor, extractImagePaths } from '../src/claude/stream-processor.js';
-import type { SDKMessage } from '../src/claude/executor.js';
+import { StreamProcessor, extractImagePaths } from '../src/engines/claude/stream-processor.js';
+import type { SDKMessage } from '../src/engines/claude/executor.js';
 
 function msg(overrides: Partial<SDKMessage>): SDKMessage {
   return { type: 'system', session_id: 'sess-1', ...overrides } as SDKMessage;

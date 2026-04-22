@@ -5,9 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
-import type { BotConfigBase } from '../config.js';
-import type { Logger } from '../utils/logger.js';
-import { AsyncQueue } from '../utils/async-queue.js';
+import type { BotConfigBase } from '../../config.js';
+import type { Logger } from '../../utils/logger.js';
+import { AsyncQueue } from '../../utils/async-queue.js';
 
 const isWindows = process.platform === 'win32';
 

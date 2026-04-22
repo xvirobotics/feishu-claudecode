@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import type { Logger } from '../utils/logger.js';
 import type { CardState } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
-import { StreamProcessor, extractImagePaths } from '../claude/stream-processor.js';
+import { StreamProcessor, extractImagePaths } from '../engines/index.js';
 import { OutputsManager } from './outputs-manager.js';
 
 export class OutputHandler {

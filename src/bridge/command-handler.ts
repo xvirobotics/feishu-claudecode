@@ -2,7 +2,7 @@ import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
-import { SessionManager } from '../claude/session-manager.js';
+import { SessionManager } from '../engines/index.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
