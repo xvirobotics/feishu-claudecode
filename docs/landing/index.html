@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MetaBot — Infrastructure for the Agent-Native Organization</title>
-    <meta name="description" content="MetaBot: Infrastructure for building a supervised, self-improving agent organization. Run Claude Code from Feishu & Telegram with shared memory, agent factory, and communication bus.">
+    <meta name="description" content="MetaBot: Infrastructure for building a supervised, self-improving agent organization. Run Claude Code or Kimi Code (both native subscriptions supported) from Feishu & Telegram with shared memory, agent factory, and communication bus.">
     <meta property="og:title" content="MetaBot — Infrastructure for the Agent-Native Organization">
-    <meta property="og:description" content="Give every AI agent a Claude Code brain, shared memory, and a communication bus. Accessible from your phone.">
+    <meta property="og:description" content="Give every AI agent a Claude Code or Kimi Code brain (native subscriptions, no API key required), shared memory, and a communication bus. Accessible from your phone.">
     <meta property="og:image" content="https://raw.githubusercontent.com/xvirobotics/metabot/main/resources/metabot.png">
     <meta property="og:url" content="https://xvirobotics.github.io/metabot">
     <meta name="twitter:card" content="summary_large_image">
@@ -432,7 +432,7 @@
         </div>
         <h1>Infrastructure for the Agent-Native Organization</h1>
         <p class="hero-sub">
-            Give every AI agent a Claude Code brain, persistent shared memory, and a communication bus. Supervised by humans on Feishu or Telegram.
+            Give every AI agent a Claude Code or Kimi Code brain &mdash; both native subscriptions work directly, no API key. Plus persistent shared memory and a communication bus. Supervised by humans on Feishu or Telegram.
         </p>
         <div class="cta-group">
             <a href="#install" class="cta-primary">Get Started</a>
@@ -479,8 +479,8 @@
             <div class="comp-card">
                 <div class="icon">SDK</div>
                 <div>
-                    <h4>Claude Code Kernel</h4>
-                    <p>Every bot is a full Claude Code instance &mdash; Read, Write, Edit, Bash, Glob, Grep, WebSearch, MCP, and more. Autonomous operation via bypassPermissions mode.</p>
+                    <h4>Dual Engine Kernel</h4>
+                    <p>Each bot picks Claude Code or Kimi Code in <code>bots.json</code>. Full tool stack either way &mdash; Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP. Both native subscriptions (<code>claude login</code> / <code>kimi login</code>) work directly. Autonomous mode (<code>bypassPermissions</code> / <code>yoloMode</code>).</p>
                 </div>
             </div>
             <div class="comp-card">
@@ -542,7 +542,7 @@
             </div>
         </div>
         <p style="margin-top: 24px; font-size: 0.85rem; color: var(--text-dim);">
-            Prerequisites: Node.js 18+, <a href="https://github.com/anthropics/claude-code">Claude Code CLI</a> installed and authenticated.
+            Prerequisites: Node.js 20+, plus one of: <a href="https://github.com/anthropics/claude-code">Claude Code CLI</a> (<code>claude login</code>) or <a href="https://platform.moonshot.ai">Kimi CLI</a> (<code>uv tool install kimi-cli && kimi login</code>). The installer asks which engine(s) to set up.
         </p>
     </section>
 
@@ -554,7 +554,7 @@
             <div class="usecase-item">
                 <span class="emoji">&#x1f4f1;</span>
                 <h4>Solo AI Developer</h4>
-                <p>Full Claude Code from your phone, bound to your project. Code on the go via Feishu or Telegram.</p>
+                <p>Full Claude Code or Kimi Code from your phone, bound to your project. Your existing subscription works directly. Code on the go via Feishu or Telegram.</p>
             </div>
             <div class="usecase-item">
                 <span class="emoji">&#x1f465;</span>

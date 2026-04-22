@@ -8,15 +8,26 @@
 
 ---
 
-Claude Code is the most capable AI coding agent — but it's trapped in your laptop terminal.
+Claude Code and Kimi Code are the most capable AI coding agents — but they're both trapped in your laptop terminal.
 
-MetaBot sets it free. It gives every agent a Claude Code brain, persistent shared memory, the ability to create new agents, and a communication bus. All accessible from Feishu or Telegram on your phone.
+MetaBot sets them free. It gives every agent a **Claude Code or Kimi Code brain** (native subscriptions work directly — no API key required), persistent shared memory, the ability to create new agents, and a communication bus. All accessible from Feishu or Telegram on your phone.
+
+## Dual Engine: Claude Code ✕ Kimi Code
+
+| | Claude Code (Anthropic) | Kimi Code (Moonshot) |
+|---|---|---|
+| **Subscription login** | ✅ `claude login` OAuth | ✅ `kimi login` OAuth |
+| **API key fallback** | ✅ | ✅ |
+| **Context window** | 200k (1M optional) | 256k |
+| **Autonomous mode** | `bypassPermissions` | `yoloMode` (equivalent) |
+
+Each bot picks its engine in `bots.json`. Frontend bot on Claude, backend bot on Kimi — totally fine. Cross-engine delegation through the Agent Bus is transparent to the caller. See [multi-bot config](configuration/multi-bot.md).
 
 ## Core Components
 
 | Component | Description |
 |-----------|-------------|
-| **Claude Code Kernel** | Every bot is a full Claude Code instance — Read, Write, Edit, Bash, Glob, Grep, WebSearch, MCP, and more. `bypassPermissions` mode for autonomous operation. |
+| **Dual Engine Kernel** | Each bot independently selects Claude Code or Kimi Code — full tool stack (Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP) in autonomous mode. |
 | **MetaSkill** | Agent factory. `/metaskill ios app` generates a complete `.claude/` agent team (orchestrator + specialists + code-reviewer). |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search and Web UI. Agents read/write Markdown documents across sessions. |
 | **IM Bridge** | Chat with any agent from Feishu/Lark or Telegram (including mobile). Streaming cards with color-coded status. |
@@ -41,7 +52,7 @@ MetaBot sets it free. It gives every agent a Claude Code brain, persistent share
     irm https://raw.githubusercontent.com/xvirobotics/metabot/main/install.ps1 | iex
     ```
 
-The installer walks you through: working directory, Claude auth, IM credentials, and auto-start with PM2.
+The installer walks you through: working directory, **engine choice (Claude / Kimi)**, subscription login, IM credentials, and auto-start with PM2.
 
 [Get Started](getting-started/installation.md){ .md-button .md-button--primary }
 [View on GitHub](https://github.com/xvirobotics/metabot){ .md-button }

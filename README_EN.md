@@ -1,6 +1,6 @@
 # MetaBot
 
-**Control Claude Code from your phone via Feishu / Telegram / WeChat — write code, manage agents, automate everything.**
+**Control Claude Code or Kimi Code from your phone via Feishu / Telegram / WeChat — write code, manage agents, automate everything.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/xvirobotics/metabot/ci.yml?branch=main&style=flat-square)](https://github.com/xvirobotics/metabot/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
@@ -8,7 +8,7 @@
 
 [中文](README.md) | English | [Docs](https://xvirobotics.com/metabot/)
 
-> Setting up a daily 9 AM scheduled task in Feishu — auto-search AI news, summarize Top 5, save to MetaMemory. Watch: Thinking → Running → Complete with real-time streaming.
+> **Claude Code** and **Kimi Code** — both first-class engines. Use either subscription natively, no API key required. Each bot picks its own engine.
 
 ![MetaBot Demo](resources/metabot-demo.gif)
 
@@ -16,14 +16,38 @@
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
 ```
 
-The installer walks you through everything: working directory → Claude auth → IM platform → auto-start with PM2. **5 minutes to get started.**
+The installer walks you through everything: working directory → **engine choice (Claude / Kimi)** → subscription login → IM platform → auto-start with PM2. **5 minutes to get started.**
+
+---
+
+## Dual Engine: Claude Code and Kimi Code, First-Class
+
+MetaBot isn't locked to one vendor — both top AI coding agents ship with native support, and **your subscription works directly**.
+
+| | **Claude Code** (Anthropic) | **Kimi Code** (Moonshot) |
+|---|---|---|
+| **Subscription login** | ✅ `claude login` OAuth — uses your Claude Code subscription | ✅ `kimi login` — uses your Kimi subscription |
+| **API key fallback** | ✅ `ANTHROPIC_API_KEY` or third-party Anthropic-compat endpoints | ✅ Moonshot API key |
+| **Context window** | 200k (1M optional on Opus/Sonnet) | 256k (kimi-for-coding) |
+| **Tools** | Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP | Same (Kimi CLI builtin + `.claude/skills/` auto-discovery) |
+| **Autonomous mode** | `bypassPermissions` | `yoloMode` (equivalent) |
+| **Subagents** | `.claude/agents/*.md` auto-loaded | Builtin `default` / `okabe` only |
+| **Workspace doc** | `CLAUDE.md` | `AGENTS.md` (installer creates the symlink) |
+
+**One line of config** — each bot picks its engine:
+```json
+{ "name": "bulma", "engine": "kimi",   "kimi": { "thinking": true } }
+{ "name": "goku",  "engine": "claude" }
+```
+
+Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The Agent Bus lets them delegate to each other — the calling bot doesn't need to know which engine is on the other side.
 
 ---
 
 ## What You Can Build
 
-- **Code from your phone** — message Claude Code from Feishu on the subway, it fixes bugs, opens PRs, runs tests
-- **Multi-agent teams** — frontend bot, backend bot, infra bot, each in their own workspace, delegating via Agent Bus
+- **Code from your phone** — message Claude Code / Kimi Code from Feishu on the subway, it fixes bugs, opens PRs, runs tests
+- **Multi-agent teams** — frontend bot, backend bot, infra bot, each in their own workspace (even their own engine), delegating via Agent Bus
 - **Self-growing knowledge** — agents save what they learn to MetaMemory, the organization gets smarter daily
 - **Automated pipelines** — "Search AI news every morning at 9am, summarize top 5, save to archive" — one sentence
 - **Voice assistant (Jarvis mode)** — "Hey Siri, Jarvis" from AirPods, hands-free voice control of any agent
@@ -31,14 +55,16 @@ The installer walks you through everything: working directory → Claude auth �
 
 ## Why MetaBot
 
-| | MetaBot | Claude Code (terminal) | Dify / Coze |
+| | MetaBot | Claude Code / Kimi Code (terminal) | Dify / Coze |
 |---|---|---|---|
 | **Mobile access** | Feishu/TG/WeChat anywhere | Terminal only | Yes, but can't run code |
-| **Code capabilities** | Full Claude Code (Read/Write/Edit/Bash/MCP) | Full | None, API calls only |
+| **Engine choice** | Claude Code ✕ Kimi Code dual-engine | One at a time | None, API calls only |
+| **Subscription login** | Both native subscriptions work directly | One at a time | Subscriptions not supported |
+| **Code capabilities** | Full Agent SDK (Read/Write/Edit/Bash/MCP) | Full | None |
 | **Multi-agent** | Agent Bus + task delegation + runtime creation | Single session | Yes, but closed ecosystem |
 | **Shared memory** | MetaMemory with FTS + auto-sync to Wiki | None | None |
 | **Scheduling** | Cron jobs, persisted across restarts | None | Yes |
-| **Autonomous** | bypassPermissions, fully automated | Requires human approval | Limited to workflows |
+| **Autonomous** | bypassPermissions / yoloMode, fully automated | Requires human approval | Limited to workflows |
 | **Open source** | MIT, fully controllable | CLI is open source | Closed-source SaaS |
 
 ## Multi-Platform Access
@@ -46,13 +72,16 @@ The installer walks you through everything: working directory → Claude auth �
 ![MetaBot Architecture](resources/metabot.png)
 
 ```
-Feishu/TG/WeChat → IM Bridge → Claude Code Agent SDK → Streaming card updates
+Feishu/TG/WeChat → IM Bridge → Engine Router ──┬─→ Claude Code Agent SDK
+                                                └─→ Kimi Agent SDK (@moonshot-ai/kimi-agent-sdk)
                                     ↕
                          MetaMemory (shared knowledge)
-                         MetaSkill (agent factory)
+                         MetaSkill (agent factory, emits CLAUDE.md + AGENTS.md)
                          Scheduler (cron tasks)
-                         Agent Bus (cross-bot comms)
+                         Agent Bus (cross-bot comms, engine-agnostic)
 ```
+
+The engine layer is abstracted — Kimi's event stream is translated into Claude-shaped `SDKMessage` objects, so streaming cards, tool-call tracking, MetaMemory/Scheduler/Agent Bus behave identically regardless of engine.
 
 | Client | Use Case | Key Features |
 |--------|----------|-------------|
@@ -89,7 +118,7 @@ Full-featured browser-based chat interface. Access at `https://your-server/web/`
 
 | Component | Description |
 |-----------|-------------|
-| **Claude Code Kernel** | Every bot is a full Claude Code instance — Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP, `bypassPermissions` for autonomous operation |
+| **Dual Engine Kernel** | Each bot independently chooses Claude Code or Kimi Code — full tool stack (Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP) in autonomous mode |
 | **MetaSkill** | Agent factory. `/metaskill` generates a complete `.claude/` agent team (orchestrator + specialists + reviewer) |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search, Web UI, auto-syncs to Feishu Wiki |
 | **IM Bridge** | Chat with any agent from Feishu, Telegram, or WeChat (including mobile). Streaming cards + tool call tracking |

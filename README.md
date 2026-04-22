@@ -1,6 +1,6 @@
 # MetaBot
 
-**在飞书 / Telegram / 微信上用手机控制 Claude Code — 写代码、管 Agent、自动化一切。**
+**在飞书 / Telegram / 微信上用手机控制 Claude Code 或 Kimi Code — 写代码、管 Agent、自动化一切。**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/xvirobotics/metabot/ci.yml?branch=main&style=flat-square)](https://github.com/xvirobotics/metabot/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](https://opensource.org/licenses/MIT)
@@ -8,7 +8,7 @@
 
 中文 | [English](README_EN.md) | [文档站](https://xvirobotics.com/metabot/zh/)
 
-> 在飞书中设定一个每天早上9点自动搜索 AI 新闻并保存到 MetaMemory 的定时任务 — Thinking → Running → Complete，全程流式展示。
+> 支持 **Claude Code** 和 **Kimi Code** 双引擎 — 两家原生订阅都能直接用，无需 API Key。每个 Bot 可独立选引擎。
 
 ![MetaBot Demo](resources/metabot-demo.gif)
 
@@ -16,14 +16,38 @@
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
 ```
 
-安装器引导一切：工作目录 → Claude 认证 → IM 平台 → PM2 自动启动。**5 分钟上手。**
+安装器引导一切：工作目录 → **引擎选择（Claude / Kimi）** → 订阅登录 → IM 平台 → PM2 自动启动。**5 分钟上手。**
+
+---
+
+## 双引擎：Claude Code 与 Kimi Code 并列一等支持
+
+MetaBot 不是只绑定一家 — 两大顶级 AI 编码 Agent 都内置原生支持，**你的订阅直接用**。
+
+| | **Claude Code**（Anthropic） | **Kimi Code**（Moonshot） |
+|---|---|---|
+| **订阅直连** | ✅ `claude login` OAuth，走 Claude Code 订阅 | ✅ `kimi login`，走 Kimi 订阅 |
+| **API Key 兜底** | ✅ `ANTHROPIC_API_KEY` / 第三方 Anthropic 兼容端 | ✅ Moonshot API Key |
+| **上下文窗口** | 200k（Opus/Sonnet 可选 1M） | 256k（kimi-for-coding） |
+| **工具能力** | Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP | 同上（Kimi CLI 原生 + `.claude/skills/` 自动发现） |
+| **自主运行模式** | `bypassPermissions` | `yoloMode`（等价） |
+| **子 Agent** | `.claude/agents/*.md` 自动加载 | 仅内置 `default` / `okabe` |
+| **工作区说明** | `CLAUDE.md` | `AGENTS.md`（安装器自动建软链） |
+
+**配置只需一行** — 每个 Bot 独立选引擎：
+```json
+{ "name": "bulma", "engine": "kimi",   "kimi": { "thinking": true } }
+{ "name": "goku",  "engine": "claude" }
+```
+
+前端 Bot 用 Claude、后端 Bot 用 Kimi？完全可以。Agent 总线让它们互相委派任务，对面跑什么引擎对调用方透明。
 
 ---
 
 ## 你能用它做什么
 
-- **手机写代码** — 地铁上用飞书给 Claude Code 发消息，它帮你改 bug、提 PR、跑测试
-- **多 Agent 协作** — 前端 Bot、后端 Bot、运维 Bot，各自独立工作空间，通过 Agent 总线互相委派任务
+- **手机写代码** — 地铁上用飞书给 Claude Code / Kimi Code 发消息，它帮你改 bug、提 PR、跑测试
+- **多 Agent 协作** — 前端 Bot、后端 Bot、运维 Bot，各自独立工作空间（甚至独立引擎），通过 Agent 总线互相委派任务
 - **知识自生长** — Agent 把学到的东西存入 MetaMemory，组织每天都在变聪明，无需重新训练
 - **自动化流水线** — "每天早上9点搜 AI 新闻，总结 Top 5，存档" — 一句话搞定
 - **语音助手（Jarvis 模式）** — AirPods 说 "Hey Siri, Jarvis"，免手免屏语音控制任意 Agent
@@ -31,14 +55,16 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 
 ## 为什么选 MetaBot
 
-| | MetaBot | 直接用 Claude Code | Dify / Coze |
+| | MetaBot | 直接用 Claude Code / Kimi Code | Dify / Coze |
 |---|---|---|---|
 | **手机控制** | 飞书/TG/微信随时随地 | 只能在终端 | 有，但不能跑代码 |
-| **代码能力** | 完整 Claude Code（Read/Write/Edit/Bash/MCP） | 完整 | 无，只能调 API |
+| **引擎选择** | Claude Code ✕ Kimi Code 双引擎 | 各自单一 | 无，只能调 API |
+| **订阅直连** | 两家原生订阅都直接用 | 一次只能登一个 | 不支持订阅 |
+| **代码能力** | 完整 Agent SDK（Read/Write/Edit/Bash/MCP） | 完整 | 无 |
 | **多 Agent** | Agent 总线 + 任务委派 + 运行时创建 | 单会话 | 有，但封闭生态 |
 | **共享记忆** | MetaMemory 全文搜索 + 自动同步飞书知识库 | 无 | 无 |
 | **定时任务** | Cron 调度，跨重启持久化 | 无 | 有 |
-| **自主运行** | bypassPermissions，全自动 | 需要人工确认 | 受限于 workflow |
+| **自主运行** | bypassPermissions / yoloMode，全自动 | 需要人工确认 | 受限于 workflow |
 | **开源** | MIT，完全可控 | CLI 开源 | 闭源 SaaS |
 
 ## 工作原理
@@ -46,13 +72,16 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 ![MetaBot 架构图](resources/metabot.png)
 
 ```
-飞书/TG/微信 → IM Bridge → Claude Code Agent SDK → 流式卡片更新
+飞书/TG/微信 → IM Bridge → Engine Router ──┬─→ Claude Code Agent SDK
+                                            └─→ Kimi Agent SDK（@moonshot-ai/kimi-agent-sdk）
                               ↕
                     MetaMemory（共享知识库）
-                    MetaSkill（Agent 工厂）
+                    MetaSkill（Agent 工厂，产出 CLAUDE.md + AGENTS.md）
                     定时调度器（Cron 任务）
-                    Agent 总线（跨 Bot 通信）
+                    Agent 总线（跨 Bot 通信，引擎无关）
 ```
+
+引擎层已抽象 —— Kimi 事件流被翻译成 Claude 形状的 `SDKMessage`，流式卡片、工具调用追踪、MetaMemory/调度/Agent 总线在两种引擎下表现一致。
 
 ## 多端接入
 
@@ -93,7 +122,7 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 
 | 组件 | 一句话说明 |
 |------|-----------|
-| **Claude Code 内核** | 每个 Bot 都是完整的 Claude Code — Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP，`bypassPermissions` 全自动 |
+| **双引擎内核** | 每个 Bot 独立选 Claude Code 或 Kimi Code — 完整工具链（Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP），自主模式运行 |
 | **MetaSkill** | Agent 工厂。`/metaskill` 一键生成 `.claude/` Agent 团队（orchestrator + 专家 + reviewer） |
 | **MetaMemory** | 内嵌 SQLite 知识库，全文搜索，Web UI，变更自动同步到飞书知识库 |
 | **IM Bridge** | 飞书、Telegram、微信（含手机端）对话任意 Agent，流式卡片 + 工具调用追踪 |
