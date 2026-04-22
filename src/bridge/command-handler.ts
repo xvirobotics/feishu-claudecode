@@ -82,9 +82,14 @@ export class CommandHandler {
       case '/status': {
         const session = this.sessionManager.getSession(chatId);
         const isRunning = !!this.getRunningTask(chatId);
-        const activeModel = session.model || this.config.claude.model || '_default_';
+        const engine = this.config.engine ?? 'claude';
+        const defaultModel = engine === 'kimi'
+          ? (this.config.kimi?.model || '_default_')
+          : (this.config.claude.model || '_default_');
+        const activeModel = session.model || defaultModel;
         await this.sender.sendTextNotice(chatId, '📊 Status', [
           `**User:** \`${userId}\``,
+          `**Engine:** \`${engine}\``,
           `**Working Directory:** \`${session.workingDirectory}\``,
           `**Session:** ${session.sessionId ? `\`${session.sessionId.slice(0, 8)}...\`` : '_None_'}`,
           `**Model:** \`${activeModel}\`${session.model ? ' (session override)' : ''}`,

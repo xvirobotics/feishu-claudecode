@@ -21,6 +21,18 @@
       "defaultWorkingDirectory": "/home/user/project-beta",
       "maxTurns": 30,
       "maxBudgetUsd": 0.5
+    },
+    {
+      "name": "project-gamma",
+      "description": "Kimi-powered agent (uses your Moonshot subscription)",
+      "engine": "kimi",
+      "feishuAppId": "cli_zzz",
+      "feishuAppSecret": "secret3",
+      "defaultWorkingDirectory": "/home/user/project-gamma",
+      "kimi": {
+        "model": "kimi-latest",
+        "thinking": true
+      }
     }
   ],
   "telegramBots": [

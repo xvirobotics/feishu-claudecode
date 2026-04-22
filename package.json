@@ -21,6 +21,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.2.112",
     "@anthropic-ai/sdk": "^0.78.0",
     "@larksuiteoapi/node-sdk": "^1.58.0",
+    "@moonshot-ai/kimi-agent-sdk": "^0.1.8",
     "@types/ws": "^8.18.0",
     "@volcengine/openapi": "^1.36.0",
     "better-sqlite3": "^12.6.2",
