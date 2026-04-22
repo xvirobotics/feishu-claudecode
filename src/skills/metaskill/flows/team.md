@@ -38,6 +38,25 @@ cd <project-folder>
 git init
 ```
 
+### Engine Compatibility (Claude ↔ Kimi)
+
+MetaBot supports two engines: **Claude Code** and **Kimi**. The scaffolded project should be usable by either engine. Key differences you must account for:
+
+| Feature | Claude | Kimi |
+|---------|--------|------|
+| Orchestration doc | `CLAUDE.md` | `AGENTS.md` (symlink `CLAUDE.md` → `AGENTS.md`) |
+| `.claude/skills/` | ✅ auto-discovered | ✅ auto-discovered (brand fallback) |
+| `.claude/agents/*.md` | ✅ auto-discovered | ❌ not loaded (Kimi has only builtin `default`/`okabe`) |
+| MCP config | `.mcp.json` (project-level) | `~/.kimi/mcp.json` (user-level) |
+
+**What to do at the end of Phase 2 (before verification):**
+```bash
+# Create AGENTS.md symlink so Kimi reads the same CLAUDE.md
+[ -f CLAUDE.md ] && [ ! -e AGENTS.md ] && ln -s CLAUDE.md AGENTS.md
+```
+
+Note in the final summary that subagents under `.claude/agents/` only take effect under the Claude engine. Users who run this team on a Kimi-backed bot should expect the orchestrator (CLAUDE.md/AGENTS.md) to do the work inline rather than delegating.
+
 All subsequent paths in Phase 2-4 are **relative to this project folder**. You MUST `cd` into the project folder before creating any files.
 
 ---
@@ -444,6 +463,7 @@ cat .mcp.json | python3 -m json.tool > /dev/null && echo "Valid JSON" || echo "I
 
 ### Files Created
 - CLAUDE.md (orchestration hub — you are the tech lead)
+- AGENTS.md → CLAUDE.md (symlink, so Kimi engine reads the same doc)
 - .mcp.json (MCP server config — auto-discovered by Claude Code)
 - .claude/agents/[specialist-1].md
 - .claude/agents/[specialist-2].md
