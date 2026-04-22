@@ -22,6 +22,9 @@ jobs:
         with:
           python-version: '3.x'
 
-      - run: pip install mkdocs-material mkdocs-static-i18n
+      # Pin mkdocs-material to the 9.x line — 2.0 removed the plugin system
+      # and has no migration path. mkdocs-static-i18n is pinned against
+      # its latest 1.x which requires the default locale to own unsuffixed files.
+      - run: pip install 'mkdocs-material>=9,<10' 'mkdocs-static-i18n>=1.3,<2'
 
       - run: mkdocs gh-deploy --force
