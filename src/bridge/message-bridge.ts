@@ -1391,18 +1391,11 @@ export class MessageBridge {
       state.sessionCostUsd = session.cumulativeCostUsd;
     }
     for (let attempt = 0; attempt < FINAL_CARD_RETRIES; attempt++) {
-      try {
-        await this.sender.updateCard(messageId, state);
-        if (attempt > 0) {
-          await new Promise((r) => setTimeout(r, FINAL_CARD_BASE_DELAY_MS));
-          await this.sender.updateCard(messageId, state);
-        }
-        return;
-      } catch {
-        const delay = FINAL_CARD_BASE_DELAY_MS * Math.pow(2, attempt);
-        this.logger.warn({ attempt, delay, messageId }, 'Final card update failed, retrying');
-        await new Promise((r) => setTimeout(r, delay));
-      }
+      const ok = await this.sender.updateCard(messageId, state);
+      if (ok) return;
+      const delay = FINAL_CARD_BASE_DELAY_MS * Math.pow(2, attempt);
+      this.logger.warn({ attempt, delay, messageId }, 'Final card update failed, retrying');
+      await new Promise((r) => setTimeout(r, delay));
     }
     if (chatId) {
       this.logger.error({ messageId, chatId }, 'All final card retries failed, sending text fallback');

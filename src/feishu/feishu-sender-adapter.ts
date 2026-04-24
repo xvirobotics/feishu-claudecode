@@ -16,7 +16,7 @@ export class FeishuSenderAdapter implements IMessageSender {
     return this.sender.sendCard(chatId, buildCard(state));
   }
 
-  async updateCard(messageId: string, state: CardState): Promise<void> {
+  async updateCard(messageId: string, state: CardState): Promise<boolean> {
     return this.sender.updateCard(messageId, buildCard(state));
   }
 
