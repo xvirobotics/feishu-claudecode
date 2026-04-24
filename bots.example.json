@@ -33,6 +33,19 @@
         "model": "kimi-latest",
         "thinking": true
       }
+    },
+    {
+      "name": "project-delta",
+      "description": "Codex-powered agent (uses Codex CLI)",
+      "engine": "codex",
+      "feishuAppId": "cli_codex",
+      "feishuAppSecret": "secret4",
+      "defaultWorkingDirectory": "/home/user/project-delta",
+      "codex": {
+        "model": "gpt-5.4-codex",
+        "approvalPolicy": "never",
+        "sandbox": "workspace-write"
+      }
     }
   ],
   "telegramBots": [

@@ -2,7 +2,8 @@ import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
-import { SessionManager } from '../engines/index.js';
+import { resolveEngineName, SessionManager } from '../engines/index.js';
+import type { EngineName } from '../engines/index.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
@@ -44,13 +45,13 @@ export class CommandHandler {
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
           '`/model` - Show current engine/model; `/model list` - Available options',
-          '`/model claude` or `/model kimi` - Switch engine (resets session)',
+          '`/model claude`, `/model kimi`, or `/model codex` - Switch engine (resets session)',
           '`/model <name>` - Set model for current engine',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
           '',
           '**Usage:**',
-          'Send any text message to start a conversation with Claude Code.',
+          'Send any text message to start a conversation with the configured agent engine.',
           'Each chat has an independent session with a fixed working directory.',
           '',
           '**Memory Commands:**',
@@ -84,11 +85,9 @@ export class CommandHandler {
       case '/status': {
         const session = this.sessionManager.getSession(chatId);
         const isRunning = !!this.getRunningTask(chatId);
-        const botEngine = this.config.engine ?? 'claude';
+        const botEngine = resolveEngineName(this.config);
         const activeEngine = session.engine ?? botEngine;
-        const defaultModel = activeEngine === 'kimi'
-          ? (this.config.kimi?.model || '_default_')
-          : (this.config.claude.model || '_default_');
+        const defaultModel = this.defaultModelForEngine(activeEngine) || '_default_';
         const activeModel = session.model || defaultModel;
         await this.sender.sendTextNotice(chatId, '📊 Status', [
           `**User:** \`${userId}\``,
@@ -238,18 +237,14 @@ export class CommandHandler {
 
   private async handleModelCommand(chatId: string, args: string): Promise<void> {
     const session = this.sessionManager.getSession(chatId);
-    const botEngine = this.config.engine ?? 'claude';
+    const botEngine = resolveEngineName(this.config);
     const activeEngine = session.engine ?? botEngine;
-    const botDefault =
-      activeEngine === 'kimi' ? this.config.kimi?.model : this.config.claude.model;
+    const botDefault = this.defaultModelForEngine(activeEngine);
 
     // No args — show current model
     if (!args) {
       const active = session.model || botDefault || '_default_';
-      const exampleModels =
-        activeEngine === 'kimi'
-          ? '`kimi-for-coding`, `kimi-k2`'
-          : '`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`';
+      const exampleModels = this.exampleModelsForEngine(activeEngine);
       const lines = [
         `**Engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
         `**Active:** \`${active}\`${session.model ? ' (session override)' : ''}`,
@@ -257,7 +252,7 @@ export class CommandHandler {
         '',
         'Usage:',
         '- `/model list` — Show available engines + models',
-        '- `/model claude` or `/model kimi` — Switch engine (resets session)',
+        '- `/model claude`, `/model kimi`, or `/model codex` — Switch engine (resets session)',
         `- \`/model <name>\` — Set session model (e.g. ${exampleModels})`,
         '- `/model reset` — Clear overrides, use bot defaults',
       ];
@@ -267,8 +262,8 @@ export class CommandHandler {
 
     const normalized = args.toLowerCase();
 
-    // Engine switch — /model claude or /model kimi
-    if (normalized === 'claude' || normalized === 'kimi') {
+    // Engine switch — /model claude, /model kimi, or /model codex
+    if (isEngineName(normalized)) {
       if (activeEngine === normalized) {
         await this.sender.sendTextNotice(
           chatId,
@@ -286,9 +281,7 @@ export class CommandHandler {
           `Next message will run on the **${normalized}** engine.`,
           '',
           '_Session ID and model override cleared — a fresh conversation starts on the next turn._',
-          normalized === 'kimi'
-            ? '_Make sure `kimi login` has been completed on this host._'
-            : '_Make sure Claude Code is authenticated (`claude login`)._',
+          this.authTipForEngine(normalized),
         ].join('\n'),
         'green',
       );
@@ -311,12 +304,21 @@ export class CommandHandler {
         { id: 'kimi-for-coding', label: 'Kimi for Coding', note: 'Subscription default · 256k context · thinking' },
         { id: 'kimi-k2', label: 'Kimi K2', note: 'Legacy coding model' },
       ];
-      const models = activeEngine === 'kimi' ? kimiModels : claudeModels;
-      const header = activeEngine === 'kimi' ? '**Available Kimi models:**' : '**Available Claude models:**';
+      const codexModels = [
+        { id: 'gpt-5.4-codex', label: 'GPT-5.4 Codex', note: 'Recommended Codex coding model' },
+        { id: 'gpt-5.4', label: 'GPT-5.4', note: 'General flagship model' },
+        { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', note: 'Legacy Codex coding model' },
+      ];
+      const models = activeEngine === 'kimi' ? kimiModels : activeEngine === 'codex' ? codexModels : claudeModels;
+      const header = activeEngine === 'kimi'
+        ? '**Available Kimi models:**'
+        : activeEngine === 'codex'
+          ? '**Common Codex models:**'
+          : '**Available Claude models:**';
       const lines = [
         `**Current engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
         '',
-        '**Engines:** `/model claude` or `/model kimi` to switch.',
+        '**Engines:** `/model claude`, `/model kimi`, or `/model codex` to switch.',
         '',
         header,
         '',
@@ -328,6 +330,8 @@ export class CommandHandler {
       lines.push('');
       if (activeEngine === 'claude') {
         lines.push('_Tip: append `[1m]` to a model name to enable the 1M context window. Only Opus 4.7/4.6 and Sonnet 4.6 support it._');
+      } else if (activeEngine === 'codex') {
+        lines.push('_Tip: leave unset to use the Codex CLI default from `~/.codex/config.toml`._');
       } else {
         lines.push('_Tip: leave unset to use the kimi-cli default (recommended for subscription users — the server picks the best available)._');
       }
@@ -360,4 +364,41 @@ export class CommandHandler {
       'green',
     );
   }
+
+  private defaultModelForEngine(engine: EngineName): string | undefined {
+    switch (engine) {
+      case 'claude':
+        return this.config.claude.model;
+      case 'kimi':
+        return this.config.kimi?.model;
+      case 'codex':
+        return this.config.codex?.model || this.config.codex?.displayModel;
+    }
+  }
+
+  private exampleModelsForEngine(engine: EngineName): string {
+    switch (engine) {
+      case 'claude':
+        return '`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`';
+      case 'kimi':
+        return '`kimi-for-coding`, `kimi-k2`';
+      case 'codex':
+        return '`gpt-5.4-codex`, `gpt-5.4`, `gpt-5.2-codex`';
+    }
+  }
+
+  private authTipForEngine(engine: EngineName): string {
+    switch (engine) {
+      case 'claude':
+        return '_Make sure Claude Code is authenticated (`claude login`)._';
+      case 'kimi':
+        return '_Make sure `kimi login` has been completed on this host._';
+      case 'codex':
+        return '_Make sure Codex CLI is authenticated (`codex login`) or configured with an API key._';
+    }
+  }
+}
+
+function isEngineName(value: string): value is EngineName {
+  return value === 'claude' || value === 'kimi' || value === 'codex';
 }
