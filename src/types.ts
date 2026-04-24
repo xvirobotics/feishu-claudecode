@@ -18,6 +18,16 @@ export interface PendingQuestion {
   }>;
 }
 
+export type BackgroundTaskStatus = 'running' | 'completed' | 'failed' | 'stopped';
+
+export interface BackgroundEvent {
+  taskId: string;
+  description: string;
+  status: BackgroundTaskStatus;
+  /** Latest stdout event line from the task, if any. */
+  lastEvent?: string;
+}
+
 export interface CardState {
   status: CardStatus;
   userPrompt: string;
@@ -35,6 +45,8 @@ export interface CardState {
   contextWindow?: number;
   /** Cumulative session cost (USD), accumulated across queries until /reset */
   sessionCostUsd?: number;
+  /** Background tasks (e.g. Monitor) the agent has spawned during this turn. */
+  backgroundEvents?: BackgroundEvent[];
 }
 
 export interface IncomingMessage {

@@ -117,6 +117,40 @@ describe('buildCard', () => {
     const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('truncated'));
     expect(md).toBeDefined();
   });
+
+  it('renders a background task section with status icon + last event', () => {
+    const state: CardState = {
+      status: 'running',
+      userPrompt: 'watch ci',
+      responseText: 'watching…',
+      toolCalls: [],
+      backgroundEvents: [
+        { taskId: 'bheol4172', description: 'Watching CI for PR #215', status: 'running', lastEvent: 'check (20) running' },
+        { taskId: 'bmkr16j6f', description: 'Watching deploy', status: 'completed', lastEvent: 'CI done: success' },
+      ],
+    };
+    const json = JSON.parse(buildCard(state));
+    const bg = json.elements.find((e: any) => e.tag === 'markdown' && /Background/.test(e.content));
+    expect(bg).toBeDefined();
+    expect(bg.content).toContain('⏳');
+    expect(bg.content).toContain('✅');
+    expect(bg.content).toContain('Watching CI for PR #215');
+    expect(bg.content).toContain('check (20) running');
+    expect(bg.content).toContain('CI done: success');
+    expect(bg.content).toContain('bheol4'); // short task id
+  });
+
+  it('omits background section when no events', () => {
+    const state: CardState = {
+      status: 'running',
+      userPrompt: 'x',
+      responseText: 'y',
+      toolCalls: [],
+    };
+    const json = JSON.parse(buildCard(state));
+    const bg = json.elements.find((e: any) => e.tag === 'markdown' && /Background/.test(e.content));
+    expect(bg).toBeUndefined();
+  });
 });
 
 describe('buildHelpCard', () => {

@@ -1,5 +1,11 @@
 import type { SDKMessage } from './executor.js';
-import type { CardState, ToolCall, PendingQuestion } from '../../feishu/card-builder.js';
+import type {
+  BackgroundEvent,
+  BackgroundTaskStatus,
+  CardState,
+  ToolCall,
+  PendingQuestion,
+} from '../../feishu/card-builder.js';
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.tiff']);
 
@@ -33,6 +39,8 @@ export class StreamProcessor {
   // Track per-API-call usage from stream events for accurate context window display
   private _lastInputTokens: number | undefined;
   private _lastOutputTokens: number | undefined;
+  // Live background tasks (Monitor, etc.) — task_id → latest rollup.
+  private _backgroundEvents: Map<string, BackgroundEvent> = new Map();
 
   constructor(private userPrompt: string) {}
 
@@ -44,7 +52,10 @@ export class StreamProcessor {
 
     switch (message.type) {
       case 'system':
-        // Init message, session captured above
+        // SDK emits task_started / task_progress / task_notification / task_updated
+        // as type='system' with a specific subtype. Surface them so Feishu can
+        // show background task (e.g. Monitor) progress mid-turn.
+        this.processSystemMessage(message);
         break;
 
       case 'assistant':
@@ -59,8 +70,11 @@ export class StreamProcessor {
         break;
 
       case 'task_notification':
+        // Codex translator synthesizes this shape for top-level error events.
+        this.recordCodexTaskNotification(message);
+        break;
+
       case 'tool_use_summary':
-        // SDK 0.2 message types — no action needed for card display
         break;
     }
 
@@ -78,7 +92,77 @@ export class StreamProcessor {
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestions[0] || undefined,
+      backgroundEvents: this._backgroundEvents.size > 0
+        ? [...this._backgroundEvents.values()]
+        : undefined,
     };
+  }
+
+  private processSystemMessage(message: SDKMessage): void {
+    const subtype = (message as { subtype?: string }).subtype;
+    if (!subtype) return;
+    switch (subtype) {
+      case 'task_started':
+      case 'task_progress':
+      case 'task_notification':
+      case 'task_updated':
+        this.recordTaskEvent(message, subtype);
+        break;
+      default:
+        break;
+    }
+  }
+
+  private recordTaskEvent(message: SDKMessage, subtype: string): void {
+    const m = message as Record<string, unknown>;
+    const taskId = typeof m.task_id === 'string' ? m.task_id : undefined;
+    if (!taskId) return;
+
+    // Ambient/housekeeping tasks (skip_transcript=true) stay hidden from the card.
+    if (m.skip_transcript === true) return;
+
+    const prior = this._backgroundEvents.get(taskId);
+    const patch = (m.patch as Record<string, unknown> | undefined) ?? undefined;
+    const description = typeof m.description === 'string'
+      ? m.description
+      : (typeof patch?.description === 'string' ? patch.description as string : prior?.description);
+
+    let status: BackgroundTaskStatus = prior?.status ?? 'running';
+    if (subtype === 'task_notification') {
+      const s = typeof m.status === 'string' ? m.status : undefined;
+      if (s === 'completed' || s === 'failed' || s === 'stopped') status = s;
+    } else if (subtype === 'task_updated') {
+      const s = typeof patch?.status === 'string' ? patch.status as string : undefined;
+      if (s === 'completed') status = 'completed';
+      else if (s === 'failed' || s === 'killed') status = 'failed';
+      else if (s === 'running') status = 'running';
+    }
+
+    // SDKTaskNotificationMessage.summary carries the last-line event text for Monitor
+    // and the final message for one-shot background tasks. SDKTaskProgressMessage
+    // also exposes an optional summary for in-flight updates.
+    const summary = typeof m.summary === 'string' ? m.summary : undefined;
+    const lastEvent = summary ?? prior?.lastEvent;
+
+    this._backgroundEvents.set(taskId, {
+      taskId,
+      description: description ?? prior?.description ?? 'background task',
+      status,
+      lastEvent,
+    });
+  }
+
+  private recordCodexTaskNotification(message: SDKMessage): void {
+    const m = message as Record<string, unknown>;
+    const result = typeof m.result === 'string' ? m.result : undefined;
+    if (!result) return;
+    const taskId = typeof m.session_id === 'string' ? m.session_id : 'codex';
+    this._backgroundEvents.set(taskId, {
+      taskId,
+      description: 'Codex notification',
+      status: 'running',
+      lastEvent: result,
+    });
   }
 
   private processAssistantMessage(message: SDKMessage): void {
@@ -204,6 +288,9 @@ export class StreamProcessor {
       model: this._model,
       totalTokens: this._totalTokens,
       contextWindow: this._contextWindow,
+      backgroundEvents: this._backgroundEvents.size > 0
+        ? [...this._backgroundEvents.values()]
+        : undefined,
     };
   }
 
@@ -298,6 +385,9 @@ export class StreamProcessor {
       costUsd: this.costUsd,
       durationMs: this.durationMs,
       pendingQuestion: this._pendingQuestions[0] || undefined,
+      backgroundEvents: this._backgroundEvents.size > 0
+        ? [...this._backgroundEvents.values()]
+        : undefined,
     };
   }
 
