@@ -43,6 +43,8 @@ export interface BotInfo {
   name: string;
   description?: string;
   platform: string;
+  engine?: 'claude' | 'kimi' | 'codex';
+  model?: string;
   workingDirectory: string;
 }
 

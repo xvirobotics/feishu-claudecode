@@ -31,6 +31,8 @@ export interface BotStatus {
   specialties?: string[];
   icon?: string;
   platform: string;
+  engine?: 'claude' | 'kimi' | 'codex';
+  model?: string;
   workingDirectory: string;
   status: 'idle' | 'busy' | 'error';
   currentTask?: {

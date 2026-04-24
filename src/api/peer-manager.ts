@@ -114,6 +114,8 @@ export class PeerManager {
           name: string;
           description?: string;
           platform: string;
+          engine?: BotInfo['engine'];
+          model?: string;
           workingDirectory: string;
           peerUrl?: string;
         }>;
@@ -126,6 +128,8 @@ export class PeerManager {
           name: b.name,
           ...(b.description ? { description: b.description } : {}),
           platform: b.platform,
+          engine: b.engine ?? 'claude',
+          ...(b.model ? { model: b.model } : {}),
           workingDirectory: b.workingDirectory,
           peerUrl: config.url,
           peerName: config.name,

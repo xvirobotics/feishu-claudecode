@@ -1,5 +1,6 @@
 import type * as lark from '@larksuiteoapi/node-sdk';
 import type { BotConfigBase } from '../config.js';
+import { resolveEngineName, type EngineName } from '../engines/index.js';
 import type { MessageBridge } from '../bridge/message-bridge.js';
 import type { IMessageSender } from '../bridge/message-sender.interface.js';
 
@@ -20,6 +21,8 @@ export interface BotInfo {
   specialties?: string[];
   icon?: string;
   platform: string;
+  engine: EngineName;
+  model?: string;
   workingDirectory: string;
   ttsVoice?: string;
   /** Set when the bot comes from a peer instance. */
@@ -87,8 +90,21 @@ export class BotRegistry {
       ...(b.config.specialties?.length ? { specialties: b.config.specialties } : {}),
       ...(b.config.icon ? { icon: b.config.icon } : {}),
       platform: b.platform,
+      engine: resolveEngineName(b.config),
+      ...(defaultModelForEngine(b.config) ? { model: defaultModelForEngine(b.config) } : {}),
       workingDirectory: b.config.claude.defaultWorkingDirectory,
       ...(b.config.ttsVoice ? { ttsVoice: b.config.ttsVoice } : {}),
     }));
+  }
+}
+
+function defaultModelForEngine(config: BotConfigBase): string | undefined {
+  switch (resolveEngineName(config)) {
+    case 'claude':
+      return config.claude.model;
+    case 'kimi':
+      return config.kimi?.model;
+    case 'codex':
+      return config.codex?.model || config.codex?.displayModel;
   }
 }

@@ -3,6 +3,7 @@ import type * as http from 'node:http';
 import { addBot, removeBot, updateBot, getBotEntry } from '../bots-config-writer.js';
 import { installSkillsToWorkDir } from '../skills-installer.js';
 import { webBotFromJson } from '../../config.js';
+import { resolveEngineName } from '../../engines/index.js';
 import { NullSender } from '../../web/null-sender.js';
 import { MessageBridge } from '../../bridge/message-bridge.js';
 import { jsonResponse, parseJsonBody } from './helpers.js';
@@ -30,6 +31,8 @@ export async function handleBotRoutes(
     jsonResponse(res, 200, {
       name: bot.name, description: bot.config.description, specialties: bot.config.specialties,
       icon: bot.config.icon, platform: bot.platform,
+      engine: resolveEngineName(bot.config),
+      model: defaultModelForConfig(bot.config),
       workingDirectory: bot.config.claude.defaultWorkingDirectory,
       maxConcurrentTasks: bot.config.maxConcurrentTasks, budgetLimitDaily: bot.config.budgetLimitDaily,
       stats: botStats || { totalTasks: 0, completedTasks: 0, failedTasks: 0, totalCostUsd: 0 },
@@ -81,6 +84,9 @@ export async function handleBotRoutes(
       }
       entry = {
         name, ...(body.description ? { description: body.description } : {}),
+        ...(body.engine ? { engine: body.engine } : {}),
+        ...(body.codex ? { codex: body.codex } : {}),
+        ...(body.kimi ? { kimi: body.kimi } : {}),
         feishuAppId: appId, feishuAppSecret: appSecret, defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -95,6 +101,9 @@ export async function handleBotRoutes(
       }
       entry = {
         name, ...(body.description ? { description: body.description } : {}),
+        ...(body.engine ? { engine: body.engine } : {}),
+        ...(body.codex ? { codex: body.codex } : {}),
+        ...(body.kimi ? { kimi: body.kimi } : {}),
         telegramBotToken: token, defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -108,6 +117,9 @@ export async function handleBotRoutes(
       }
       entry = {
         name, ...(body.description ? { description: body.description } : {}),
+        ...(body.engine ? { engine: body.engine } : {}),
+        ...(body.codex ? { codex: body.codex } : {}),
+        ...(body.kimi ? { kimi: body.kimi } : {}),
         defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -238,4 +250,15 @@ export async function handleBotRoutes(
   }
 
   return false;
+}
+
+function defaultModelForConfig(config: import('../../config.js').BotConfigBase): string | undefined {
+  switch (resolveEngineName(config)) {
+    case 'claude':
+      return config.claude.model;
+    case 'kimi':
+      return config.kimi?.model;
+    case 'codex':
+      return config.codex?.model || config.codex?.displayModel;
+  }
 }

@@ -7,9 +7,10 @@ import type {
   SDKMessage,
   ApiContext,
 } from './claude/executor.js';
+import type { CodexExecutor } from './codex/executor.js';
 import type { StreamProcessor } from './claude/stream-processor.js';
 
-export type EngineName = 'claude' | 'kimi';
+export type EngineName = 'claude' | 'kimi' | 'codex';
 
 /**
  * An Engine is a programmable agent backend (Claude Code, Kimi Code, …).
@@ -43,6 +44,7 @@ export type StreamProcessorLike = StreamProcessor;
 
 export type {
   ClaudeExecutor,
+  CodexExecutor,
   ExecutionHandle,
   ExecutorOptions,
   SDKMessage,

@@ -2,7 +2,7 @@
 
 # 🤖 MetaBot
 
-### Control Claude Code or Kimi Code from your phone via Feishu / Telegram / WeChat
+### Control Claude Code, Kimi Code, or Codex CLI from your phone via Feishu / Telegram / WeChat
 
 *Write code · Manage agents · Automate everything*
 
@@ -43,7 +43,7 @@ The installer walks you through everything: working directory → **engine choic
 
 ---
 
-## Dual Engine: Claude Code and Kimi Code, First-Class
+## Multi-Engine: Claude Code, Kimi Code, and Codex CLI
 
 MetaBot isn't locked to one vendor — both top AI coding agents ship with native support, and **your subscription works directly**.
 
@@ -61,7 +61,10 @@ MetaBot isn't locked to one vendor — both top AI coding agents ship with nativ
 ```json
 { "name": "bulma", "engine": "kimi",   "kimi": { "thinking": true } }
 { "name": "goku",  "engine": "claude" }
+{ "name": "vegeta", "engine": "codex", "codex": { "model": "gpt-5.4-codex" } }
 ```
+
+Codex support uses the local `codex exec --json` CLI and resumes chat sessions with `codex exec resume`. Authenticate once with `codex login` (or configure your Codex API key/profile) before starting MetaBot.
 
 Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The Agent Bus lets them delegate to each other — the calling bot doesn't need to know which engine is on the other side.
 
@@ -368,7 +371,7 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `/reset` | Clear session |
 | `/stop` | Abort current task |
 | `/status` | Session info (includes current model) |
-| `/model` | Show current model; `/model list` — available models; `/model <name>` — switch; `/model reset` — restore default |
+| `/model` | Show current engine/model; `/model list` — available engines/models; `/model claude`, `/model kimi`, or `/model codex` — switch engine; `/model <name>` — set model; `/model reset` — restore default |
 | `/memory list` | Browse knowledge tree |
 | `/memory search <query>` | Search knowledge base |
 | `/sync` | Sync MetaMemory to Feishu Wiki |
