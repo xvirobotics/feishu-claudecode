@@ -75,4 +75,61 @@ describe('Codex JSONL translator', () => {
     expect(cardState.status).toBe('error');
     expect(cardState.errorMessage).toBe('network failed');
   });
+
+  it('captures session id from thread.started and leaves state empty otherwise', () => {
+    const state = createCodexTranslatorState();
+    expect(state.sessionId).toBeUndefined();
+
+    const messages = translateCodexJsonEvent({ type: 'thread.started', thread_id: 'sid-1' }, state);
+    expect(state.sessionId).toBe('sid-1');
+    expect(messages).toEqual([{ type: 'system', subtype: 'init', session_id: 'sid-1' }]);
+  });
+
+  it('ignores thread.started without a thread_id (defensive)', () => {
+    const state = createCodexTranslatorState();
+    const messages = translateCodexJsonEvent({ type: 'thread.started' } as CodexJsonEvent, state);
+    expect(messages).toEqual([]);
+    expect(state.sessionId).toBeUndefined();
+  });
+
+  it('returns [] for unknown / unhandled event types', () => {
+    const state = createCodexTranslatorState();
+    expect(translateCodexJsonEvent({ type: 'turn.started' }, state)).toEqual([]);
+    expect(translateCodexJsonEvent({ type: 'something.new' } as CodexJsonEvent, state)).toEqual([]);
+  });
+
+  it('emits a task_notification message for top-level Codex error events with a message', () => {
+    const state = createCodexTranslatorState();
+    state.sessionId = 'sid-err';
+    const messages = translateCodexJsonEvent({ type: 'error', message: 'ratelimited' }, state);
+    expect(messages).toEqual([
+      { type: 'task_notification', session_id: 'sid-err', result: 'ratelimited' },
+    ]);
+  });
+
+  it('drops error events that carry no message', () => {
+    const state = createCodexTranslatorState();
+    expect(translateCodexJsonEvent({ type: 'error' }, state)).toEqual([]);
+  });
+
+  it('tolerates item.completed agent_message with missing text', () => {
+    const state = createCodexTranslatorState();
+    const messages = translateCodexJsonEvent(
+      { type: 'item.completed', item: { id: 'x', type: 'agent_message' } } as CodexJsonEvent,
+      state,
+    );
+    expect(state.lastAgentText).toBe('');
+    expect(messages[0]).toMatchObject({ type: 'assistant' });
+  });
+
+  it('falls back to a generic failure message when turn.failed has no error detail', () => {
+    const state = createCodexTranslatorState();
+    const [msg] = translateCodexJsonEvent({ type: 'turn.failed' }, state);
+    expect(msg).toMatchObject({
+      type: 'result',
+      is_error: true,
+      subtype: 'error_during_execution',
+      errors: ['Codex execution failed'],
+    });
+  });
 });

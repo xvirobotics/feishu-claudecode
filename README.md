@@ -16,6 +16,7 @@
 <p>
   <a href="https://github.com/anthropics/claude-code"><img src="https://img.shields.io/badge/Engine-Claude_Code-D97757?style=for-the-badge&logo=anthropic&logoColor=white" alt="Claude Code"></a>
   <a href="https://platform.moonshot.ai"><img src="https://img.shields.io/badge/Engine-Kimi_Code-1A73E8?style=for-the-badge&logoColor=white" alt="Kimi Code"></a>
+  <a href="https://github.com/openai/codex"><img src="https://img.shields.io/badge/Engine-Codex_CLI-412991?style=for-the-badge&logo=openai&logoColor=white" alt="Codex CLI"></a>
   <img src="https://img.shields.io/badge/Subscription-Native-22C55E?style=for-the-badge&logo=key&logoColor=white" alt="Native Subscription">
   <img src="https://img.shields.io/badge/Node.js-20+-339933?style=for-the-badge&logo=node.js&logoColor=white" alt="Node.js">
 </p>
@@ -31,7 +32,7 @@
 
 </div>
 
-> 支持 **Claude Code** 和 **Kimi Code** 双引擎 — 两家原生订阅都能直接用，无需 API Key。每个 Bot 可独立选引擎。
+> 支持 **Claude Code**、**Kimi Code** 和 **Codex CLI** 三大引擎 — 订阅 / API Key 任你选，每个 Bot 可独立选引擎。
 
 ![MetaBot Demo](resources/metabot-demo.gif)
 
@@ -39,23 +40,23 @@
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
 ```
 
-安装器引导一切：工作目录 → **引擎选择（Claude / Kimi）** → 订阅登录 → IM 平台 → PM2 自动启动。**5 分钟上手。**
+安装器引导一切：工作目录 → **引擎选择（Claude / Kimi / Codex）** → 订阅登录 → IM 平台 → PM2 自动启动。**5 分钟上手。**
 
 ---
 
-## 双引擎：Claude Code 与 Kimi Code 并列一等支持
+## 三引擎：Claude Code ✕ Kimi Code ✕ Codex CLI 并列一等支持
 
-MetaBot 不是只绑定一家 — 两大顶级 AI 编码 Agent 都内置原生支持，**你的订阅直接用**。
+MetaBot 不是只绑定一家 — 三大顶级 AI 编码 Agent 都内置原生支持，**你的订阅直接用**。
 
-| | **Claude Code**（Anthropic） | **Kimi Code**（Moonshot） |
-|---|---|---|
-| **订阅直连** | ✅ `claude login` OAuth，走 Claude Code 订阅 | ✅ `kimi login`，走 Kimi 订阅 |
-| **API Key 兜底** | ✅ `ANTHROPIC_API_KEY` / 第三方 Anthropic 兼容端 | ✅ Moonshot API Key |
-| **上下文窗口** | 200k（Opus/Sonnet 可选 1M） | 256k（kimi-for-coding） |
-| **工具能力** | Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP | 同上（Kimi CLI 原生 + `.claude/skills/` 自动发现） |
-| **自主运行模式** | `bypassPermissions` | `yoloMode`（等价） |
-| **子 Agent** | `.claude/agents/*.md` 自动加载 | 仅内置 `default` / `okabe` |
-| **工作区说明** | `CLAUDE.md` | `AGENTS.md`（安装器自动建软链） |
+| | **Claude Code**（Anthropic） | **Kimi Code**（Moonshot） | **Codex CLI**（OpenAI） |
+|---|---|---|---|
+| **订阅直连** | ✅ `claude login` OAuth | ✅ `kimi login` | ✅ `codex login`，走 ChatGPT 订阅 |
+| **API Key 兜底** | ✅ `ANTHROPIC_API_KEY` / 第三方 Anthropic 兼容端 | ✅ Moonshot API Key | ✅ `OPENAI_API_KEY` / Codex profile |
+| **上下文窗口** | 200k（Opus/Sonnet 可选 1M） | 256k（kimi-for-coding） | 400k（gpt-5.x-codex） |
+| **工具能力** | Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP | 同上（Kimi CLI 原生 + `.claude/skills/` 自动发现） | Codex CLI 原生 sandbox + shell 工具链 |
+| **自主运行模式** | `bypassPermissions` | `yoloMode`（等价） | `--dangerously-bypass-approvals-and-sandbox` |
+| **子 Agent** | `.claude/agents/*.md` 自动加载 | 仅内置 `default` / `okabe` | 暂不支持子 Agent |
+| **工作区说明** | `CLAUDE.md` | `AGENTS.md`（安装器自动建软链） | `AGENTS.md`（Codex 官方约定） |
 
 **配置只需一行** — 每个 Bot 独立选引擎：
 ```json
@@ -72,7 +73,7 @@ Codex 支持通过本机 `codex exec --json` CLI 接入，并使用 `codex exec 
 
 ## 你能用它做什么
 
-- **手机写代码** — 地铁上用飞书给 Claude Code / Kimi Code 发消息，它帮你改 bug、提 PR、跑测试
+- **手机写代码** — 地铁上用飞书给 Claude Code / Kimi Code / Codex CLI 发消息，它帮你改 bug、提 PR、跑测试
 - **多 Agent 协作** — 前端 Bot、后端 Bot、运维 Bot，各自独立工作空间（甚至独立引擎），通过 Agent 总线互相委派任务
 - **知识自生长** — Agent 把学到的东西存入 MetaMemory，组织每天都在变聪明，无需重新训练
 - **自动化流水线** — "每天早上9点搜 AI 新闻，总结 Top 5，存档" — 一句话搞定
@@ -81,11 +82,11 @@ Codex 支持通过本机 `codex exec --json` CLI 接入，并使用 `codex exec 
 
 ## 为什么选 MetaBot
 
-| | MetaBot | 直接用 Claude Code / Kimi Code | Dify / Coze |
+| | MetaBot | 直接用 Claude / Kimi / Codex CLI | Dify / Coze |
 |---|---|---|---|
 | **手机控制** | 飞书/TG/微信随时随地 | 只能在终端 | 有，但不能跑代码 |
-| **引擎选择** | Claude Code ✕ Kimi Code 双引擎 | 各自单一 | 无，只能调 API |
-| **订阅直连** | 两家原生订阅都直接用 | 一次只能登一个 | 不支持订阅 |
+| **引擎选择** | Claude ✕ Kimi ✕ Codex 三引擎 | 各自单一 | 无，只能调 API |
+| **订阅直连** | 三家原生订阅都直接用 | 一次只能登一个 | 不支持订阅 |
 | **代码能力** | 完整 Agent SDK（Read/Write/Edit/Bash/MCP） | 完整 | 无 |
 | **多 Agent** | Agent 总线 + 任务委派 + 运行时创建 | 单会话 | 有，但封闭生态 |
 | **共享记忆** | MetaMemory 全文搜索 + 自动同步飞书知识库 | 无 | 无 |
@@ -99,7 +100,8 @@ Codex 支持通过本机 `codex exec --json` CLI 接入，并使用 `codex exec 
 
 ```
 飞书/TG/微信 → IM Bridge → Engine Router ──┬─→ Claude Code Agent SDK
-                                            └─→ Kimi Agent SDK（@moonshot-ai/kimi-agent-sdk）
+                                            ├─→ Kimi Agent SDK（@moonshot-ai/kimi-agent-sdk）
+                                            └─→ Codex CLI（codex exec --json 子进程）
                               ↕
                     MetaMemory（共享知识库）
                     MetaSkill（Agent 工厂，产出 CLAUDE.md + AGENTS.md）
@@ -107,7 +109,7 @@ Codex 支持通过本机 `codex exec --json` CLI 接入，并使用 `codex exec 
                     Agent 总线（跨 Bot 通信，引擎无关）
 ```
 
-引擎层已抽象 —— Kimi 事件流被翻译成 Claude 形状的 `SDKMessage`，流式卡片、工具调用追踪、MetaMemory/调度/Agent 总线在两种引擎下表现一致。
+引擎层已抽象 —— Kimi 事件流和 Codex JSONL 都被翻译成 Claude 形状的 `SDKMessage`，流式卡片、工具调用追踪、MetaMemory/调度/Agent 总线在三种引擎下表现一致。
 
 ## 多端接入
 
@@ -148,7 +150,7 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 
 | 组件 | 一句话说明 |
 |------|-----------|
-| **双引擎内核** | 每个 Bot 独立选 Claude Code 或 Kimi Code — 完整工具链（Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP），自主模式运行 |
+| **三引擎内核** | 每个 Bot 独立选 Claude Code / Kimi Code / Codex CLI — 完整工具链（Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP），自主模式运行 |
 | **MetaSkill** | Agent 工厂。`/metaskill` 一键生成 `.claude/` Agent 团队（orchestrator + 专家 + reviewer） |
 | **MetaMemory** | 内嵌 SQLite 知识库，全文搜索，Web UI，变更自动同步到飞书知识库 |
 | **IM Bridge** | 飞书、Telegram、微信（含手机端）对话任意 Agent，流式卡片 + 工具调用追踪 |

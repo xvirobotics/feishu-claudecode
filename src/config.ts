@@ -39,19 +39,22 @@ export interface BotConfigBase {
     contextWindow?: number;
   };
   /** Codex-specific overrides. Populated only when engine === 'codex'. */
-  codex?: {
-    executable?: string;
-    model?: string;
-    displayModel?: string;
-    profile?: string;
-    approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
-    sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
-    dangerouslyBypassApprovalsAndSandbox?: boolean;
-    /** Context window size in tokens for display only. */
-    contextWindow?: number;
-    extraArgs?: string[];
-    env?: Record<string, string>;
-  };
+  codex?: CodexBotConfig;
+}
+
+/** Codex-specific overrides. Populated only when engine === 'codex'. */
+export interface CodexBotConfig {
+  executable?: string;
+  model?: string;
+  displayModel?: string;
+  profile?: string;
+  approvalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
+  sandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+  dangerouslyBypassApprovalsAndSandbox?: boolean;
+  /** Context window size in tokens for display only. */
+  contextWindow?: number;
+  extraArgs?: string[];
+  env?: Record<string, string>;
 }
 
 /** Feishu bot config (extends base with Feishu credentials). */

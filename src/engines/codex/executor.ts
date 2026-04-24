@@ -1,5 +1,5 @@
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
-import type { BotConfigBase } from '../../config.js';
+import type { BotConfigBase, CodexBotConfig } from '../../config.js';
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import type {
@@ -28,6 +28,43 @@ function resolveCodexPath(): string {
 
 const CODEX_EXECUTABLE = resolveCodexPath();
 
+/**
+ * Build the argv array for `codex exec`. Exported for unit testing.
+ * Values are passed as discrete argv entries (never through a shell), so
+ * `extraArgs` / `profile` / `model` cannot introduce shell-injection even
+ * if they contain metacharacters — but they will still be visible to the
+ * Codex CLI as literal arguments.
+ */
+export function buildCodexArgs(
+  codexConfig: CodexBotConfig,
+  cwd: string,
+  prompt: string,
+  sessionId: string | undefined,
+  model: string | undefined,
+): string[] {
+  const args: string[] = [];
+
+  if (codexConfig.dangerouslyBypassApprovalsAndSandbox) {
+    args.push('--dangerously-bypass-approvals-and-sandbox');
+  } else {
+    args.push('-a', codexConfig.approvalPolicy ?? 'never');
+    args.push('--sandbox', codexConfig.sandbox ?? 'workspace-write');
+  }
+
+  args.push('-C', cwd);
+  if (model) args.push('-m', model);
+  if (codexConfig.profile) args.push('-p', codexConfig.profile);
+  for (const extraArg of codexConfig.extraArgs ?? []) args.push(extraArg);
+
+  args.push('exec');
+  if (sessionId) {
+    args.push('resume', '--json', '--skip-git-repo-check', sessionId, prompt);
+  } else {
+    args.push('--json', '--color', 'never', '--skip-git-repo-check', prompt);
+  }
+  return args;
+}
+
 export class CodexExecutor {
   constructor(
     private config: BotConfigBase,
@@ -44,7 +81,7 @@ export class CodexExecutor {
       model: model || codexConfig.displayModel,
       contextWindow: codexConfig.contextWindow,
     });
-    const args = this.buildArgs(cwd, fullPrompt, sessionId, model);
+    const args = buildCodexArgs(codexConfig, cwd, fullPrompt, sessionId, model);
     const startTime = Date.now();
     let child: ChildProcess | undefined;
     let sawResult = false;
@@ -158,31 +195,6 @@ export class CodexExecutor {
     } finally {
       handle.finish();
     }
-  }
-
-  private buildArgs(cwd: string, prompt: string, sessionId: string | undefined, model: string | undefined): string[] {
-    const codexConfig = this.config.codex ?? {};
-    const args: string[] = [];
-
-    if (codexConfig.dangerouslyBypassApprovalsAndSandbox) {
-      args.push('--dangerously-bypass-approvals-and-sandbox');
-    } else {
-      args.push('-a', codexConfig.approvalPolicy ?? 'never');
-      args.push('--sandbox', codexConfig.sandbox ?? 'workspace-write');
-    }
-
-    args.push('-C', cwd);
-    if (model) args.push('-m', model);
-    if (codexConfig.profile) args.push('-p', codexConfig.profile);
-    for (const extraArg of codexConfig.extraArgs ?? []) args.push(extraArg);
-
-    args.push('exec');
-    if (sessionId) {
-      args.push('resume', '--json', '--skip-git-repo-check', sessionId, prompt);
-    } else {
-      args.push('--json', '--color', 'never', '--skip-git-repo-check', prompt);
-    }
-    return args;
   }
 
   private buildPromptWithContext(

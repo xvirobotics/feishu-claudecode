@@ -211,13 +211,29 @@ Knowledge persistence is handled by an external **MetaMemory server** (FastAPI +
 Before running the service, ensure:
 
 1. **Node.js 20+** is installed.
-2. **Claude Code CLI is installed and authenticated** — The Agent SDK spawns `claude` as a subprocess; it must be able to run independently.
+2. **At least one engine CLI is installed and authenticated** — MetaBot spawns the selected engine's CLI as a subprocess. Install only the engine(s) you intend to use; each bot picks one via `engine` in its config.
+
+   **Claude Code (default)** — `engine: "claude"`
    - Install: `npm install -g @anthropic-ai/claude-code`
    - Authenticate (one of):
      - **OAuth login (recommended)**: Run `claude login` in a standalone terminal and complete the browser flow.
      - **API Key**: Set `ANTHROPIC_API_KEY=sk-ant-...` in `.env` or your shell environment.
-   - Verify: Run `claude --version` and `claude "hello"` in a standalone terminal to confirm it works.
+   - Verify: Run `claude --version` and `claude "hello"` in a standalone terminal.
    - **Important**: You cannot run `claude login` or `claude auth status` from inside a Claude Code session (nested sessions are blocked). Always use a separate terminal.
+
+   **Kimi Code** — `engine: "kimi"`
+   - Install: `npm install -g @moonshot-ai/kimi-code`
+   - Authenticate: `kimi login` (OAuth, uses your Moonshot subscription) or set `KIMI_API_KEY` in `.env`.
+   - Verify: `kimi --version`.
+
+   **Codex CLI** — `engine: "codex"`
+   - Install the Codex CLI (see the upstream project README for platform-specific binaries).
+   - Authenticate: `codex login` in a standalone terminal, or configure a profile / API key in `~/.codex/config.toml`.
+   - Verify: `codex exec --help`.
+   - Optional per-bot overrides: `codex.model`, `codex.profile`, `codex.approvalPolicy` (`untrusted` | `on-failure` | `on-request` | `never`), `codex.sandbox` (`read-only` | `workspace-write` | `danger-full-access`), `codex.extraArgs` (extra argv passed verbatim to `codex exec`), `codex.env` (extra env vars for the subprocess). `CODEX_EXECUTABLE_PATH` env var overrides auto-detection; `CODEX_APPROVAL_POLICY` / `CODEX_SANDBOX` provide global defaults.
+   - Session continuity uses `codex exec resume <thread_id>` — MetaBot stores the Codex thread id per `chatId` just like Claude sessions.
+   - Interactive tool approvals (`sendAnswer` / `resolveQuestion`) are **not** supported under Codex — use `approvalPolicy: "never"` and a sandbox level you trust, since the bridge cannot surface approval prompts back to Feishu.
+
 3. **Feishu app is configured** — See the setup guide below.
 
 ## HTTPS Setup (Required for Web Voice Mode)
