@@ -373,9 +373,14 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
     if command -v codex &>/dev/null; then
       success "Codex CLI found: $(command -v codex)"
     else
-      warn "Codex CLI not found on PATH."
-      warn "Install it from https://github.com/openai/codex (see the project README for your platform)."
-      warn "MetaBot will still be configured — install Codex + run 'codex login' before starting."
+      info "Installing Codex CLI..."
+      npm_install_global @openai/codex
+      if command -v codex &>/dev/null; then
+        success "Codex CLI installed: $(command -v codex)"
+      else
+        warn "Codex CLI install failed. Install manually: sudo npm install -g @openai/codex"
+        warn "MetaBot will still be configured — install Codex + run 'codex login' before starting."
+      fi
     fi
     info "After install, run 'codex login' in a separate terminal to authenticate (or set OPENAI_API_KEY / configure a profile in ~/.codex/config.toml)."
     info "Note: Codex runs with approvalPolicy='never' and sandbox='workspace-write' by default — interactive tool approvals are not surfaced to IM."
@@ -1137,7 +1142,7 @@ if [[ "${SKIP_CONFIG}" == "false" ]]; then
   fi
   if [[ "${CLAUDE_AUTH_METHOD}" == "codex" ]]; then
     if ! command -v codex &>/dev/null; then
-      echo "    ${STEP_NUM}. Install Codex CLI — see https://github.com/openai/codex"
+      echo "    ${STEP_NUM}. Install Codex CLI: sudo npm install -g @openai/codex"
       STEP_NUM=$((STEP_NUM + 1))
     fi
     echo "    ${STEP_NUM}. Run 'codex login' in a separate terminal (or set OPENAI_API_KEY / configure ~/.codex/config.toml)"
