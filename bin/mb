@@ -317,121 +317,19 @@ print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
   health|h)
     curl -s -H "$METABOT_AUTH" "$METABOT_URL/api/health" | _json
     ;;
-  # --- Update from GitHub ---
+  # --- Update from GitHub (delegates to install.sh for single source of truth) ---
   update|up)
     METABOT_SRC="${METABOT_HOME:-$HOME/metabot}"
-    LOCAL_BIN="$HOME/.local/bin"
     if [[ ! -d "$METABOT_SRC/.git" ]]; then
       echo "Error: MetaBot repo not found at $METABOT_SRC"
       exit 1
     fi
-
-    echo "==> Pulling latest from GitHub..."
-    git -C "$METABOT_SRC" pull --ff-only || { echo "Error: git pull failed (try resolving conflicts manually)"; exit 1; }
-
-    echo "==> Installing dependencies..."
-    (cd "$METABOT_SRC" && npm install --include=dev --no-audit --no-fund 2>&1 | tail -1)
-
-    echo "==> Building..."
-    (cd "$METABOT_SRC" && npm run build 2>&1) || { echo "Error: build failed"; exit 1; }
-
-    echo "==> Updating CLI tools..."
-    mkdir -p "$LOCAL_BIN"
-    for cli in mb mm metabot; do
-      src="$METABOT_SRC/bin/$cli"
-      dst="$LOCAL_BIN/$cli"
-      if [[ -f "$src" ]]; then
-        if ! cmp -s "$src" "$dst" 2>/dev/null; then
-          cp "$src" "$dst"
-          chmod +x "$dst"
-          echo "    Updated: $cli"
-        fi
-      fi
-    done
-
-    echo "==> Updating skills..."
-    SKILLS_DIR="$HOME/.claude/skills"
-    mkdir -p "$SKILLS_DIR"
-    for skill in metaskill metamemory metabot voice phone-call skill-hub; do
-      case "$skill" in
-        metaskill)   src="$METABOT_SRC/src/skills/metaskill" ;;
-        metamemory)  src="$METABOT_SRC/src/memory/skill" ;;
-        metabot)     src="$METABOT_SRC/src/skills/metabot" ;;
-        voice)       src="$METABOT_SRC/src/skills/voice" ;;
-        phone-call)  src="$METABOT_SRC/src/skills/phone-call" ;;
-        skill-hub)   src="$METABOT_SRC/src/skills/skill-hub" ;;
-        *)           src="" ;;
-      esac
-      if [[ -n "$src" && -d "$src" ]]; then
-        mkdir -p "$SKILLS_DIR/$skill"
-        cp -r "$src/." "$SKILLS_DIR/$skill/"
-        echo "    Updated: $skill"
-      fi
-    done
-    # Clean up legacy feishu-doc skill
-    if [[ -d "$SKILLS_DIR/feishu-doc" ]]; then
-      rm -rf "$SKILLS_DIR/feishu-doc"
-      echo "    Removed legacy: feishu-doc"
+    if [[ ! -f "$METABOT_SRC/install.sh" ]]; then
+      echo "Error: install.sh not found at $METABOT_SRC/install.sh"
+      exit 1
     fi
-
-    # Check if lark-cli skills were previously installed (opt-in via install.sh)
-    has_lark_skills=false
-    if [[ -d "$SKILLS_DIR/lark-doc" ]]; then
-      has_lark_skills=true
-    fi
-
-    # Update workspace skills if bots.json exists
-    if [[ -f "$METABOT_SRC/bots.json" ]] && command -v node &>/dev/null; then
-      work_dir=$(node -e "
-        const c=JSON.parse(require('fs').readFileSync('$METABOT_SRC/bots.json','utf-8'));
-        const b=[...(c.feishuBots||[]),...(c.telegramBots||[]),...(c.wechatBots||[])];
-        if(b[0])console.log(b[0].defaultWorkingDirectory);
-      " 2>/dev/null || true)
-      if [[ -n "${work_dir:-}" ]]; then
-        ws_skills_dir="$work_dir/.claude/skills"
-        mkdir -p "$ws_skills_dir"
-        for skill in metaskill metamemory metabot voice phone-call skill-hub; do
-          if [[ -d "$SKILLS_DIR/$skill" ]]; then
-            mkdir -p "$ws_skills_dir/$skill"
-            cp -r "$SKILLS_DIR/$skill/." "$ws_skills_dir/$skill/"
-          fi
-        done
-        # Copy lark-cli skills if previously installed
-        if [[ "${has_lark_skills:-false}" == "true" ]]; then
-          for lark_skill in lark-base lark-calendar lark-contact lark-doc lark-drive lark-event lark-im lark-mail lark-minutes lark-openapi-explorer lark-shared lark-sheets lark-skill-maker lark-task lark-vc lark-whiteboard lark-wiki lark-workflow-meeting-summary lark-workflow-standup-report; do
-            if [[ -d "$SKILLS_DIR/$lark_skill" ]]; then
-              mkdir -p "$ws_skills_dir/$lark_skill"
-              cp -r "$SKILLS_DIR/$lark_skill/." "$ws_skills_dir/$lark_skill/"
-            fi
-          done
-        fi
-        # Clean up legacy feishu-doc in workspace
-        if [[ -d "$ws_skills_dir/feishu-doc" ]]; then
-          rm -rf "$ws_skills_dir/feishu-doc"
-        fi
-        if [[ -f "$METABOT_SRC/src/workspace/CLAUDE.md" ]]; then
-          cp "$METABOT_SRC/src/workspace/CLAUDE.md" "$work_dir/CLAUDE.md"
-        fi
-      fi
-    fi
-
-    echo "==> Restarting service..."
-    if command -v pm2 &>/dev/null && pm2 list 2>/dev/null | grep -q metabot; then
-      pm2 restart metabot && echo "    Restarted via pm2"
-    elif pgrep -f "tsx src/index" &>/dev/null; then
-      pkill -f "tsx src/index"
-      (cd "$METABOT_SRC" && nohup npm run dev > /tmp/metabot.log 2>&1 &)
-      echo "    Restarted dev server (PID $!)"
-    elif pgrep -f "node dist/index" &>/dev/null; then
-      pkill -f "node dist/index"
-      (cd "$METABOT_SRC" && nohup npm start > /tmp/metabot.log 2>&1 &)
-      echo "    Restarted production server (PID $!)"
-    else
-      echo "    No running MetaBot process found. Start manually:"
-      echo "    cd $METABOT_SRC && npm run dev"
-    fi
-
-    echo "==> Update complete!"
+    echo "==> Delegating to $METABOT_SRC/install.sh..."
+    exec bash "$METABOT_SRC/install.sh"
     ;;
   # --- Text-to-Speech ---
   voice|v)
