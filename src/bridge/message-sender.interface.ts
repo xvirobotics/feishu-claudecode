@@ -8,8 +8,8 @@ export interface IMessageSender {
   /** Send a new streaming card/message for a CardState. Returns messageId for subsequent updates. */
   sendCard(chatId: string, state: CardState): Promise<string | undefined>;
 
-  /** Update an existing streaming card/message with new CardState. */
-  updateCard(messageId: string, state: CardState): Promise<void>;
+  /** Update an existing streaming card/message with new CardState. Returns false on failure. */
+  updateCard(messageId: string, state: CardState): Promise<boolean>;
 
   /** Send a simple notice message (for command responses: /help, /reset, /stop, etc.). */
   sendTextNotice(chatId: string, title: string, content: string, color?: string): Promise<void>;

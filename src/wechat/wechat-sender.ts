@@ -39,13 +39,13 @@ export class WechatSender implements IMessageSender {
     return messageId;
   }
 
-  async updateCard(messageId: string, state: CardState): Promise<void> {
+  async updateCard(messageId: string, state: CardState): Promise<boolean> {
     const { chatId } = this.parseMessageId(messageId);
-    if (!chatId) return;
+    if (!chatId) return false;
 
     // Terminal states: send final result as standalone FINISH message
     if (state.status === 'complete' || state.status === 'error') {
-      if (this.finalSentSet.has(messageId)) return; // idempotency
+      if (this.finalSentSet.has(messageId)) return true; // idempotency — already delivered
       this.finalSentSet.add(messageId);
       this.lastProgressSent.delete(messageId);
       this.reportedToolCount.delete(messageId);
@@ -54,7 +54,7 @@ export class WechatSender implements IMessageSender {
       const text = this.renderFinalMessage(state);
       // Use sendText for automatic chunking of long responses
       await this.sendText(chatId, text);
-      return;
+      return true;
     }
 
     // Waiting for input: send question as standalone message
@@ -63,7 +63,7 @@ export class WechatSender implements IMessageSender {
       await this.client.sendTextMessage(chatId, text).catch((err) => {
         this.logger.error({ err, chatId }, 'Failed to send WeChat question');
       });
-      return;
+      return true;
     }
 
     // Intermediate: send tool progress as actual messages (throttled)
@@ -83,6 +83,7 @@ export class WechatSender implements IMessageSender {
         this.logger.debug({ err, chatId }, 'Failed to send WeChat progress (may lack context_token)');
       });
     }
+    return true;
   }
 
   async sendTextNotice(chatId: string, title: string, content: string): Promise<void> {

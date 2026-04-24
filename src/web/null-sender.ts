@@ -9,7 +9,9 @@ export class NullSender implements IMessageSender {
   async sendCard(_chatId: string, _state: CardState): Promise<string | undefined> {
     return undefined;
   }
-  async updateCard(_messageId: string, _state: CardState): Promise<void> {}
+  async updateCard(_messageId: string, _state: CardState): Promise<boolean> {
+    return true;
+  }
   async sendTextNotice(_chatId: string, _title: string, _content: string, _color?: string): Promise<void> {}
   async sendText(_chatId: string, _text: string): Promise<void> {}
   async sendImageFile(_chatId: string, _filePath: string): Promise<boolean> {

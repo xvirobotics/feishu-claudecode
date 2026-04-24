@@ -391,21 +391,23 @@ export class TelegramSender implements IMessageSender {
     }
   }
 
-  async updateCard(messageId: string, state: CardState): Promise<void> {
+  async updateCard(messageId: string, state: CardState): Promise<boolean> {
     const ref = this.messageMap.get(messageId);
     if (!ref) {
       this.logger.warn({ messageId }, 'Cannot update unknown Telegram message');
-      return;
+      return false;
     }
     try {
       const html = renderCardHtml(state);
       await this.bot.api.editMessageText(ref.chatId, ref.messageId, html, { parse_mode: 'HTML' });
+      return true;
     } catch (err: any) {
-      // Telegram returns 400 if message content hasn't changed — ignore
+      // Telegram returns 400 if message content hasn't changed — treat as success (nothing to do)
       if (err?.error_code === 400 && err?.description?.includes('message is not modified')) {
-        return;
+        return true;
       }
       this.logger.error({ err, messageId }, 'Failed to update Telegram message');
+      return false;
     }
   }
 

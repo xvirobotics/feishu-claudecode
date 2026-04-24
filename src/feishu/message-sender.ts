@@ -30,14 +30,16 @@ export class MessageSender {
     }
   }
 
-  async updateCard(messageId: string, cardContent: string): Promise<void> {
+  async updateCard(messageId: string, cardContent: string): Promise<boolean> {
     try {
       await this.client.im.v1.message.patch({
         path: { message_id: messageId },
         data: { content: cardContent },
       });
+      return true;
     } catch (err) {
       this.logger.error({ err, messageId }, 'Failed to update card');
+      return false;
     }
   }
 
@@ -100,7 +102,7 @@ export class MessageSender {
     }
   }
 
-  async sendImage(chatId: string, imageKey: string): Promise<void> {
+  async sendImage(chatId: string, imageKey: string): Promise<boolean> {
     try {
       await this.client.im.v1.message.create({
         params: { receive_id_type: 'chat_id' },
@@ -110,16 +112,17 @@ export class MessageSender {
           msg_type: 'image',
         },
       });
+      return true;
     } catch (err) {
       this.logger.error({ err, chatId, imageKey }, 'Failed to send image');
+      return false;
     }
   }
 
   async sendImageFile(chatId: string, filePath: string): Promise<boolean> {
     const imageKey = await this.uploadImage(filePath);
     if (!imageKey) return false;
-    await this.sendImage(chatId, imageKey);
-    return true;
+    return this.sendImage(chatId, imageKey);
   }
 
   async uploadFile(filePath: string, fileName: string, fileType: string): Promise<string | undefined> {
@@ -142,7 +145,7 @@ export class MessageSender {
     }
   }
 
-  async sendFile(chatId: string, fileKey: string): Promise<void> {
+  async sendFile(chatId: string, fileKey: string): Promise<boolean> {
     try {
       await this.client.im.v1.message.create({
         params: { receive_id_type: 'chat_id' },
@@ -152,16 +155,17 @@ export class MessageSender {
           msg_type: 'file',
         },
       });
+      return true;
     } catch (err) {
       this.logger.error({ err, chatId, fileKey }, 'Failed to send file');
+      return false;
     }
   }
 
   async sendLocalFile(chatId: string, filePath: string, fileName: string, fileType: string): Promise<boolean> {
     const fileKey = await this.uploadFile(filePath, fileName, fileType);
     if (!fileKey) return false;
-    await this.sendFile(chatId, fileKey);
-    return true;
+    return this.sendFile(chatId, fileKey);
   }
 
   async getChatMemberCount(chatId: string): Promise<number | undefined> {
