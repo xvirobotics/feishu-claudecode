@@ -42,6 +42,8 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 
 The installer walks you through everything: working directory → **engine choice (Claude / Kimi / Codex)** → subscription login → IM platform → auto-start with PM2. **5 minutes to get started.**
 
+> Custom install directory (default `~/metabot`): `curl ... | bash -s -- --dir /opt/metabot`, or `METABOT_HOME=/opt/metabot bash install.sh`. Windows: `.\install.ps1 -Dir C:\opt\metabot`.
+
 ---
 
 ## Multi-Engine: Claude Code, Kimi Code, and Codex CLI

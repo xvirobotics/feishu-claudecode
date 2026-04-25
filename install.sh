@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # MetaBot Installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash -s -- --dir /opt/metabot
+#   METABOT_HOME=/opt/metabot bash install.sh
 set -euo pipefail
 
 # ============================================================================
@@ -14,9 +17,58 @@ else
 fi
 
 # ============================================================================
+# Parse CLI arguments
+# ============================================================================
+INSTALL_DIR_ARG=""
+print_usage() {
+  cat <<'USAGE'
+MetaBot Installer
+
+Usage:
+  bash install.sh [OPTIONS]
+  curl -fsSL <url> | bash -s -- [OPTIONS]
+
+Options:
+  -d, --dir <path>     Install MetaBot to <path>.
+                       Priority: --dir > METABOT_HOME env var > interactive prompt.
+                       Default: $HOME/metabot
+  -h, --help           Show this help and exit.
+
+Examples:
+  bash install.sh
+  bash install.sh --dir /opt/metabot
+  bash install.sh -d ~/projects/metabot
+  METABOT_HOME=/opt/metabot bash install.sh
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -d|--dir)
+      [[ $# -ge 2 ]] || { echo "Error: $1 requires a path argument" >&2; exit 1; }
+      INSTALL_DIR_ARG="$2"
+      shift 2
+      ;;
+    --dir=*)
+      INSTALL_DIR_ARG="${1#--dir=}"
+      shift
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "Warning: unknown argument '$1'" >&2
+      shift
+      ;;
+  esac
+done
+
+# ============================================================================
 # Configuration defaults
 # ============================================================================
-METABOT_HOME="${METABOT_HOME:-$HOME/metabot}"
+# METABOT_HOME is resolved later (Phase 0.5) — priority: --dir > env var > prompt > default.
+DEFAULT_METABOT_HOME="$HOME/metabot"
 METABOT_REPO="${METABOT_REPO:-https://github.com/xvirobotics/metabot.git}"
 
 # ============================================================================
@@ -130,6 +182,43 @@ sed_i() {
     sed -i "$@"
   fi
 }
+
+# ============================================================================
+# Phase 0.5: Resolve install directory
+# Priority: --dir CLI arg > METABOT_HOME env var > interactive prompt > default.
+# ============================================================================
+step "Phase 0.5: Choose install directory"
+
+if [[ -n "$INSTALL_DIR_ARG" ]]; then
+  METABOT_HOME="$INSTALL_DIR_ARG"
+  info "Using install directory from --dir: $METABOT_HOME"
+elif [[ -n "${METABOT_HOME:-}" ]]; then
+  info "Using install directory from METABOT_HOME env: $METABOT_HOME"
+else
+  echo ""
+  echo -e "${BOLD}Where should MetaBot be installed?${NC}"
+  echo "  (You can override later with the METABOT_HOME env var or --dir flag.)"
+  prompt_input METABOT_HOME "Install directory" "$DEFAULT_METABOT_HOME"
+fi
+
+# Expand a leading ~ to $HOME (avoids eval; safe with spaces).
+METABOT_HOME="${METABOT_HOME/#\~/$HOME}"
+
+# Require an absolute path so all later $METABOT_HOME references are unambiguous.
+if [[ "$METABOT_HOME" != /* ]]; then
+  error "Install path must be absolute, got: $METABOT_HOME"
+  exit 1
+fi
+
+# Refuse a few obviously-bad targets that would clobber the user's home or root.
+case "$METABOT_HOME" in
+  /|/root|/home|/Users|"$HOME")
+    error "Refusing to install directly into $METABOT_HOME — pick a dedicated subdirectory."
+    exit 1
+    ;;
+esac
+
+success "Install directory: $METABOT_HOME"
 
 # ============================================================================
 # Phase 1: Check prerequisites
@@ -1000,6 +1089,24 @@ if ! echo "$PATH" | grep -q "$LOCAL_BIN"; then
   info "Added ~/.local/bin to PATH in ~/.bashrc"
 fi
 success "mm/mb/metabot CLI tools installed to $LOCAL_BIN"
+
+# Persist METABOT_HOME for non-default install paths so the CLI tools
+# (mm/mb/metabot) can find the install in new shell sessions. The CLIs all
+# fall back to $HOME/metabot, so we only need to export when it differs.
+if [[ "$METABOT_HOME" != "$DEFAULT_METABOT_HOME" ]]; then
+  for rc_file in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+    [[ -f "$rc_file" ]] || continue
+    # Drop any prior export to keep this idempotent across re-runs.
+    if grep -q '^export METABOT_HOME=' "$rc_file" 2>/dev/null; then
+      sed_i '/^export METABOT_HOME=/d' "$rc_file"
+    fi
+  done
+  echo "export METABOT_HOME=\"$METABOT_HOME\"" >> "$HOME/.bashrc"
+  if [[ -f "$HOME/.zshrc" ]]; then
+    echo "export METABOT_HOME=\"$METABOT_HOME\"" >> "$HOME/.zshrc"
+  fi
+  info "Persisted METABOT_HOME=$METABOT_HOME to shell rc files"
+fi
 
 # ============================================================================
 # Phase 8: Build + Start MetaBot with PM2
