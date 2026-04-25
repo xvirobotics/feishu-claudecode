@@ -42,6 +42,8 @@ curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh
 
 安装器引导一切：工作目录 → **引擎选择（Claude / Kimi / Codex）** → 订阅登录 → IM 平台 → PM2 自动启动。**5 分钟上手。**
 
+> 自定义安装目录(默认 `~/metabot`)：`curl ... | bash -s -- --dir /opt/metabot`,或 `METABOT_HOME=/opt/metabot bash install.sh`。Windows: `.\install.ps1 -Dir C:\opt\metabot`。
+
 ---
 
 ## 三引擎：Claude Code ✕ Kimi Code ✕ Codex CLI 并列一等支持

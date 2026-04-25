@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- `install.sh`: `--dir <path>` / `-d <path>` flag to customize the install directory (priority: `--dir` > `METABOT_HOME` env > interactive prompt > `~/metabot`). Non-default paths are persisted to `~/.bashrc` / `~/.zshrc` so the `mb`/`mm`/`metabot` CLIs find the install in new shells.
+- `install.ps1`: matching `-Dir <path>` parameter on Windows; non-default paths persisted via user-level `METABOT_HOME` environment variable.
 - CONTRIBUTING.md with development setup guide
 - GitHub Actions CI workflow (Node.js 20/22 build + type check)
 - Issue templates for bug reports and feature requests
