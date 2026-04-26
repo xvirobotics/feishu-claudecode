@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /** Agent engine backing a bot. */
-export type EngineName = 'claude' | 'kimi' | 'codex';
+export type EngineName = 'claude' | 'kimi' | 'codex' | 'opencode';
 
 /** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
 export interface BotConfigBase {
@@ -40,6 +40,8 @@ export interface BotConfigBase {
   };
   /** Codex-specific overrides. Populated only when engine === 'codex'. */
   codex?: CodexBotConfig;
+  /** OpenCode-specific overrides. Populated only when engine === 'opencode'. */
+  opencode?: OpenCodeBotConfig;
 }
 
 /** Codex-specific overrides. Populated only when engine === 'codex'. */
@@ -53,6 +55,13 @@ export interface CodexBotConfig {
   dangerouslyBypassApprovalsAndSandbox?: boolean;
   /** Context window size in tokens for display only. */
   contextWindow?: number;
+  extraArgs?: string[];
+  env?: Record<string, string>;
+}
+
+export interface OpenCodeBotConfig {
+  model?: string;
+  dangerouslySkipPermissions?: boolean;
   extraArgs?: string[];
   env?: Record<string, string>;
 }

@@ -8,9 +8,11 @@ import type {
   ApiContext,
 } from './claude/executor.js';
 import type { CodexExecutor } from './codex/executor.js';
+import type { OpenCodeExecutor } from './opencode/executor.js';
 import type { StreamProcessor } from './claude/stream-processor.js';
+import type { OpenCodeStreamProcessor } from './opencode/stream-processor.js';
 
-export type EngineName = 'claude' | 'kimi' | 'codex';
+export type EngineName = 'claude' | 'kimi' | 'codex' | 'opencode';
 
 /**
  * An Engine is a programmable agent backend (Claude Code, Kimi Code, …).
@@ -40,11 +42,12 @@ export interface Executor {
   execute(options: ExecutorOptions): AsyncGenerator<SDKMessage>;
 }
 
-export type StreamProcessorLike = StreamProcessor;
+export type StreamProcessorLike = StreamProcessor | OpenCodeStreamProcessor;
 
 export type {
   ClaudeExecutor,
   CodexExecutor,
+  OpenCodeExecutor,
   ExecutionHandle,
   ExecutorOptions,
   SDKMessage,
