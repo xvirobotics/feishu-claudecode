@@ -2,7 +2,7 @@ import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
-import { resolveEngineName, SessionManager } from '../engines/index.js';
+import { resolveEngineName, SessionManager, getSharedApiConfigManager } from '../engines/index.js';
 import type { EngineName } from '../engines/index.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
@@ -48,6 +48,7 @@ export class CommandHandler {
           '`/model claude`, `/model kimi`, or `/model codex` - Switch engine (resets session)',
           '`/model <name>` - Set model for current engine',
           '`/memory` - Memory document commands',
+          '`/api` - API configuration management',
           '`/help` - Show this help message',
           '',
           '**Usage:**',
@@ -115,6 +116,12 @@ export class CommandHandler {
       case '/model': {
         const args = text.slice('/model'.length).trim();
         await this.handleModelCommand(chatId, args);
+        return true;
+      }
+
+      case '/api': {
+        const args = text.slice('/api'.length).trim();
+        await this.handleApiCommand(chatId, args);
         return true;
       }
 
@@ -395,6 +402,153 @@ export class CommandHandler {
         return '_Make sure `kimi login` has been completed on this host._';
       case 'codex':
         return '_Make sure Codex CLI is authenticated (`codex login`) or configured with an API key._';
+    }
+  }
+
+  private async handleApiCommand(chatId: string, args: string): Promise<void> {
+    const apiConfigManager = getSharedApiConfigManager(this.logger);
+    const [subCmd, ...rest] = args.split(/\s+/);
+
+    if (!subCmd) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '🔧 API Configuration',
+        'Usage:\n- `/api set <name> <url> <token>` — Add/update API config\n- `/api switch <name>` — Switch to saved config\n- `/api list` — List all saved configs\n- `/api current` — Show current API config\n- `/api delete <name>` — Delete saved config',
+      );
+      return;
+    }
+
+    try {
+      switch (subCmd.toLowerCase()) {
+        case 'set': {
+          const [name, baseUrl, authToken] = rest;
+          if (!name || !baseUrl || !authToken) {
+            await this.sender.sendTextNotice(chatId, '🔧 API Configuration', 'Usage: `/api set <name> <url> <token>`\n\nExample:\n`/api set kimi https://api.moonshot.ai/anthropic sk-xxx`');
+            return;
+          }
+
+          await this.sender.sendTextNotice(chatId, '⏳ Validating API', `Testing connection to ${baseUrl}...`, 'blue');
+
+          const result = await apiConfigManager.setConfig(name, { baseUrl, authToken }, true);
+
+          if (result.success) {
+            await this.sender.sendTextNotice(
+              chatId,
+              '✅ API Config Saved',
+              `Configuration "${name}" has been saved and activated.\n\n**Base URL:** \`${baseUrl}\`\n**Token:** \`${authToken.slice(0, 8)}...${authToken.slice(-4)}\``,
+              'green',
+            );
+          } else {
+            await this.sender.sendTextNotice(chatId, '❌ API Config Failed', result.error || 'Unknown error', 'red');
+          }
+          break;
+        }
+
+        case 'switch': {
+          const [nameOrIndex] = rest;
+          if (!nameOrIndex) {
+            const configs = apiConfigManager.listConfigs();
+            if (configs.length === 0) {
+              await this.sender.sendTextNotice(chatId, '🔧 API Configuration', 'No saved configurations.\n\nUse `/api set <name> <url> <token>` to add one.');
+              return;
+            }
+            const lines = configs.map((c, i) => {
+              const marker = c.isCurrent ? '✓' : ' ';
+              return `${marker} **${i + 1}.** ${c.name} — \`${c.baseUrl}\``;
+            });
+            lines.push('', 'Usage: `/api switch <name or index>`');
+            await this.sender.sendTextNotice(chatId, '🔧 Switch API', lines.join('\n'));
+            return;
+          }
+
+          let name = nameOrIndex;
+          const index = parseInt(nameOrIndex, 10);
+          if (!isNaN(index)) {
+            const configs = apiConfigManager.listConfigs();
+            if (index < 1 || index > configs.length) {
+              await this.sender.sendTextNotice(chatId, '❌ Switch Failed', `Index ${index} out of range (1-${configs.length})`, 'red');
+              return;
+            }
+            name = configs[index - 1].name;
+          }
+
+          await this.sender.sendTextNotice(chatId, '⏳ Switching API', `Validating "${name}"...`, 'blue');
+
+          const result = await apiConfigManager.switchConfig(name, true);
+
+          if (result.success) {
+            const current = apiConfigManager.getCurrentConfig();
+            await this.sender.sendTextNotice(
+              chatId,
+              '✅ API Switched',
+              `Now using configuration "${name}".\n\n**Base URL:** \`${current?.config.baseUrl}\``,
+              'green',
+            );
+          } else {
+            await this.sender.sendTextNotice(chatId, '❌ Switch Failed', result.error || 'Unknown error', 'red');
+          }
+          break;
+        }
+
+        case 'list': {
+          const configs = apiConfigManager.listConfigs();
+          if (configs.length === 0) {
+            await this.sender.sendTextNotice(chatId, '📋 API Configurations', 'No saved configurations.\n\nUse `/api set <name> <url> <token>` to add one.');
+            return;
+          }
+
+          const lines = configs.map((c, i) => {
+            const marker = c.isCurrent ? '✓' : ' ';
+            return `${marker} **${i + 1}.** ${c.name} — \`${c.baseUrl}\``;
+          });
+
+          await this.sender.sendTextNotice(chatId, '📋 API Configurations', lines.join('\n'));
+          break;
+        }
+
+        case 'current': {
+          const current = apiConfigManager.getCurrentConfig();
+          if (!current) {
+            await this.sender.sendTextNotice(chatId, 'ℹ️ No Active API', 'No API configuration is currently active.\n\nUse `/api set` or `/api switch` to activate one.');
+            return;
+          }
+
+          await this.sender.sendTextNotice(
+            chatId,
+            '🔧 Current API Configuration',
+            [
+              `**Name:** ${current.name}`,
+              `**Base URL:** \`${current.config.baseUrl}\``,
+              `**Token:** \`${current.config.authToken.slice(0, 8)}...${current.config.authToken.slice(-4)}\``,
+            ].join('\n'),
+            'blue',
+          );
+          break;
+        }
+
+        case 'delete': {
+          const [name] = rest;
+          if (!name) {
+            await this.sender.sendTextNotice(chatId, '🔧 API Configuration', 'Usage: `/api delete <name>`');
+            return;
+          }
+
+          const result = await apiConfigManager.deleteConfig(name);
+
+          if (result.success) {
+            await this.sender.sendTextNotice(chatId, '✅ Config Deleted', `Configuration "${name}" has been removed.`, 'green');
+          } else {
+            await this.sender.sendTextNotice(chatId, '❌ Delete Failed', result.error || 'Unknown error', 'red');
+          }
+          break;
+        }
+
+        default:
+          await this.sender.sendTextNotice(chatId, '🔧 API Configuration', `Unknown sub-command: \`${subCmd}\`\nUse \`/api\` for help.`, 'orange');
+      }
+    } catch (err: any) {
+      this.logger.error({ err, chatId }, 'API command error');
+      await this.sender.sendTextNotice(chatId, '❌ API Error', err.message, 'red');
     }
   }
 }

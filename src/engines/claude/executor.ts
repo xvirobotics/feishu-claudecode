@@ -8,6 +8,7 @@ import type { SDKUserMessage, SpawnOptions, SpawnedProcess } from '@anthropic-ai
 import type { BotConfigBase } from '../../config.js';
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
+import { ApiConfigManager } from './api-config-manager.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -58,8 +59,9 @@ function hasCredentialsFile(): boolean {
  *   or credentials.json exists (so env-var-only users can still authenticate).
  * - Merges process.env so child inherits system PATH, TEMP, etc.
  * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
+ * - Optionally injects extra env vars (e.g. from ApiConfigManager).
  */
-function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+function createSpawnFn(explicitApiKey?: string, extraEnv?: Record<string, string>): (options: SpawnOptions) => SpawnedProcess {
   // Decide once whether to filter auth env vars
   const filterAuthVars = !!(explicitApiKey || hasCredentialsFile());
 
@@ -85,6 +87,11 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
       env.ANTHROPIC_API_KEY = explicitApiKey;
     }
 
+    // Inject extra env vars (e.g. ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN from ApiConfigManager)
+    if (extraEnv) {
+      Object.assign(env, extraEnv);
+    }
+
     const child = spawn(nodePath, options.args, {
       cwd: options.cwd,
       env,
@@ -94,6 +101,21 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
 
     return child as unknown as SpawnedProcess;
   };
+}
+
+/** Singleton ApiConfigManager — shared across all ClaudeExecutor instances. */
+let _apiConfigManager: ApiConfigManager | null = null;
+
+function getApiConfigManager(logger: Logger): ApiConfigManager {
+  if (!_apiConfigManager) {
+    _apiConfigManager = new ApiConfigManager(logger);
+  }
+  return _apiConfigManager;
+}
+
+/** Expose the singleton for use by CommandHandler (/api command). */
+export function getSharedApiConfigManager(logger: Logger): ApiConfigManager {
+  return getApiConfigManager(logger);
 }
 
 export interface ApiContext {
@@ -193,7 +215,7 @@ export class ClaudeExecutor {
       // Cross-platform spawn: custom spawn filters CLAUDE* env vars and uses
       // process.execPath to avoid PATH issues on Windows; fileURLToPath converts
       // file:// URLs to native paths for the SDK CLI entrypoint.
-      spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey),
+      spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey, getApiConfigManager(this.logger).getCurrentEnv() ?? undefined),
       executableArgs: [path.join(path.dirname(fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk'))), 'cli.js')],
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
     };

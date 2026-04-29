@@ -54,6 +54,8 @@ export {
   StreamProcessor,
   SessionManager,
   extractImagePaths,
+  ApiConfigManager,
+  getSharedApiConfigManager,
 } from './claude/index.js';
 export type {
   UserSession,
@@ -62,4 +64,5 @@ export type {
   ExecutorOptions,
   ApiContext,
   DetectedTool,
+  ApiConfig,
 } from './claude/index.js';

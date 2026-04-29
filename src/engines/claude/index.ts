@@ -21,9 +21,10 @@ export class ClaudeEngine implements Engine {
   }
 }
 
-export { ClaudeExecutor } from './executor.js';
+export { ClaudeExecutor, getSharedApiConfigManager } from './executor.js';
 export { StreamProcessor, extractImagePaths } from './stream-processor.js';
 export { SessionManager } from './session-manager.js';
+export { ApiConfigManager } from './api-config-manager.js';
 export type { UserSession } from './session-manager.js';
 export type {
   SDKMessage,
@@ -32,3 +33,4 @@ export type {
   ApiContext,
 } from './executor.js';
 export type { DetectedTool } from './stream-processor.js';
+export type { ApiConfig } from './api-config-manager.js';
