@@ -146,9 +146,9 @@ export function createEventDispatcher(
         // Exceptions: 2-member groups are treated like DMs; groupNoMention mode skips @mention check
         const mentions = message.mentions;
         if (chatType === 'group') {
-          const botMentioned = mentions?.some(
-            (m: any) => !botOpenId || m.id?.open_id === botOpenId,
-          );
+          const botMentioned = botOpenId
+            ? mentions?.some((m: any) => m.id?.open_id === botOpenId)
+            : mentions && mentions.length > 0;
           if (!botMentioned) {
             // groupNoMention mode: respond to all messages without @mention
             if (config.groupNoMention) {
