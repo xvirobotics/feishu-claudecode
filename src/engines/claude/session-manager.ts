@@ -99,6 +99,20 @@ export class SessionManager {
     this.saveToDisk();
   }
 
+  /** Restore a CLI history session: set sessionId and optionally workingDirectory. */
+  setSession(chatId: string, sessionId: string, workingDirectory?: string): void {
+    const session = this.getSession(chatId);
+    session.sessionId = sessionId;
+    if (workingDirectory) {
+      session.workingDirectory = workingDirectory;
+    }
+    this.logger.info(
+      { chatId, sessionId: sessionId.slice(0, 8), workingDirectory },
+      'Session restored from CLI history',
+    );
+    this.saveToDisk();
+  }
+
   /** Set per-session model override. Pass undefined to clear. */
   setSessionModel(chatId: string, model: string | undefined): void {
     const session = this.getSession(chatId);

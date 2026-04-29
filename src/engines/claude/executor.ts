@@ -3,8 +3,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { SDKUserMessage, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
+import { query, listSessions } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKUserMessage, SDKSessionInfo, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
+
+export type { SDKSessionInfo };
 import type { BotConfigBase } from '../../config.js';
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
@@ -202,6 +204,11 @@ export class ClaudeExecutor {
     private config: BotConfigBase,
     private logger: Logger,
   ) {}
+
+  /** List local Claude Code CLI history sessions for a given directory. */
+  static async listHistorySessions(dir: string, limit: number = 20): Promise<SDKSessionInfo[]> {
+    return listSessions({ dir, limit });
+  }
 
   private buildQueryOptions(cwd: string, sessionId: string | undefined, abortController: AbortController, outputsDir?: string, apiContext?: ApiContext): Record<string, unknown> {
     const queryOptions: Record<string, unknown> = {

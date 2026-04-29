@@ -60,6 +60,7 @@ export {
 export type {
   UserSession,
   SDKMessage,
+  SDKSessionInfo,
   ExecutionHandle,
   ExecutorOptions,
   ApiContext,

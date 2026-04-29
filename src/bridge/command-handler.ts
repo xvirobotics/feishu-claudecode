@@ -1,15 +1,18 @@
+import * as fs from 'node:fs';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
-import { resolveEngineName, SessionManager, getSharedApiConfigManager } from '../engines/index.js';
-import type { EngineName } from '../engines/index.js';
+import { resolveEngineName, SessionManager, ClaudeExecutor, getSharedApiConfigManager } from '../engines/index.js';
+import type { EngineName, SDKSessionInfo } from '../engines/index.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
 
 export class CommandHandler {
   private docSync: DocSync | null = null;
+  private pendingResumeSelections = new Map<string, { sessions: SDKSessionInfo[]; timestamp: number }>();
+  private static readonly RESUME_SELECTION_TTL_MS = 5 * 60 * 1000;
 
   constructor(
     private config: BotConfigBase,
@@ -49,6 +52,7 @@ export class CommandHandler {
           '`/model <name>` - Set model for current engine',
           '`/memory` - Memory document commands',
           '`/api` - API configuration management',
+          '`/resume` - Resume a local Claude Code session',
           '`/help` - Show this help message',
           '',
           '**Usage:**',
@@ -122,6 +126,12 @@ export class CommandHandler {
       case '/api': {
         const args = text.slice('/api'.length).trim();
         await this.handleApiCommand(chatId, args);
+        return true;
+      }
+
+      case '/resume': {
+        const args = text.slice('/resume'.length).trim();
+        await this.handleResumeCommand(chatId, args);
         return true;
       }
 
@@ -551,8 +561,169 @@ export class CommandHandler {
       await this.sender.sendTextNotice(chatId, '❌ API Error', err.message, 'red');
     }
   }
+
+  private async handleResumeCommand(chatId: string, args: string): Promise<void> {
+    if (this.getRunningTask(chatId)) {
+      await this.sender.sendTextNotice(chatId, '⏳ Task Running', 'Please wait for the current task to finish or use `/stop` first.', 'orange');
+      return;
+    }
+
+    const trimmed = args.trim();
+
+    if (!trimmed) {
+      await this.listAndShowSessions(chatId);
+      return;
+    }
+
+    const num = parseInt(trimmed, 10);
+    if (!isNaN(num) && num > 0 && String(num) === trimmed) {
+      await this.resumeByIndex(chatId, num);
+      return;
+    }
+
+    if (trimmed.length >= 8) {
+      await this.resumeByPrefix(chatId, trimmed);
+      return;
+    }
+
+    await this.sender.sendTextNotice(chatId, '📋 Resume',
+      'Usage:\n- `/resume` — List local CLI sessions\n- `/resume <n>` — Resume session by index\n- `/resume <id>` — Resume by session ID prefix (8+ chars)');
+  }
+
+  private async listAndShowSessions(chatId: string): Promise<void> {
+    try {
+      const dir = this.config.claude.defaultWorkingDirectory;
+      const sessions = await ClaudeExecutor.listHistorySessions(dir, 10);
+
+      if (sessions.length === 0) {
+        await this.sender.sendTextNotice(chatId, '📋 History Sessions', 'No local CLI sessions found.', 'blue');
+        return;
+      }
+
+      this.pendingResumeSelections.set(chatId, { sessions, timestamp: Date.now() });
+
+      const lines = sessions.map((s, i) => {
+        const branch = s.gitBranch ? `[${s.gitBranch}]` : '';
+        const age = formatRelativeTime(s.lastModified);
+        const size = s.fileSize != null ? formatFileSize(s.fileSize) : '';
+        const title = s.customTitle || s.summary || s.firstPrompt?.slice(0, 50) || '(untitled)';
+        return `**${i + 1}.** ${branch} ${title} — ${age}${size ? ` (${size})` : ''}`;
+      });
+
+      lines.push('', 'Reply `/resume <n>` to restore a session.');
+
+      await this.sender.sendTextNotice(chatId, `📋 History Sessions (${dir})`, lines.join('\n'));
+    } catch (err: any) {
+      this.logger.error({ err, chatId }, 'Failed to list sessions');
+      await this.sender.sendTextNotice(chatId, '❌ List Sessions Failed', err.message, 'red');
+    }
+  }
+
+  private async resumeByIndex(chatId: string, index: number): Promise<void> {
+    const pending = this.pendingResumeSelections.get(chatId);
+
+    if (!pending || Date.now() - pending.timestamp > CommandHandler.RESUME_SELECTION_TTL_MS) {
+      this.pendingResumeSelections.delete(chatId);
+      await this.sender.sendTextNotice(chatId, '📋 Resume', 'Session list expired. Run `/resume` again to refresh.', 'orange');
+      return;
+    }
+
+    if (index < 1 || index > pending.sessions.length) {
+      await this.sender.sendTextNotice(chatId, '❌ Invalid Index',
+        `Please enter a number between 1 and ${pending.sessions.length}.`, 'red');
+      return;
+    }
+
+    const session = pending.sessions[index - 1];
+    this.pendingResumeSelections.delete(chatId);
+    await this.applyResume(chatId, session);
+  }
+
+  private async resumeByPrefix(chatId: string, prefix: string): Promise<void> {
+    try {
+      const dir = this.config.claude.defaultWorkingDirectory;
+      const sessions = await ClaudeExecutor.listHistorySessions(dir, 50);
+      const matches = sessions.filter(s => s.sessionId.startsWith(prefix));
+
+      if (matches.length === 0) {
+        await this.sender.sendTextNotice(chatId, '❌ Not Found',
+          `No session matching "${prefix}".`, 'red');
+        return;
+      }
+
+      if (matches.length > 1) {
+        const lines = matches.slice(0, 5).map(s =>
+          `- \`${s.sessionId.slice(0, 12)}\` ${s.summary || '(untitled)'}`,
+        );
+        await this.sender.sendTextNotice(chatId, '⚠️ Multiple Matches',
+          `Found ${matches.length} sessions. Provide a longer prefix:\n${lines.join('\n')}`, 'orange');
+        return;
+      }
+
+      await this.applyResume(chatId, matches[0]);
+    } catch (err: any) {
+      this.logger.error({ err, chatId }, 'Failed to resume by prefix');
+      await this.sender.sendTextNotice(chatId, '❌ Resume Failed', err.message, 'red');
+    }
+  }
+
+  private async applyResume(chatId: string, sessionInfo: SDKSessionInfo): Promise<void> {
+    const defaultDir = this.config.claude.defaultWorkingDirectory;
+    let cwd = sessionInfo.cwd || defaultDir;
+
+    try {
+      const stat = fs.statSync(cwd);
+      if (!stat.isDirectory()) throw new Error('Not a directory');
+    } catch {
+      if (cwd !== defaultDir) {
+        await this.sender.sendTextNotice(chatId, '⚠️ Directory Missing',
+          `Original directory \`${cwd}\` not found. Using default \`${defaultDir}\`.`, 'orange');
+      }
+      cwd = defaultDir;
+    }
+
+    this.sessionManager.setSession(chatId, sessionInfo.sessionId, cwd);
+
+    const title = sessionInfo.customTitle || sessionInfo.summary || sessionInfo.firstPrompt?.slice(0, 50) || '(untitled)';
+    const parts = [
+      `**Session:** ${title}`,
+      `**ID:** \`${sessionInfo.sessionId.slice(0, 12)}...\``,
+    ];
+    if (sessionInfo.gitBranch) {
+      parts.push(`**Branch:** ${sessionInfo.gitBranch}`);
+    }
+    if (cwd !== defaultDir) {
+      parts.push(`**Working Directory:** \`${cwd}\` _(differs from default)_`);
+    }
+    parts.push('', 'Subsequent messages will continue in this session context.');
+
+    await this.sender.sendTextNotice(chatId, '✅ Session Restored', parts.join('\n'), 'green');
+
+    this.audit.log({
+      event: 'session_resumed',
+      botName: this.config.name,
+      chatId,
+      prompt: `/resume ${sessionInfo.sessionId.slice(0, 8)}`,
+    });
+  }
 }
 
 function isEngineName(value: string): value is EngineName {
   return value === 'claude' || value === 'kimi' || value === 'codex';
+}
+
+function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }

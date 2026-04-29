@@ -11,7 +11,8 @@ export type AuditEvent =
   | 'command'
   | 'auth_denied'
   | 'api_task_start'
-  | 'api_task_complete';
+  | 'api_task_complete'
+  | 'session_resumed';
 
 export interface AuditEntry {
   event: AuditEvent;

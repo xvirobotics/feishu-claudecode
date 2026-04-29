@@ -28,6 +28,7 @@ export { ApiConfigManager } from './api-config-manager.js';
 export type { UserSession } from './session-manager.js';
 export type {
   SDKMessage,
+  SDKSessionInfo,
   ExecutionHandle,
   ExecutorOptions,
   ApiContext,
