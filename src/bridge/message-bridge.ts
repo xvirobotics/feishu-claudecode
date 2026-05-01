@@ -591,22 +591,24 @@ export class MessageBridge {
     const session = this.sessionManager.getSession(chatId);
     const cwd = session.workingDirectory;
     const abortController = new AbortController();
+    const activeEngine = session.engine ?? resolveEngineName(this.config);
+    const enginePromptText = normalizePromptForEngine(text, activeEngine);
 
     // Prepare downloads directory (bot-isolated)
     const downloadsDir = this.config.claude.downloadsDir;
     fs.mkdirSync(downloadsDir, { recursive: true });
 
     // Handle image download if present
-    let prompt = text;
+    let prompt = enginePromptText;
     let imagePath: string | undefined;
     let filePath: string | undefined;
     if (imageKey) {
       imagePath = path.join(downloadsDir, `${imageKey}.png`);
       const ok = await this.sender.downloadImage(msgId, imageKey, imagePath);
       if (ok) {
-        prompt = `${text}\n\n[Image saved at: ${imagePath}]\nPlease use the Read tool to read and analyze this image file.`;
+        prompt = `${enginePromptText}\n\n[Image saved at: ${imagePath}]\nPlease use the Read tool to read and analyze this image file.`;
       } else {
-        prompt = `${text}\n\n(Note: Failed to download the image)`;
+        prompt = `${enginePromptText}\n\n(Note: Failed to download the image)`;
       }
     }
 
@@ -615,9 +617,9 @@ export class MessageBridge {
       filePath = path.join(downloadsDir, `${fileKey}_${fileName}`);
       const ok = await this.sender.downloadFile(msgId, fileKey, filePath);
       if (ok) {
-        prompt = `${text}\n\n[File saved at: ${filePath}]\nPlease use the Read tool (for text/code files, images, PDFs) or Bash tool (for other formats) to read and analyze this file.`;
+        prompt = `${enginePromptText}\n\n[File saved at: ${filePath}]\nPlease use the Read tool (for text/code files, images, PDFs) or Bash tool (for other formats) to read and analyze this file.`;
       } else {
-        prompt = `${text}\n\n(Note: Failed to download the file)`;
+        prompt = `${enginePromptText}\n\n(Note: Failed to download the file)`;
       }
     }
 
@@ -1517,8 +1519,16 @@ export function isStaleSessionError(errorMessage?: string): boolean {
   return /no conversation found|conversation not found|session id|invalid session|multiple.*tool_result.*blocks|each tool_use must have a single result/i.test(errorMessage);
 }
 
+export function normalizePromptForEngine(text: string, engine: EngineName): string {
+  if (engine !== 'codex') return text;
+  const match = text.match(/^\/([A-Za-z0-9][A-Za-z0-9_-]*)([\s\S]*)$/);
+  if (!match) return text;
+  const suffix = match[2] ?? '';
+  if (suffix && !/^\s/.test(suffix)) return text;
+  return `$${match[1]}${suffix}`;
+}
+
 export function isContextOverflowError(errorMessage?: string): boolean {
   if (!errorMessage) return false;
   return /context.window.exceeds.limit|context.length.exceeded|context.too.long|max.context.length|token.limit.exceeded|maximum.context/i.test(errorMessage);
 }
-

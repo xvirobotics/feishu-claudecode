@@ -9,11 +9,11 @@ describe('buildCodexArgs', () => {
   const cwd = '/work/proj';
   const prompt = 'run pwd';
 
-  it('defaults approval policy to "never" and sandbox to "workspace-write"', () => {
+  it('defaults approval policy to "never" and sandbox to "danger-full-access"', () => {
     const args = buildCodexArgs({}, cwd, prompt, undefined, undefined);
     expect(args).toEqual([
       '-a', 'never',
-      '--sandbox', 'workspace-write',
+      '--sandbox', 'danger-full-access',
       '-C', cwd,
       'exec', '--json', '--color', 'never', '--skip-git-repo-check', prompt,
     ]);

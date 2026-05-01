@@ -56,7 +56,11 @@ export async function handleSkillHubRoutes(
       return true;
     }
 
-    const skillDir = path.join(bot.config.claude.defaultWorkingDirectory, '.claude', 'skills', skillName);
+    const skillDir = [
+      path.join(bot.config.claude.defaultWorkingDirectory, '.claude', 'skills', skillName),
+      path.join(bot.config.claude.defaultWorkingDirectory, '.codex', 'skills', skillName),
+    ].find((candidate) => fs.existsSync(path.join(candidate, 'SKILL.md')))
+      ?? path.join(bot.config.claude.defaultWorkingDirectory, '.claude', 'skills', skillName);
     const skillMdPath = path.join(skillDir, 'SKILL.md');
     if (!fs.existsSync(skillMdPath)) {
       jsonResponse(res, 404, { error: `Skill not found at ${skillMdPath}` });

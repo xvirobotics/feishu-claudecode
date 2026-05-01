@@ -1,6 +1,6 @@
 # MetaBot Workspace
 
-This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs the Claude Code or Kimi agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi"`).
+This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs the Claude Code, Kimi, or Codex agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi" | "codex"`).
 
 ## Available Skills
 
@@ -8,9 +8,9 @@ This workspace is managed by **MetaBot** — an AI assistant accessible via Feis
 Create AI agent teams, individual agents, or custom skills for any project.
 
 ```
-/metaskill ios app          → generates full .claude/ agent team
+/metaskill ios app          → generates a portable agent team
 /metaskill a security agent → creates a single agent
-/metaskill a deploy skill   → creates a custom slash command
+/metaskill a deploy skill   → creates a custom skill
 ```
 
 ### /metamemory — Shared Knowledge Store
@@ -50,7 +50,7 @@ lark-cli calendar +agenda --as user                      # View calendar
 lark-cli base records list ...                           # Query bitable
 ```
 
-19 AI Agent Skills are installed (lark-doc, lark-im, lark-calendar, lark-sheets, lark-base, lark-task, lark-drive, lark-mail, lark-wiki, etc.) providing structured guidance for each domain.
+19 AI Agent Skills are installed (lark-doc, lark-im, lark-calendar, lark-sheets, lark-base, lark-task, lark-drive, lark-mail, lark-wiki, etc.) providing structured guidance for each domain. Claude/Kimi discover these under `.claude/skills`; Codex discovers the mirrored copies under `.codex/skills`.
 
 ## Guidelines
 

@@ -29,7 +29,10 @@ export interface InstallSkillsOptions {
 
 export function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): void {
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
-  const destSkillsDir = path.join(workDir, '.claude', 'skills');
+  const destSkillDirs = [
+    path.join(workDir, '.claude', 'skills'),
+    path.join(workDir, '.codex', 'skills'),
+  ];
 
   const skillNames = options?.platform === 'feishu'
     ? [...COMMON_SKILLS, ...LARK_CLI_SKILLS]
@@ -43,10 +46,12 @@ export function installSkillsToWorkDir(workDir: string, logger: Logger, options?
       continue;
     }
 
-    const dest = path.join(destSkillsDir, skill);
-    fs.mkdirSync(dest, { recursive: true });
-    fs.cpSync(src, dest, { recursive: true });
-    logger.info({ skill, src, dest }, 'Skill installed to working directory');
+    for (const destSkillsDir of destSkillDirs) {
+      const dest = path.join(destSkillsDir, skill);
+      fs.mkdirSync(dest, { recursive: true });
+      fs.cpSync(src, dest, { recursive: true });
+      logger.info({ skill, src, dest }, 'Skill installed to working directory');
+    }
   }
 
   // For Feishu bots, ensure lark-cli is configured
@@ -54,23 +59,7 @@ export function installSkillsToWorkDir(workDir: string, logger: Logger, options?
     ensureLarkCliConfig(options.feishuAppId, options.feishuAppSecret, logger);
   }
 
-  // Deploy workspace CLAUDE.md if not already present
-  const destClaudeMd = path.join(workDir, 'CLAUDE.md');
-  if (!fs.existsSync(destClaudeMd)) {
-    const thisFile = url.fileURLToPath(import.meta.url);
-    const thisDir = path.dirname(thisFile);
-    // Try src/workspace/CLAUDE.md (tsx) or dist/workspace/CLAUDE.md (compiled)
-    for (const candidate of [
-      path.join(thisDir, '..', 'workspace', 'CLAUDE.md'),
-      path.join(thisDir, '..', '..', 'src', 'workspace', 'CLAUDE.md'),
-    ]) {
-      if (fs.existsSync(candidate)) {
-        fs.copyFileSync(candidate, destClaudeMd);
-        logger.info({ dest: destClaudeMd }, 'CLAUDE.md deployed to working directory');
-        break;
-      }
-    }
-  }
+  deployWorkspaceInstructions(workDir, logger);
 }
 
 /**
@@ -114,19 +103,44 @@ export function installSkillFromHub(
   referencesTar: Buffer | undefined,
   logger: Logger,
 ): void {
-  const destDir = path.join(workDir, '.claude', 'skills', skillName);
-  fs.mkdirSync(destDir, { recursive: true });
-  fs.writeFileSync(path.join(destDir, 'SKILL.md'), skillMd, 'utf-8');
+  const destDirs = [
+    path.join(workDir, '.claude', 'skills', skillName),
+    path.join(workDir, '.codex', 'skills', skillName),
+  ];
 
-  if (referencesTar && referencesTar.length > 0) {
-    try {
-      execSync(`tar xf - -C "${destDir}"`, { input: referencesTar, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 });
-    } catch (err: any) {
-      logger.warn({ err: err.message, skillName }, 'Failed to extract references tar');
+  for (const destDir of destDirs) {
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(path.join(destDir, 'SKILL.md'), skillMd, 'utf-8');
+
+    if (referencesTar && referencesTar.length > 0) {
+      try {
+        execSync(`tar xf - -C "${destDir}"`, { input: referencesTar, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 });
+      } catch (err: any) {
+        logger.warn({ err: err.message, skillName, destDir }, 'Failed to extract references tar');
+      }
     }
-  }
 
-  logger.info({ skillName, dest: destDir }, 'Skill installed from Hub');
+    logger.info({ skillName, dest: destDir }, 'Skill installed from Hub');
+  }
+}
+
+function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
+  const thisFile = url.fileURLToPath(import.meta.url);
+  const thisDir = path.dirname(thisFile);
+  for (const candidate of [
+    path.join(thisDir, '..', 'workspace', 'CLAUDE.md'),
+    path.join(thisDir, '..', '..', 'src', 'workspace', 'CLAUDE.md'),
+  ]) {
+    if (!fs.existsSync(candidate)) continue;
+
+    for (const fileName of ['CLAUDE.md', 'AGENTS.md']) {
+      const dest = path.join(workDir, fileName);
+      if (fs.existsSync(dest)) continue;
+      fs.copyFileSync(candidate, dest);
+      logger.info({ dest }, `${fileName} deployed to working directory`);
+    }
+    break;
+  }
 }
 
 /** Locate the lark-cli executable. */
