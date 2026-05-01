@@ -144,7 +144,7 @@ export function buildCodexArgs(
     args.push('--dangerously-bypass-approvals-and-sandbox');
   } else {
     args.push('-a', codexConfig.approvalPolicy ?? 'never');
-    args.push('--sandbox', codexConfig.sandbox ?? 'workspace-write');
+    args.push('--sandbox', codexConfig.sandbox ?? 'danger-full-access');
   }
 
   args.push('-C', cwd);

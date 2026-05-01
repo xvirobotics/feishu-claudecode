@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isStaleSessionError } from '../src/bridge/message-bridge.js';
+import { isStaleSessionError, normalizePromptForEngine } from '../src/bridge/message-bridge.js';
 
 describe('isStaleSessionError', () => {
   it('matches the GitHub issue error text', () => {
@@ -29,5 +29,19 @@ describe('isStaleSessionError', () => {
     expect(isStaleSessionError('Task timed out (24 hour limit)')).toBe(false);
     expect(isStaleSessionError('permission denied')).toBe(false);
     expect(isStaleSessionError(undefined)).toBe(false);
+  });
+});
+
+describe('normalizePromptForEngine', () => {
+  it('converts slash skill invocations to Codex explicit skill syntax', () => {
+    expect(normalizePromptForEngine('/metaskill ios app', 'codex')).toBe('$metaskill ios app');
+    expect(normalizePromptForEngine('/skill-name', 'codex')).toBe('$skill-name');
+  });
+
+  it('leaves non-Codex and non-skill prompts unchanged', () => {
+    expect(normalizePromptForEngine('/metaskill ios app', 'claude')).toBe('/metaskill ios app');
+    expect(normalizePromptForEngine('/metaskill ios app', 'kimi')).toBe('/metaskill ios app');
+    expect(normalizePromptForEngine('hello /metaskill', 'codex')).toBe('hello /metaskill');
+    expect(normalizePromptForEngine('/bad/path', 'codex')).toBe('/bad/path');
   });
 });

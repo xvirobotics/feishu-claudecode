@@ -17,7 +17,8 @@ If the user's request is empty or unclear, use `AskUserQuestion` to ask the user
 **All files are created inside this project folder:**
 ```
 <project-folder>/
-├── CLAUDE.md                          # Orchestration hub (YOU are the tech lead)
+├── CLAUDE.md                          # Claude/Kimi orchestration hub (YOU are the tech lead)
+├── AGENTS.md                          # Codex orchestration hub (same content or symlink)
 ├── .mcp.json                          # MCP server config
 └── .claude/
     ├── agents/
@@ -38,24 +39,26 @@ cd <project-folder>
 git init
 ```
 
-### Engine Compatibility (Claude ↔ Kimi)
+### Engine Compatibility (Claude ↔ Kimi ↔ Codex)
 
-MetaBot supports two engines: **Claude Code** and **Kimi**. The scaffolded project should be usable by either engine. Key differences you must account for:
+MetaBot supports three engines: **Claude Code**, **Kimi**, and **Codex**. The scaffolded project should be usable by any engine. Key differences you must account for:
 
-| Feature | Claude | Kimi |
-|---------|--------|------|
-| Orchestration doc | `CLAUDE.md` | `AGENTS.md` (symlink `CLAUDE.md` → `AGENTS.md`) |
-| `.claude/skills/` | ✅ auto-discovered | ✅ auto-discovered (brand fallback) |
-| `.claude/agents/*.md` | ✅ auto-discovered | ❌ not loaded (Kimi has only builtin `default`/`okabe`) |
-| MCP config | `.mcp.json` (project-level) | `~/.kimi/mcp.json` (user-level) |
+| Feature | Claude | Kimi | Codex |
+|---------|--------|------|-------|
+| Orchestration doc | `CLAUDE.md` | `AGENTS.md` (symlink or copy from `CLAUDE.md`) | `AGENTS.md` |
+| Skills | `.claude/skills/` | `.claude/skills/` | `.codex/skills/` |
+| `.claude/agents/*.md` | ✅ auto-discovered | ❌ not loaded (builtin agents only) | ❌ not loaded |
+| MCP config | `.mcp.json` (project-level) | `~/.kimi/mcp.json` (user-level) | Codex config / MCP setup |
 
 **What to do at the end of Phase 2 (before verification):**
 ```bash
-# Create AGENTS.md symlink so Kimi reads the same CLAUDE.md
+# Create AGENTS.md symlink so Kimi/Codex read the same orchestration guide
 [ -f CLAUDE.md ] && [ ! -e AGENTS.md ] && ln -s CLAUDE.md AGENTS.md
+# Mirror project skills for Codex
+if [ -d .claude/skills ]; then mkdir -p .codex && cp -R .claude/skills .codex/skills; fi
 ```
 
-Note in the final summary that subagents under `.claude/agents/` only take effect under the Claude engine. Users who run this team on a Kimi-backed bot should expect the orchestrator (CLAUDE.md/AGENTS.md) to do the work inline rather than delegating.
+Note in the final summary that subagents under `.claude/agents/` only take effect under the Claude engine. Users who run this team on a Kimi- or Codex-backed bot should expect the orchestrator (`AGENTS.md`) to do the work inline rather than delegating to project subagents.
 
 All subsequent paths in Phase 2-4 are **relative to this project folder**. You MUST `cd` into the project folder before creating any files.
 
@@ -127,9 +130,9 @@ After all searches, write a structured summary (in your thinking, not as a file)
 
 Based on your research findings combined with the embedded patterns below, create all files **inside the project folder** created in Step 0. Make sure you are `cd`'d into the project folder before writing any files. Create them in this order.
 
-### File 1: `<project-folder>/CLAUDE.md`
+### File 1: `<project-folder>/CLAUDE.md` and `<project-folder>/AGENTS.md`
 
-Write a comprehensive `CLAUDE.md` that serves as the orchestration hub. Structure:
+Write a comprehensive `CLAUDE.md` that serves as the orchestration hub. Then create `AGENTS.md` as a symlink or copy of the same content so Codex reads it. Structure:
 
 ```markdown
 # CLAUDE.md
