@@ -55,9 +55,9 @@ MetaBot isn't locked to one vendor — all three top AI coding agents ship with 
 | **Subscription login** | ✅ `claude login` OAuth | ✅ `kimi login` | ✅ `codex login` — uses your ChatGPT subscription |
 | **API key fallback** | ✅ `ANTHROPIC_API_KEY` or third-party Anthropic-compat endpoints | ✅ Moonshot API key | ✅ `OPENAI_API_KEY` / Codex profile |
 | **Context window** | 200k (1M optional on Opus/Sonnet) | 256k (kimi-for-coding) | 400k (gpt-5.x-codex) |
-| **Tools** | Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP | Same (Kimi CLI builtin + `.claude/skills/` auto-discovery) | Codex CLI native sandbox + shell toolchain |
-| **Autonomous mode** | `bypassPermissions` | `yoloMode` (equivalent) | `--dangerously-bypass-approvals-and-sandbox` |
-| **Subagents** | `.claude/agents/*.md` auto-loaded | Builtin `default` / `okabe` only | Subagents not supported yet |
+| **Tools** | Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP | Same (Kimi CLI builtin + `.claude/skills/` auto-discovery) | Codex CLI native toolchain + `.codex/skills/` auto-discovery |
+| **Autonomous mode** | `bypassPermissions` | `yoloMode` (equivalent) | Defaults to `--sandbox danger-full-access` to avoid `bwrap` failures on hosts without user namespaces |
+| **Subagents** | `.claude/agents/*.md` auto-loaded | Builtin `default` / `okabe` only | Project subagents are not auto-loaded; put role routing in `AGENTS.md` |
 | **Workspace doc** | `CLAUDE.md` | `AGENTS.md` (installer creates the symlink) | `AGENTS.md` (Codex convention) |
 
 **One line of config** — each bot picks its engine:
@@ -67,7 +67,29 @@ MetaBot isn't locked to one vendor — all three top AI coding agents ship with 
 { "name": "vegeta", "engine": "codex", "codex": { "model": "gpt-5.4-codex" } }
 ```
 
-Codex support uses the local `codex exec --json` CLI and resumes chat sessions with `codex exec resume`. Authenticate once with `codex login` (or configure your Codex API key/profile) before starting MetaBot.
+Codex support uses the local `codex exec --json` CLI and resumes chat sessions with `codex exec resume`. Authenticate once with `codex login` (or configure your Codex API key/profile) before starting MetaBot. MetaBot translates Feishu slash-skill invocations like `/metaskill ...` into Codex's explicit `$metaskill ...` skill syntax.
+
+### Codex Migration: Reuse `.claude` Config
+
+Claude/Kimi and Codex use different discovery paths. MetaBot mirrors bundled skills during install/update and Skill Hub installs:
+
+| Content | Claude / Kimi | Codex |
+|---------|---------------|-------|
+| Workspace instructions | `CLAUDE.md` | `AGENTS.md` |
+| Skills | `.claude/skills/<name>/SKILL.md` | `.codex/skills/<name>/SKILL.md` |
+| Subagents | `.claude/agents/*.md` | Not auto-loaded; migrate roles/routes into `AGENTS.md` |
+
+For an existing project, ask Codex to migrate it:
+
+```text
+/model codex
+Use the current project's .claude config to create Codex-compatible .codex/skills and AGENTS.md:
+- mirror .claude/skills/* into .codex/skills/*
+- generate or update AGENTS.md from CLAUDE.md
+- if .claude/agents/*.md exists, merge those subagent roles, routing tables, and workflows into AGENTS.md
+```
+
+If the host disables unprivileged user namespaces, Codex CLI's `workspace-write` sandbox can fail before commands run with `bwrap: No permissions to create a new namespace`. MetaBot defaults Codex to `danger-full-access` to avoid that failure; set `CODEX_SANDBOX` or `codex.sandbox` explicitly if you want stricter isolation.
 
 Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The Agent Bus lets them delegate to each other — the calling bot doesn't need to know which engine is on the other side.
 
@@ -149,7 +171,7 @@ Full-featured browser-based chat interface. Access at `https://your-server/web/`
 | Component | Description |
 |-----------|-------------|
 | **Triple Engine Kernel** | Each bot independently chooses Claude Code / Kimi Code / Codex CLI — full tool stack (Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP) in autonomous mode |
-| **MetaSkill** | Agent factory. `/metaskill` generates a complete `.claude/` agent team (orchestrator + specialists + reviewer) |
+| **MetaSkill** | Agent factory. `/metaskill` generates portable agent teams (`CLAUDE.md` / `AGENTS.md` + skills) |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search, Web UI, auto-syncs to Feishu Wiki |
 | **IM Bridge** | Chat with any agent from Feishu, Telegram, or WeChat (including mobile). Streaming cards + tool call tracking |
 | **Agent Bus** | Agents talk to each other via `mb talk`. Create/remove bots at runtime |
@@ -383,6 +405,7 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `/help` | Show help |
 
 > **Model switching**: Each session can pick its own model. Append `[1m]` to the model name to enable the 1M context window (only Opus 4.7/4.6 and Sonnet 4.6 support it), e.g. `/model claude-opus-4-7[1m]`. OAuth/Pro-Max users must use this suffix — the SDK silently drops beta headers under that auth mode.
+> **Codex skills**: In Feishu you can still send `/metaskill ...`. When the session is on Codex, MetaBot converts it to Codex's `$metaskill ...` form.
 
 <details>
 <summary><strong>API Reference</strong></summary>
