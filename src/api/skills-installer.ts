@@ -127,19 +127,26 @@ export function installSkillFromHub(
 function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
   const thisFile = url.fileURLToPath(import.meta.url);
   const thisDir = path.dirname(thisFile);
+  const existingClaudeMd = path.join(workDir, 'CLAUDE.md');
   for (const candidate of [
     path.join(thisDir, '..', 'workspace', 'CLAUDE.md'),
     path.join(thisDir, '..', '..', 'src', 'workspace', 'CLAUDE.md'),
   ]) {
     if (!fs.existsSync(candidate)) continue;
 
-    for (const fileName of ['CLAUDE.md', 'AGENTS.md']) {
-      const dest = path.join(workDir, fileName);
-      if (fs.existsSync(dest)) continue;
-      fs.copyFileSync(candidate, dest);
-      logger.info({ dest }, `${fileName} deployed to working directory`);
-    }
+    copyInstructionFile(candidate, existingClaudeMd, 'CLAUDE.md', logger);
+    copyInstructionFile(fs.existsSync(existingClaudeMd) ? existingClaudeMd : candidate, path.join(workDir, 'AGENTS.md'), 'AGENTS.md', logger);
     break;
+  }
+}
+
+function copyInstructionFile(src: string, dest: string, fileName: string, logger: Logger): void {
+  if (fs.existsSync(dest)) return;
+  try {
+    fs.copyFileSync(src, dest);
+    logger.info({ dest }, `${fileName} deployed to working directory`);
+  } catch (err: any) {
+    logger.warn({ err: err.message, src, dest }, `Failed to deploy ${fileName}`);
   }
 }
 
