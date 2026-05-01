@@ -4,7 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 /** Agent engine backing a bot. */
-export type EngineName = 'claude' | 'kimi' | 'codex';
+export type EngineName = 'claude' | 'codex';
 
 /** Shared config fields used by MessageBridge and Executors (platform-agnostic). */
 export interface BotConfigBase {
@@ -28,15 +28,6 @@ export interface BotConfigBase {
     apiKey: string | undefined;
     outputsBaseDir: string;
     downloadsDir: string;
-  };
-  /** Kimi-specific overrides. Populated only when engine === 'kimi'. Phase 2. */
-  kimi?: {
-    executable?: string;
-    model?: string;
-    thinking?: boolean;
-    apiKey?: string;
-    /** Context window size in tokens (defaults to 262144 — Kimi for Coding default). */
-    contextWindow?: number;
   };
   /** Codex-specific overrides. Populated only when engine === 'codex'. */
   codex?: CodexBotConfig;
@@ -136,16 +127,6 @@ function expandUserPath(value: string): string {
 
 // --- Feishu JSON entry (used in bots.json) ---
 
-/** Kimi-specific overrides in bots.json. */
-export interface KimiJsonConfig {
-  executable?: string;
-  model?: string;
-  thinking?: boolean;
-  apiKey?: string;
-  /** Context window size in tokens (defaults to 262144 — Kimi for Coding default). */
-  contextWindow?: number;
-}
-
 /** Codex-specific overrides in bots.json. */
 export interface CodexJsonConfig {
   executable?: string;
@@ -164,7 +145,6 @@ export interface CodexJsonConfig {
 /** Fields shared across all bot JSON entries (engine selection and engine overrides). */
 interface EngineJsonFields {
   engine?: EngineName;
-  kimi?: KimiJsonConfig;
   codex?: CodexJsonConfig;
 }
 
@@ -201,7 +181,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     ...(entry.groupNoMention ? { groupNoMention: true } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
-    ...(entry.kimi ? { kimi: entry.kimi } : {}),
+
     ...(codex ? { codex } : {}),
     feishu: {
       appId: entry.feishuAppId,
@@ -242,7 +222,7 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
-    ...(entry.kimi ? { kimi: entry.kimi } : {}),
+
     ...(codex ? { codex } : {}),
     telegram: {
       botToken: entry.telegramBotToken,
@@ -280,7 +260,7 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
-    ...(entry.kimi ? { kimi: entry.kimi } : {}),
+
     ...(codex ? { codex } : {}),
     claude: buildClaudeConfig(entry),
   };
@@ -308,7 +288,7 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
-    ...(entry.kimi ? { kimi: entry.kimi } : {}),
+
     ...(codex ? { codex } : {}),
     wechat: {
       ilinkBaseUrl: entry.ilinkBaseUrl,

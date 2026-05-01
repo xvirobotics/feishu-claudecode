@@ -1,5 +1,19 @@
 // Shared types used across IM platforms (Feishu, Telegram, etc.)
 
+/** Identity of the caller — passed through to the callee for access control. */
+export interface CallerInfo {
+  /** Caller bot name (if from another bot). */
+  name?: string;
+  /** Platform: feishu, telegram, web, wechat. */
+  platform?: string;
+  /** Feishu app ID (for allowlisting in access control). */
+  appId?: string;
+  /** Peer instance name (set when request was forwarded). */
+  peerName?: string;
+  /** Original user ID (if from IM chat). */
+  userId?: string;
+}
+
 export type CardStatus = 'thinking' | 'running' | 'complete' | 'error' | 'waiting_for_input';
 
 export interface ToolCall {

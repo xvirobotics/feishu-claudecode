@@ -195,7 +195,7 @@ describe('PeerManager', () => {
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
-          'X-MetaBot-Origin': 'peer',
+          'X-MetaBot-Origin': 'alice',
           'Authorization': 'Bearer sec',
         }),
       }),
@@ -218,7 +218,7 @@ describe('PeerManager', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://remote:9100/api/bots',
       expect.objectContaining({
-        headers: expect.objectContaining({ 'Authorization': 'Bearer my-secret', 'X-MetaBot-Origin': 'peer' }),
+        headers: expect.objectContaining({ 'Authorization': 'Bearer my-secret', 'X-MetaBot-Origin': 'secure-peer' }),
       }),
     );
   });
@@ -239,7 +239,7 @@ describe('PeerManager', () => {
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:9200/api/bots',
       expect.objectContaining({
-        headers: expect.objectContaining({ 'X-MetaBot-Origin': 'peer' }),
+        headers: expect.objectContaining({ 'X-MetaBot-Origin': 'local-peer' }),
       }),
     );
   });

@@ -2,7 +2,6 @@ import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { Engine, EngineName } from './types.js';
 import { ClaudeEngine } from './claude/index.js';
-import { KimiEngine } from './kimi/index.js';
 import { CodexEngine } from './codex/index.js';
 
 /**
@@ -22,8 +21,6 @@ export function createEngine(
   switch (name) {
     case 'claude':
       return new ClaudeEngine(config, logger);
-    case 'kimi':
-      return new KimiEngine(config, logger);
     case 'codex':
       return new CodexEngine(config, logger);
     default: {
@@ -38,13 +35,12 @@ export function resolveEngineName(config: BotConfigBase): EngineName {
   const explicit = config.engine;
   if (explicit) return explicit;
   const envDefault = process.env.METABOT_ENGINE as EngineName | undefined;
-  if (envDefault === 'claude' || envDefault === 'kimi' || envDefault === 'codex') return envDefault;
+  if (envDefault === 'claude' || envDefault === 'codex') return envDefault;
   return 'claude';
 }
 
 export type { Engine, EngineName, Executor } from './types.js';
 export { ClaudeEngine } from './claude/index.js';
-export { KimiEngine } from './kimi/index.js';
 export { CodexEngine } from './codex/index.js';
 
 // Re-export shared types and classes currently used by the bridge and web/api layers.

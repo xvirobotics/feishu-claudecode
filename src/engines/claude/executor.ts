@@ -103,6 +103,8 @@ export interface ApiContext {
   groupMembers?: string[];
   /** Group ID — used to build grouptalk chatIds for inter-bot communication. */
   groupId?: string;
+  /** Caller identity — for access control. */
+  caller?: import('../../types.js').CallerInfo;
 }
 
 export interface ExecutorOptions {
@@ -209,8 +211,11 @@ export class ClaudeExecutor {
       // botName and chatId are per-session — inject into system prompt to avoid
       // race conditions when multiple chats run concurrently.
       // Port and secret are already set as METABOT_* env vars in config.ts.
+      const callerNote = apiContext.caller
+        ? `\nCaller identity: ${apiContext.caller.name || 'unknown'}${apiContext.caller.platform ? ` (${apiContext.caller.platform})` : ''}${apiContext.caller.appId ? ` appId=${apiContext.caller.appId}` : ''}${apiContext.caller.peerName ? ` via peer "${apiContext.caller.peerName}"` : ''}`
+        : '';
       appendSections.push(
-        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
+        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".${callerNote}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
       );
 
       // Group chat — tell the bot who else is in the group and how to talk to them

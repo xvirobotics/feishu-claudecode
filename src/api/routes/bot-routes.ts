@@ -86,7 +86,7 @@ export async function handleBotRoutes(
         name, ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
-        ...(body.kimi ? { kimi: body.kimi } : {}),
+
         feishuAppId: appId, feishuAppSecret: appSecret, defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -103,7 +103,7 @@ export async function handleBotRoutes(
         name, ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
-        ...(body.kimi ? { kimi: body.kimi } : {}),
+
         telegramBotToken: token, defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -119,7 +119,7 @@ export async function handleBotRoutes(
         name, ...(body.description ? { description: body.description } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
-        ...(body.kimi ? { kimi: body.kimi } : {}),
+
         defaultWorkingDirectory: workDir,
         ...(body.maxTurns ? { maxTurns: body.maxTurns } : {}),
         ...(body.maxBudgetUsd ? { maxBudgetUsd: body.maxBudgetUsd } : {}),
@@ -256,8 +256,6 @@ function defaultModelForConfig(config: import('../../config.js').BotConfigBase):
   switch (resolveEngineName(config)) {
     case 'claude':
       return config.claude.model;
-    case 'kimi':
-      return config.kimi?.model;
     case 'codex':
       return config.codex?.model || config.codex?.displayModel;
   }

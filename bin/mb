@@ -30,19 +30,33 @@ case "$cmd" in
     ;;
   # --- Agent Talk (cross-instance auto-routing) ---
   talk|t)
+    _caller="${METABOT_CALLER:-}"
+    # Parse --as flag: mb talk --as <callerBotName> [peer/]<targetBotName> <chatId> <prompt>
+    while [[ "${1:-}" == --* ]]; do
+      case "$1" in
+        --as) _caller="$2"; shift 2 ;;
+        *) echo "Unknown flag: $1"; exit 1 ;;
+      esac
+    done
     bot="$1" chat="$2"; shift 2 2>/dev/null || true
     prompt="$*"
     if [[ -z "${bot:-}" || -z "${chat:-}" || -z "${prompt:-}" ]]; then
-      echo "Usage: mb talk [peer/]<botName> <chatId> <prompt>"
+      echo "Usage: mb talk [--as <callerBotName>] [peer/]<botName> <chatId> <prompt>"
+      echo "  Options:"
+      echo "    --as <botName>  Identify the caller bot (for access control)"
       echo "  Examples:"
       echo "    mb talk mybot chat123 'fix the bug'"
+      echo "    mb talk --as botA mybot chat123 'fix the bug'"
       echo "    mb talk alice/backend-bot chat123 'deploy to staging'"
       exit 1
     fi
     python3 -c "
 import json, sys
-print(json.dumps({'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.argv[3], 'sendCards': True}))
-" "$bot" "$chat" "$prompt" | \
+body = {'botName': sys.argv[1], 'chatId': sys.argv[2], 'prompt': sys.argv[3], 'sendCards': True}
+if sys.argv[4]:
+    body['caller'] = {'name': sys.argv[4]}
+print(json.dumps(body))
+" "$bot" "$chat" "$prompt" "$_caller" | \
     curl -s -X POST "$METABOT_URL/api/talk" \
       -H "$METABOT_AUTH" -H "Content-Type: application/json" \
       -d @-

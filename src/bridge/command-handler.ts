@@ -45,7 +45,7 @@ export class CommandHandler {
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
           '`/model` - Show current engine/model; `/model list` - Available options',
-          '`/model claude`, `/model kimi`, or `/model codex` - Switch engine (resets session)',
+          '`/model claude` or `/model codex` — Switch engine (resets session)',
           '`/model <name>` - Set model for current engine',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
@@ -252,7 +252,7 @@ export class CommandHandler {
         '',
         'Usage:',
         '- `/model list` — Show available engines + models',
-        '- `/model claude`, `/model kimi`, or `/model codex` — Switch engine (resets session)',
+        '- `/model claude` or `/model codex` — Switch engine (resets session)',
         `- \`/model <name>\` — Set session model (e.g. ${exampleModels})`,
         '- `/model reset` — Clear overrides, use bot defaults',
       ];
@@ -262,7 +262,7 @@ export class CommandHandler {
 
     const normalized = args.toLowerCase();
 
-    // Engine switch — /model claude, /model kimi, or /model codex
+    // Engine switch — /model claude or /model codex
     if (isEngineName(normalized)) {
       if (activeEngine === normalized) {
         await this.sender.sendTextNotice(
@@ -300,25 +300,19 @@ export class CommandHandler {
         { id: 'claude-sonnet-4-6[1m]', label: 'Sonnet 4.6 (1M)', note: '1M context window' },
         { id: 'claude-haiku-4-5', label: 'Haiku 4.5', note: 'Fastest · 200k context' },
       ];
-      const kimiModels = [
-        { id: 'kimi-for-coding', label: 'Kimi for Coding', note: 'Subscription default · 256k context · thinking' },
-        { id: 'kimi-k2', label: 'Kimi K2', note: 'Legacy coding model' },
-      ];
       const codexModels = [
         { id: 'gpt-5.4-codex', label: 'GPT-5.4 Codex', note: 'Recommended Codex coding model' },
         { id: 'gpt-5.4', label: 'GPT-5.4', note: 'General flagship model' },
         { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', note: 'Legacy Codex coding model' },
       ];
-      const models = activeEngine === 'kimi' ? kimiModels : activeEngine === 'codex' ? codexModels : claudeModels;
-      const header = activeEngine === 'kimi'
-        ? '**Available Kimi models:**'
-        : activeEngine === 'codex'
+      const models = activeEngine === 'codex' ? codexModels : claudeModels;
+      const header = activeEngine === 'codex'
           ? '**Common Codex models:**'
           : '**Available Claude models:**';
       const lines = [
         `**Current engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
         '',
-        '**Engines:** `/model claude`, `/model kimi`, or `/model codex` to switch.',
+        '**Engines:** `/model claude` or `/model codex` to switch.',
         '',
         header,
         '',
@@ -330,10 +324,8 @@ export class CommandHandler {
       lines.push('');
       if (activeEngine === 'claude') {
         lines.push('_Tip: append `[1m]` to a model name to enable the 1M context window. Only Opus 4.7/4.6 and Sonnet 4.6 support it._');
-      } else if (activeEngine === 'codex') {
-        lines.push('_Tip: leave unset to use the Codex CLI default from `~/.codex/config.toml`._');
       } else {
-        lines.push('_Tip: leave unset to use the kimi-cli default (recommended for subscription users — the server picks the best available)._');
+        lines.push('_Tip: leave unset to use the Codex CLI default from `~/.codex/config.toml`._');
       }
       lines.push('Use `/model <name>` to set the model for the current engine.');
       await this.sender.sendTextNotice(chatId, '🤖 Available Models', lines.join('\n'));
@@ -369,8 +361,6 @@ export class CommandHandler {
     switch (engine) {
       case 'claude':
         return this.config.claude.model;
-      case 'kimi':
-        return this.config.kimi?.model;
       case 'codex':
         return this.config.codex?.model || this.config.codex?.displayModel;
     }
@@ -380,8 +370,6 @@ export class CommandHandler {
     switch (engine) {
       case 'claude':
         return '`claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5`';
-      case 'kimi':
-        return '`kimi-for-coding`, `kimi-k2`';
       case 'codex':
         return '`gpt-5.4-codex`, `gpt-5.4`, `gpt-5.2-codex`';
     }
@@ -391,8 +379,6 @@ export class CommandHandler {
     switch (engine) {
       case 'claude':
         return '_Make sure Claude Code is authenticated (`claude login`)._';
-      case 'kimi':
-        return '_Make sure `kimi login` has been completed on this host._';
       case 'codex':
         return '_Make sure Codex CLI is authenticated (`codex login`) or configured with an API key._';
     }
@@ -400,5 +386,5 @@ export class CommandHandler {
 }
 
 function isEngineName(value: string): value is EngineName {
-  return value === 'claude' || value === 'kimi' || value === 'codex';
+  return value === 'claude' || value === 'codex';
 }

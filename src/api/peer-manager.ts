@@ -86,7 +86,7 @@ export class PeerManager {
   private async refreshPeer(state: PeerState): Promise<void> {
     const { config } = state;
     const headers: Record<string, string> = {
-      'X-MetaBot-Origin': 'peer',
+      'X-MetaBot-Origin': config.name,
     };
     if (config.secret) {
       headers['Authorization'] = `Bearer ${config.secret}`;
@@ -222,20 +222,26 @@ export class PeerManager {
   }
 
   /** Forward a task request to a peer. Adds X-MetaBot-Origin header to prevent loops. */
-  async forwardTask(peer: PeerConfig, body: object): Promise<object> {
+  async forwardTask(peer: PeerConfig, body: object, caller?: { name?: string; platform?: string; appId?: string }): Promise<object> {
     const url = `${peer.url}/api/talk`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'X-MetaBot-Origin': 'peer',
+      'X-MetaBot-Origin': peer.name,
     };
     if (peer.secret) {
       headers['Authorization'] = `Bearer ${peer.secret}`;
     }
 
+    // Inject caller identity if provided, otherwise mark as from this peer
+    const bodyWithCaller: Record<string, unknown> = { ...body as Record<string, unknown> };
+    if (!bodyWithCaller.caller) {
+      bodyWithCaller.caller = caller || { peerName: peer.name };
+    }
+
     const response = await proxyFetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify(bodyWithCaller),
       signal: AbortSignal.timeout(TASK_FORWARD_TIMEOUT_MS),
     });
 
@@ -260,7 +266,7 @@ export class PeerManager {
 
     const { config } = state;
     const headers: Record<string, string> = {
-      'X-MetaBot-Origin': 'peer',
+      'X-MetaBot-Origin': config.name,
     };
     if (config.secret) {
       headers['Authorization'] = `Bearer ${config.secret}`;

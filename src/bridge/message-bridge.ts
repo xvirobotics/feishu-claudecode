@@ -4,6 +4,7 @@ import * as path from 'node:path';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
+import type { CallerInfo } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
@@ -51,6 +52,8 @@ interface RunningTask {
   chatId: string;
 }
 
+export type { CallerInfo } from '../types.js';
+
 export interface ApiTaskOptions {
   prompt: string;
   chatId: string;
@@ -72,6 +75,8 @@ export interface ApiTaskOptions {
   groupMembers?: string[];
   /** Group ID — used for inter-bot communication chatId pattern. */
   groupId?: string;
+  /** Caller identity — for access control and audit. */
+  caller?: CallerInfo;
 }
 
 export interface ApiTaskResult {
@@ -1065,7 +1070,7 @@ export class MessageBridge {
     const effectiveMessageId = messageId || `api-${chatId}-${Date.now()}`;
     options.onUpdate?.(initialState, effectiveMessageId, false);
 
-    const apiContext = { botName: this.config.name, chatId, groupMembers: options.groupMembers, groupId: options.groupId };
+    const apiContext = { botName: this.config.name, chatId, groupMembers: options.groupMembers, groupId: options.groupId, caller: options.caller };
 
     const executionHandle = this.executorForChat(chatId).startExecution({
       prompt,

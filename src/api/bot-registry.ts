@@ -102,8 +102,6 @@ function defaultModelForEngine(config: BotConfigBase): string | undefined {
   switch (resolveEngineName(config)) {
     case 'claude':
       return config.claude.model;
-    case 'kimi':
-      return config.kimi?.model;
     case 'codex':
       return config.codex?.model || config.codex?.displayModel;
   }

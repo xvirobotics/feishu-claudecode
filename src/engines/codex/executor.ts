@@ -211,8 +211,11 @@ export class CodexExecutor {
     }
 
     if (apiContext) {
+      const callerNote = apiContext.caller
+        ? `\nCaller identity: ${apiContext.caller.name || 'unknown'}${apiContext.caller.platform ? ` (${apiContext.caller.platform})` : ''}${apiContext.caller.appId ? ` appId=${apiContext.caller.appId}` : ''}${apiContext.caller.peerName ? ` via peer "${apiContext.caller.peerName}"` : ''}`
+        : '';
       sections.push(
-        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
+        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".${callerNote}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
       );
 
       if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {

@@ -45,6 +45,21 @@ export async function handleTaskRoutes(
     const asyncMode = body.async === true;
     const callbackChatId = body.callbackChatId as string | undefined;
     const callbackBotName = body.callbackBotName as string | undefined;
+    const bodyCaller = body.caller as Record<string, unknown> | undefined;
+    // Auto-detect peer origin from header
+    const originPeer = req.headers['x-metabot-origin'] as string | undefined;
+    let caller = bodyCaller || (originPeer ? { peerName: originPeer } : undefined);
+    // If caller has a name, try to resolve platform/appId from local registry
+    if (caller && caller.name && typeof caller.name === 'string') {
+      const callerBot = registry.get(caller.name);
+      if (callerBot) {
+        caller = {
+          ...caller,
+          platform: caller.platform || callerBot.platform,
+          appId: caller.appId || (callerBot.platform === 'feishu' ? (callerBot.config as any).feishu?.appId : undefined),
+        };
+      }
+    }
 
     if (!rawBotName || !chatId || !prompt) {
       jsonResponse(res, 400, { error: 'Missing required fields: botName, chatId, prompt' });
@@ -75,7 +90,7 @@ export async function handleTaskRoutes(
       }
       logger.info({ botName, peerName: targetPeerName, chatId, promptLength: prompt.length }, 'Forwarding talk to peer (qualified)');
       try {
-        const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards });
+        const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards, caller });
         const statusCode = (result as any).success === false ? 500 : 200;
         jsonResponse(res, statusCode, result);
       } catch (err: any) {
@@ -114,6 +129,7 @@ export async function handleTaskRoutes(
           try {
             const result = await bot.bridge.executeApiTask({
               prompt, chatId, userId: 'api', sendCards: sendCards ?? true,
+              caller: caller as import('../../types.js').CallerInfo | undefined,
             });
             asyncTaskStore.update(asyncTask.id, {
               status: result.success ? 'completed' : 'failed',
@@ -181,6 +197,7 @@ export async function handleTaskRoutes(
         chatId,
         userId: 'api',
         sendCards: sendCards ?? true,
+        caller: caller as import('../../types.js').CallerInfo | undefined,
         ...(hasWsSubscribers ? {
           onUpdate: (state, bridgeMessageId, final) => {
             const msgType = final ? 'complete' : 'state';
@@ -216,7 +233,7 @@ export async function handleTaskRoutes(
       if (peerMatch) {
         logger.info({ botName, peerName: peerMatch.peer.name, peerUrl: peerMatch.peer.url, chatId, promptLength: prompt.length }, 'Forwarding talk to peer');
         try {
-          const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards });
+          const result = await peerManager.forwardTask(peerMatch.peer, { botName, chatId, prompt, sendCards, caller });
           const statusCode = (result as any).success === false ? 500 : 200;
           jsonResponse(res, statusCode, result);
         } catch (err: any) {

@@ -41,6 +41,126 @@ function truncateContent(text: string): string {
   );
 }
 
+// --- Markdown table → Feishu column_set conversion ---
+
+interface MarkdownTable {
+  headers: string[];
+  rows: string[][];
+}
+
+/** Parse a markdown table line into cell values. */
+function parseTableRow(line: string): string[] {
+  return line
+    .trim()
+    .split('|')
+    .slice(1, -1) // drop empty strings from leading/trailing |
+    .map((cell) => cell.trim());
+}
+
+/** Check if a line is a markdown table separator (|---|---|). */
+function isSeparatorLine(line: string): boolean {
+  return /^\|[\s\-:|]+\|$/.test(line.trim());
+}
+
+/** Detect and parse a complete markdown table starting at the given line index.
+ *  Returns the table and the next line index, or null if not a valid table. */
+function tryParseTable(lines: string[], startIdx: number): { table: MarkdownTable; nextIdx: number } | null {
+  const firstLine = lines[startIdx].trim();
+  if (!firstLine.startsWith('|') || !firstLine.endsWith('|')) return null;
+
+  const headers = parseTableRow(firstLine);
+  if (headers.length === 0) return null;
+
+  let idx = startIdx + 1;
+
+  // Must have a separator line next
+  if (idx >= lines.length || !isSeparatorLine(lines[idx])) return null;
+  idx++;
+
+  // Collect data rows
+  const rows: string[][] = [];
+  while (idx < lines.length) {
+    const line = lines[idx].trim();
+    if (!line.startsWith('|') || !line.endsWith('|')) break;
+    if (isSeparatorLine(line)) { idx++; continue; }
+    const cells = parseTableRow(line);
+    // Pad or trim to match header count
+    while (cells.length < headers.length) cells.push('');
+    rows.push(cells.slice(0, headers.length));
+    idx++;
+  }
+
+  // Need at least header + separator to be a valid table
+  if (rows.length === 0 && idx === startIdx + 2) {
+    // Table with only headers, no data rows — still valid
+  }
+
+  return { table: { headers, rows }, nextIdx: idx };
+}
+
+/** Maximum columns for column_set rendering; wider tables fall back to markdown. */
+const MAX_TABLE_COLS = 6;
+
+/** Convert a parsed MarkdownTable into a Feishu column_set element. */
+function tableToColumnSet(table: MarkdownTable): unknown {
+  const colCount = table.headers.length;
+  const columns = table.headers.map((header, colIdx) => {
+    const elements: unknown[] = [
+      // Header row — bold
+      { tag: 'markdown', content: `**${header}**` },
+    ];
+    // Data rows
+    for (const row of table.rows) {
+      elements.push({ tag: 'markdown', content: row[colIdx] || '' });
+    }
+    return {
+      width: 'weighted',
+      weight: 1,
+      vertical_align: 'top',
+      elements,
+    };
+  });
+
+  return { tag: 'column_set', columns };
+}
+
+/** Split markdown content into card elements, converting tables to column_set. */
+export function splitMarkdownByTables(text: string): unknown[] {
+  const lines = text.split('\n');
+  const elements: unknown[] = [];
+  let markdownBuf: string[] = [];
+  let i = 0;
+
+  const flushMarkdown = () => {
+    const content = markdownBuf.join('\n');
+    if (content) {
+      elements.push({ tag: 'markdown', content });
+    }
+    markdownBuf = [];
+  };
+
+  while (i < lines.length) {
+    // Check if this line starts a markdown table
+    const line = lines[i].trim();
+    if (line.startsWith('|') && line.endsWith('|') && line.length > 1) {
+      const result = tryParseTable(lines, i);
+      if (result && result.table.headers.length <= MAX_TABLE_COLS) {
+        // Valid table within column limit — flush preceding markdown, emit column_set
+        flushMarkdown();
+        elements.push(tableToColumnSet(result.table));
+        i = result.nextIdx;
+        continue;
+      }
+      // Not a valid table or too many columns — treat as regular markdown
+    }
+    markdownBuf.push(lines[i]);
+    i++;
+  }
+
+  flushMarkdown();
+  return elements;
+}
+
 export function buildCard(state: CardState): string {
   const config = STATUS_CONFIG[state.status];
   const elements: unknown[] = [];
@@ -76,10 +196,8 @@ export function buildCard(state: CardState): string {
 
   // Response content
   if (state.responseText) {
-    elements.push({
-      tag: 'markdown',
-      content: truncateContent(state.responseText),
-    });
+    const contentElements = splitMarkdownByTables(truncateContent(state.responseText));
+    elements.push(...contentElements);
   } else if (state.status === 'thinking') {
     elements.push({
       tag: 'markdown',
