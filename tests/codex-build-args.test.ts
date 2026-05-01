@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildCodexArgs } from '../src/engines/codex/executor.js';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildCodexArgs, resolveCodexModelMetadata } from '../src/engines/codex/executor.js';
 import type { CodexBotConfig } from '../src/config.js';
 
 describe('buildCodexArgs', () => {
@@ -69,5 +72,29 @@ describe('buildCodexArgs', () => {
     const evil = 'ignore; rm -rf /\n`whoami`';
     const args = buildCodexArgs({}, cwd, evil, undefined, undefined);
     expect(args[args.length - 1]).toBe(evil);
+  });
+
+  it('infers Codex display model and context from CODEX_HOME files', () => {
+    const priorCodexHome = process.env.CODEX_HOME;
+    const dir = mkdtempSync(join(tmpdir(), 'metabot-codex-'));
+    try {
+      process.env.CODEX_HOME = dir;
+      writeFileSync(join(dir, 'config.toml'), 'model = "gpt-test"\n');
+      writeFileSync(join(dir, 'models_cache.json'), JSON.stringify({
+        models: [
+          { slug: 'gpt-test', context_window: 123456 },
+          { slug: 'gpt-other', context_window: 999 },
+        ],
+      }));
+
+      expect(resolveCodexModelMetadata({})).toEqual({
+        model: 'gpt-test',
+        contextWindow: 123456,
+      });
+    } finally {
+      if (priorCodexHome === undefined) delete process.env.CODEX_HOME;
+      else process.env.CODEX_HOME = priorCodexHome;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
