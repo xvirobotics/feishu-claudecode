@@ -39,9 +39,11 @@ export function installSkillsToWorkDir(workDir: string, logger: Logger, options?
     : COMMON_SKILLS;
 
   for (const skill of skillNames) {
-    const src = path.join(userSkillsDir, skill);
+    const src = fs.existsSync(path.join(userSkillsDir, skill))
+      ? path.join(userSkillsDir, skill)
+      : bundledSkillSource(skill);
 
-    if (!fs.existsSync(src)) {
+    if (!src || !fs.existsSync(src)) {
       logger.debug({ skill }, 'Skill source not found, skipping');
       continue;
     }
@@ -138,6 +140,34 @@ function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
     copyInstructionFile(fs.existsSync(existingClaudeMd) ? existingClaudeMd : candidate, path.join(workDir, 'AGENTS.md'), 'AGENTS.md', logger);
     break;
   }
+}
+
+function bundledSkillSource(skill: string): string | undefined {
+  const thisFile = url.fileURLToPath(import.meta.url);
+  const thisDir = path.dirname(thisFile);
+  const candidatesBySkill: Record<string, string[]> = {
+    metaskill: [
+      path.join(thisDir, '..', 'skills', 'metaskill'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'metaskill'),
+    ],
+    metamemory: [
+      path.join(thisDir, '..', 'memory', 'skill'),
+      path.join(thisDir, '..', '..', 'src', 'memory', 'skill'),
+    ],
+    metabot: [
+      path.join(thisDir, '..', 'skills', 'metabot'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'metabot'),
+    ],
+    voice: [
+      path.join(thisDir, '..', 'skills', 'voice'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'voice'),
+    ],
+    'skill-hub': [
+      path.join(thisDir, '..', 'skills', 'skill-hub'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'skill-hub'),
+    ],
+  };
+  return candidatesBySkill[skill]?.find((candidate) => fs.existsSync(candidate));
 }
 
 function copyInstructionFile(src: string, dest: string, fileName: string, logger: Logger): void {

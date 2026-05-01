@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -33,14 +33,13 @@ describe('skills installer', () => {
     expect(readFileSync(join(workDir, '.codex/skills/demo-skill/SKILL.md'), 'utf-8')).toContain('demo-skill');
   });
 
-  it('mirrors user skills into Claude and Codex project directories and deploys AGENTS.md', () => {
+  it('mirrors bundled skills into Claude and Codex project directories and deploys AGENTS.md', () => {
     const priorHome = process.env.HOME;
     const home = tempDir('metabot-home-');
     const workDir = tempDir('metabot-work-');
     try {
       process.env.HOME = home;
-      mkdirSync(join(home, '.claude/skills/metaskill'), { recursive: true });
-      writeFileSync(join(home, '.claude/skills/metaskill/SKILL.md'), '---\nname: metaskill\ndescription: Meta\n---\n');
+      mkdirSync(join(home, '.claude/skills'), { recursive: true });
 
       installSkillsToWorkDir(workDir, logger);
 
