@@ -211,11 +211,15 @@ export class CodexExecutor {
     }
 
     if (apiContext) {
+      const ownAppId = (this.config as any).feishu?.appId as string | undefined;
+      const ownIdentity = ownAppId
+        ? `\nYour identity: bot "${apiContext.botName}" (feishu appId=${ownAppId}). METABOT_CALLER env var is already set to "${apiContext.botName}". To delegate to other bots, ALWAYS use \`mb talk\` (NEVER curl). The \`mb\` CLI auto-includes your caller identity from METABOT_CALLER. Using curl directly bypasses access control — the target bot will deny your request because it cannot identify you.`
+        : '';
       const callerNote = apiContext.caller
         ? `\nCaller identity: ${apiContext.caller.name || 'unknown'}${apiContext.caller.platform ? ` (${apiContext.caller.platform})` : ''}${apiContext.caller.appId ? ` appId=${apiContext.caller.appId}` : ''}${apiContext.caller.peerName ? ` via peer "${apiContext.caller.peerName}"` : ''}`
         : '';
       sections.push(
-        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".${callerNote}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
+        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".${ownIdentity}${callerNote}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
       );
 
       if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {

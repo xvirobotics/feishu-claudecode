@@ -66,6 +66,18 @@ export async function handleTaskRoutes(
       return true;
     }
 
+    // Require caller identity on all /api/talk requests. Peer-forwarded requests
+    // get identity from X-MetaBot-Origin header; direct calls must include caller
+    // in the body (mb talk auto-includes it from METABOT_CALLER env var).
+    // curl bypasses this — reject it so bots learn to use mb talk.
+    if (!caller) {
+      logger.warn({ botName: rawBotName, chatId }, 'Rejected request without caller identity');
+      jsonResponse(res, 403, {
+        error: 'Caller identity required. Use `mb talk` instead of curl — it auto-includes your caller identity from the METABOT_CALLER env var. If calling via HTTP API directly, include `caller: {name: "..."}` in the JSON body.',
+      });
+      return true;
+    }
+
     // Parse qualified name: "peerName/botName" or just "botName"
     let targetPeerName: string | undefined;
     let botName: string;

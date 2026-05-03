@@ -59,7 +59,7 @@ function hasCredentialsFile(): boolean {
  * - Merges process.env so child inherits system PATH, TEMP, etc.
  * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
  */
-function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+function createSpawnFn(botName: string, explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
   // Decide once whether to filter auth env vars
   const filterAuthVars = !!(explicitApiKey || hasCredentialsFile());
 
@@ -84,6 +84,9 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
     if (explicitApiKey) {
       env.ANTHROPIC_API_KEY = explicitApiKey;
     }
+
+    // Inject bot identity so mb CLI and curl calls carry caller info
+    env.METABOT_CALLER = botName;
 
     const child = spawn(nodePath, options.args, {
       cwd: options.cwd,
@@ -195,7 +198,7 @@ export class ClaudeExecutor {
       // Cross-platform spawn: custom spawn filters CLAUDE* env vars and uses
       // process.execPath to avoid PATH issues on Windows; fileURLToPath converts
       // file:// URLs to native paths for the SDK CLI entrypoint.
-      spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey),
+      spawnClaudeCodeProcess: createSpawnFn(this.config.name, this.config.claude.apiKey),
       executableArgs: [path.join(path.dirname(fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk'))), 'cli.js')],
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
     };
@@ -211,11 +214,15 @@ export class ClaudeExecutor {
       // botName and chatId are per-session — inject into system prompt to avoid
       // race conditions when multiple chats run concurrently.
       // Port and secret are already set as METABOT_* env vars in config.ts.
+      const ownAppId = (this.config as any).feishu?.appId as string | undefined;
+      const ownIdentity = ownAppId
+        ? `\nYour identity: bot "${apiContext.botName}" (feishu appId=${ownAppId}). METABOT_CALLER env var is already set to "${apiContext.botName}". To delegate to other bots, ALWAYS use \`mb talk\` (NEVER curl). The \`mb\` CLI auto-includes your caller identity from METABOT_CALLER. Using curl directly bypasses access control — the target bot will deny your request because it cannot identify you.`
+        : '';
       const callerNote = apiContext.caller
         ? `\nCaller identity: ${apiContext.caller.name || 'unknown'}${apiContext.caller.platform ? ` (${apiContext.caller.platform})` : ''}${apiContext.caller.appId ? ` appId=${apiContext.caller.appId}` : ''}${apiContext.caller.peerName ? ` via peer "${apiContext.caller.peerName}"` : ''}`
         : '';
       appendSections.push(
-        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".${callerNote}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
+        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".${ownIdentity}${callerNote}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
       );
 
       // Group chat — tell the bot who else is in the group and how to talk to them
