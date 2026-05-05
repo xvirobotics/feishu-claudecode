@@ -13,6 +13,12 @@ describe('isStaleSessionError', () => {
     expect(isStaleSessionError('Conversation not found')).toBe(true);
   });
 
+  it('matches Codex stale thread resume errors', () => {
+    expect(
+      isStaleSessionError('Error: Codex exited with code 1: Error: thread/resume: thread/resume failed: no rollout found for thread id ea0dd6d2-7418-4545-8427-63cc8aed81f2'),
+    ).toBe(true);
+  });
+
   it('matches conversation corruption errors (duplicate tool_result)', () => {
     expect(
       isStaleSessionError('API Error: 400 {"type":"error","error":{"type":"invalid_request_error","message":"messages.148.content.1: each tool_use must have a single result. Found multiple `tool_result` blocks with id: toolu_01TPsHXcmpuz5cAY97fM5vXv"}}'),
