@@ -356,7 +356,7 @@ export class CommandHandler {
 
     // Set the model (use only the first token, ignore trailing junk)
     const newModel = args.split(/\s+/)[0];
-    this.sessionManager.setSessionModel(chatId, newModel);
+    this.sessionManager.setSessionModel(chatId, newModel, activeEngine);
     await this.sender.sendTextNotice(
       chatId,
       '✅ Model Set',

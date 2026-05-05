@@ -6,6 +6,8 @@ import type { EngineName } from '../types.js';
 
 export interface UserSession {
   sessionId: string | undefined;
+  /** Engine that owns sessionId. Engine session stores are not interchangeable. */
+  sessionIdEngine?: EngineName;
   workingDirectory: string;
   lastUsed: number;
   /** Cumulative token usage across all queries in this session */
@@ -16,18 +18,22 @@ export interface UserSession {
   cumulativeDurationMs: number;
   /** Per-session model override (e.g. "claude-opus-4-7"). Falls back to bot default when undefined. */
   model?: string;
-  /** Per-session engine override ("claude" | "kimi"). Falls back to bot default when undefined. */
+  /** Engine that owns model. Model names are engine-specific. */
+  modelEngine?: EngineName;
+  /** Per-session engine override. Falls back to bot default when undefined. */
   engine?: EngineName;
 }
 
 interface PersistedSession {
   sessionId: string;
+  sessionIdEngine?: EngineName;
   workingDirectory: string;
   lastUsed: number;
   cumulativeTokens?: number;
   cumulativeCostUsd?: number;
   cumulativeDurationMs?: number;
   model?: string;
+  modelEngine?: EngineName;
   engine?: EngineName;
 }
 
@@ -92,18 +98,20 @@ export class SessionManager {
     }
   }
 
-  setSessionId(chatId: string, sessionId: string): void {
+  setSessionId(chatId: string, sessionId: string, engine?: EngineName): void {
     const session = this.getSession(chatId);
     session.sessionId = sessionId;
-    this.logger.debug({ chatId, sessionId: sessionId.slice(0, 8) }, 'Session ID updated');
+    session.sessionIdEngine = engine;
+    this.logger.debug({ chatId, sessionId: sessionId.slice(0, 8), engine }, 'Session ID updated');
     this.saveToDisk();
   }
 
   /** Set per-session model override. Pass undefined to clear. */
-  setSessionModel(chatId: string, model: string | undefined): void {
+  setSessionModel(chatId: string, model: string | undefined, engine?: EngineName): void {
     const session = this.getSession(chatId);
     session.model = model;
-    this.logger.info({ chatId, model }, 'Session model override updated');
+    session.modelEngine = model ? engine : undefined;
+    this.logger.info({ chatId, model, engine: session.modelEngine }, 'Session model override updated');
     this.saveToDisk();
   }
 
@@ -118,7 +126,9 @@ export class SessionManager {
     if (session.engine === engine) return;
     session.engine = engine;
     session.sessionId = undefined;
+    session.sessionIdEngine = undefined;
     session.model = undefined;
+    session.modelEngine = undefined;
     this.logger.info({ chatId, engine }, 'Session engine override updated (session reset)');
     this.saveToDisk();
   }
@@ -136,6 +146,7 @@ export class SessionManager {
     const session = this.sessions.get(chatId);
     if (session) {
       session.sessionId = undefined;
+      session.sessionIdEngine = undefined;
       session.cumulativeTokens = 0;
       session.cumulativeCostUsd = 0;
       session.cumulativeDurationMs = 0;
@@ -168,12 +179,14 @@ export class SessionManager {
         if (session.sessionId || session.model || session.engine) {
           data[chatId] = {
             sessionId: session.sessionId || '',
+            sessionIdEngine: session.sessionIdEngine,
             workingDirectory: session.workingDirectory,
             lastUsed: session.lastUsed,
             cumulativeTokens: session.cumulativeTokens,
             cumulativeCostUsd: session.cumulativeCostUsd,
             cumulativeDurationMs: session.cumulativeDurationMs,
             model: session.model,
+            modelEngine: session.modelEngine,
             engine: session.engine,
           };
         }
@@ -196,12 +209,14 @@ export class SessionManager {
         if (now - persisted.lastUsed > SESSION_TTL_MS) continue;
         this.sessions.set(chatId, {
           sessionId: persisted.sessionId || undefined,
+          sessionIdEngine: persisted.sessionIdEngine,
           workingDirectory: persisted.workingDirectory,
           lastUsed: persisted.lastUsed,
           cumulativeTokens: persisted.cumulativeTokens ?? 0,
           cumulativeCostUsd: persisted.cumulativeCostUsd ?? 0,
           cumulativeDurationMs: persisted.cumulativeDurationMs ?? 0,
           model: persisted.model,
+          modelEngine: persisted.modelEngine,
           engine: persisted.engine,
         });
         loaded++;
