@@ -439,6 +439,7 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
   echo -e "${BOLD}Agent Engine:${NC}"
   echo "  1) Claude Code (Anthropic)"
   echo "  2) Kimi (Moonshot AI — requires kimi-cli login, uses your subscription)"
+  echo "  3) Codex CLI (OpenAI — requires codex login, uses your ChatGPT subscription)"
   prompt_choice ENGINE_CHOICE "1"
 
   BOT_ENGINE="claude"
@@ -454,6 +455,26 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
     info "After install, run 'kimi login' in a separate terminal to authenticate."
     # Skip the Claude provider prompt entirely for Kimi — it has its own auth.
     AUTH_CHOICE="kimi"
+  elif [[ "$ENGINE_CHOICE" == "3" ]]; then
+    BOT_ENGINE="codex"
+    CLAUDE_AUTH_METHOD="codex"
+    echo ""
+    if command -v codex &>/dev/null; then
+      success "Codex CLI found: $(command -v codex)"
+    else
+      info "Installing Codex CLI..."
+      npm_install_global @openai/codex
+      if command -v codex &>/dev/null; then
+        success "Codex CLI installed: $(command -v codex)"
+      else
+        warn "Codex CLI install failed. Install manually: sudo npm install -g @openai/codex"
+        warn "MetaBot will still be configured — install Codex + run 'codex login' before starting."
+      fi
+    fi
+    info "After install, run 'codex login' in a separate terminal to authenticate (or set OPENAI_API_KEY / configure a profile in ~/.codex/config.toml)."
+    info "Note: Codex runs with approvalPolicy='never' and sandbox='workspace-write' by default — interactive tool approvals are not surfaced to IM."
+    # Skip the Claude provider prompt entirely for Codex — it has its own auth.
+    AUTH_CHOICE="codex"
   else
     # ------ 4b-claude: Claude AI authentication ------
     echo ""
@@ -465,7 +486,7 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
   fi
 
   case "$AUTH_CHOICE" in
-    kimi)
+    kimi|codex)
       : # handled above
       ;;
     1)
@@ -614,9 +635,16 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
     echo "API_PORT=${API_PORT}"
     echo "API_SECRET=${API_SECRET}"
     echo ""
-    echo "# Claude AI Authentication"
+    echo "# Agent Engine Authentication"
     if [[ "$CLAUDE_AUTH_METHOD" == "subscription" ]]; then
       echo "# Using Claude Code Subscription (OAuth). Run 'claude login' to authenticate."
+    elif [[ "$CLAUDE_AUTH_METHOD" == "kimi" ]]; then
+      echo "# Using Kimi CLI. Run 'kimi login' to authenticate."
+    elif [[ "$CLAUDE_AUTH_METHOD" == "codex" ]]; then
+      echo "# Using Codex CLI. Run 'codex login' to authenticate (or set OPENAI_API_KEY / configure ~/.codex/config.toml)."
+      echo "# CODEX_EXECUTABLE_PATH="
+      echo "# CODEX_APPROVAL_POLICY=never"
+      echo "# CODEX_SANDBOX=workspace-write"
     elif [[ -n "${CLAUDE_AUTH_ENV_LINES:-}" ]]; then
       echo "$CLAUDE_AUTH_ENV_LINES"
     fi
@@ -652,6 +680,7 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
         defaultWorkingDirectory: process.argv[4],
       };
       if (engine === 'kimi') { bot.engine = 'kimi'; bot.kimi = { thinking: true }; }
+      if (engine === 'codex') { bot.engine = 'codex'; bot.codex = { approvalPolicy: 'never', sandbox: 'workspace-write' }; }
       console.log(JSON.stringify([bot], null, 2))
     " "$BOT_NAME" "$FEISHU_APP_ID" "$FEISHU_APP_SECRET" "$WORK_DIR" "${BOT_ENGINE:-claude}")
   fi
@@ -667,6 +696,7 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
         defaultWorkingDirectory: process.argv[3],
       };
       if (engine === 'kimi') { bot.engine = 'kimi'; bot.kimi = { thinking: true }; }
+      if (engine === 'codex') { bot.engine = 'codex'; bot.codex = { approvalPolicy: 'never', sandbox: 'workspace-write' }; }
       console.log(JSON.stringify([bot], null, 2))
     " "$TG_NAME" "$TELEGRAM_BOT_TOKEN" "$WORK_DIR" "${BOT_ENGINE:-claude}")
   fi
@@ -682,6 +712,7 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
         defaultWorkingDirectory: process.argv[2],
       };
       if (engine === 'kimi') { bot.engine = 'kimi'; bot.kimi = { thinking: true }; }
+      if (engine === 'codex') { bot.engine = 'codex'; bot.codex = { approvalPolicy: 'never', sandbox: 'workspace-write' }; }
       console.log(JSON.stringify([bot], null, 2))
     " "$WX_NAME" "$WORK_DIR" "${BOT_ENGINE:-claude}")
   fi
@@ -1214,6 +1245,14 @@ if [[ "${SKIP_CONFIG}" == "false" ]]; then
   fi
   if [[ "${CLAUDE_AUTH_METHOD}" == "kimi" ]]; then
     echo "    ${STEP_NUM}. Run 'kimi login' in a separate terminal (https://kimi.com to sign up)"
+    STEP_NUM=$((STEP_NUM + 1))
+  fi
+  if [[ "${CLAUDE_AUTH_METHOD}" == "codex" ]]; then
+    if ! command -v codex &>/dev/null; then
+      echo "    ${STEP_NUM}. Install Codex CLI: sudo npm install -g @openai/codex"
+      STEP_NUM=$((STEP_NUM + 1))
+    fi
+    echo "    ${STEP_NUM}. Run 'codex login' in a separate terminal (or set OPENAI_API_KEY / configure ~/.codex/config.toml)"
     STEP_NUM=$((STEP_NUM + 1))
   fi
   if [[ "$SETUP_FEISHU" == "true" ]]; then
