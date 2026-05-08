@@ -182,9 +182,10 @@ export class ClaudeExecutor {
   ) {}
 
   private buildQueryOptions(cwd: string, sessionId: string | undefined, abortController: AbortController, outputsDir?: string, apiContext?: ApiContext): Record<string, unknown> {
+    const isRoot = process.getuid?.() === 0;
     const queryOptions: Record<string, unknown> = {
-      permissionMode: 'bypassPermissions' as const,
-      allowDangerouslySkipPermissions: true,
+      permissionMode: isRoot ? 'auto' : ('bypassPermissions' as const),
+      ...(isRoot ? {} : { allowDangerouslySkipPermissions: true }),
       cwd,
       abortController,
       includePartialMessages: true,

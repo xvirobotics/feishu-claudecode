@@ -3,7 +3,12 @@ import type { IMessageSender } from '../bridge/message-sender.interface.js';
 import type { CardState } from '../types.js';
 import { MessageSender } from './message-sender.js';
 import { buildCard, buildTextCard } from './card-builder.js';
+import { buildCardV2, buildTextCardV2 } from './card-builder-v2.js';
 import { OutputsManager } from '../bridge/outputs-manager.js';
+
+// CARD_SCHEMA_V2=true → use v2 (native table + lark_md headings + grey footer)
+// Default v1 for backward compatibility; switch per-bot via env var.
+const USE_V2 = process.env.CARD_SCHEMA_V2 === 'true';
 
 /**
  * Adapts the Feishu-specific MessageSender to the platform-agnostic IMessageSender interface.
@@ -13,15 +18,15 @@ export class FeishuSenderAdapter implements IMessageSender {
   constructor(private sender: MessageSender) {}
 
   async sendCard(chatId: string, state: CardState): Promise<string | undefined> {
-    return this.sender.sendCard(chatId, buildCard(state));
+    return this.sender.sendCard(chatId, USE_V2 ? buildCardV2(state) : buildCard(state));
   }
 
   async updateCard(messageId: string, state: CardState): Promise<boolean> {
-    return this.sender.updateCard(messageId, buildCard(state));
+    return this.sender.updateCard(messageId, USE_V2 ? buildCardV2(state) : buildCard(state));
   }
 
   async sendTextNotice(chatId: string, title: string, content: string, color: string = 'blue'): Promise<void> {
-    await this.sender.sendCard(chatId, buildTextCard(title, content, color));
+    await this.sender.sendCard(chatId, USE_V2 ? buildTextCardV2(title, content, color) : buildTextCard(title, content, color));
   }
 
   async sendText(chatId: string, text: string): Promise<void> {
