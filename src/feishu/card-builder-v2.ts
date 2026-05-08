@@ -168,15 +168,23 @@ export function buildCardV2(state: CardState): string {
         content: [`**[${q.header}] ${q.question}**`, '', ...descLines].join('\n'),
       });
       const actions = q.options.map((opt, oi) => ({
-        tag:   'button',
-        text:  { tag: 'plain_text', content: `${oi + 1}. ${opt.label}` },
-        type:  'primary',
-        value: {
-          action:        'answer_question',
-          toolUseId:     state.pendingQuestion!.toolUseId,
-          questionIndex: qi,
-          optionIndex:   oi,
-        },
+        tag:  'button',
+        text: { tag: 'plain_text', content: `${oi + 1}. ${opt.label}` },
+        type: 'primary',
+        // Card Schema 2.0 requires button callbacks via `behaviors`. The v1
+        // top-level `value` field is silently dropped under schema 2.0, so the
+        // click never reaches the `card.action.trigger` handler.
+        behaviors: [
+          {
+            type:  'callback',
+            value: {
+              action:        'answer_question',
+              toolUseId:     state.pendingQuestion!.toolUseId,
+              questionIndex: qi,
+              optionIndex:   oi,
+            },
+          },
+        ],
       }));
       elements.push({ tag: 'action', actions });
     });
