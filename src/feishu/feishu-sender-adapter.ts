@@ -6,9 +6,9 @@ import { buildCard, buildTextCard } from './card-builder.js';
 import { buildCardV2, buildTextCardV2 } from './card-builder-v2.js';
 import { OutputsManager } from '../bridge/outputs-manager.js';
 
-// CARD_SCHEMA_V2=true → use v2 (native table + lark_md headings + grey footer)
-// Default v1 for backward compatibility; switch per-bot via env var.
-const USE_V2 = process.env.CARD_SCHEMA_V2 === 'true';
+// v2 (native table + lark_md headings + grey footer) is the default.
+// Set CARD_SCHEMA_V2=false to opt out and fall back to v1.
+const USE_V2 = process.env.CARD_SCHEMA_V2 !== 'false';
 
 /**
  * Adapts the Feishu-specific MessageSender to the platform-agnostic IMessageSender interface.
