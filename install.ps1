@@ -287,7 +287,20 @@ if (Test-Path (Join-Path $MetabotHome ".git")) {
     Write-Info "Existing installation found, pulling latest..."
     Push-Location $MetabotHome
     $OldHead = git rev-parse HEAD
-    try { git pull --ff-only } catch { Write-Warn "git pull failed, continuing with existing code" }
+    git pull --ff-only
+    if ($LASTEXITCODE -ne 0) {
+        Pop-Location
+        Write-Err "git pull --ff-only failed at $MetabotHome."
+        Write-Err "Your checkout has diverged from origin or has uncommitted changes."
+        Write-Err "Continuing with stale code would silently break later phases (e.g. Phase 6 'skill not found')."
+        Write-Err ""
+        Write-Err "Fix one of these and re-run install.ps1:"
+        Write-Err "  - Inspect: cd $MetabotHome; git status; git log --oneline -5"
+        Write-Err "  - Stash & retry:    cd $MetabotHome; git stash; git pull --ff-only"
+        Write-Err "  - Reset to origin (DESTROYS local commits/edits):"
+        Write-Err "      cd $MetabotHome; git fetch origin; git reset --hard origin/main"
+        exit 1
+    }
     $NewHead = git rev-parse HEAD
 
     # Re-exec with updated install.ps1 if it changed
@@ -567,6 +580,18 @@ Write-Step "Phase 6: Installing skills and setting up workspace"
 
 $SkillsDir = Join-Path $env:USERPROFILE ".claude\skills"
 New-Item -ItemType Directory -Path $SkillsDir -Force | Out-Null
+
+# Sanity check: the bundled skill tree must exist in the checked-out repo.
+# If it's missing, the user's checkout is stale (predates the skill bundling
+# commits) — fail with a clear message instead of cryptic Copy-Item errors.
+$SkillSentinel = Join-Path $MetabotHome "src\skills\metaskill\SKILL.md"
+if (-not (Test-Path $SkillSentinel)) {
+    Write-Err "Bundled skill source not found at: $SkillSentinel"
+    Write-Err "Your $MetabotHome checkout appears to be stale or incomplete."
+    Write-Err "Try: cd $MetabotHome; git fetch origin; git reset --hard origin/main"
+    Write-Err "(WARNING: 'git reset --hard' discards uncommitted local changes.)"
+    exit 1
+}
 
 # Install metaskill
 Write-Info "Installing metaskill skill..."
