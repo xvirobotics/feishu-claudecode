@@ -37,7 +37,13 @@ interface PersistedSession {
   engine?: EngineName;
 }
 
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// Sessions never expire — user can /reset manually.
+// IMPORTANT: When switching a bot's defaultWorkingDirectory, do NOT delete
+// session files (~/.metabot/<bot>/sessions-*.json, sessions.db).
+// Old sessions must be preserved so the user can switch back to a previous
+// project and resume context. loadFromDisk() uses the new defaultWorkingDirectory
+// from config, not from the persisted session, so old sessions don't interfere.
+const SESSION_TTL_MS = Infinity;
 const MAX_SESSIONS = 10_000;
 
 export class SessionManager {
