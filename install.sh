@@ -329,7 +329,18 @@ if [[ -d "$METABOT_HOME/.git" ]]; then
   info "Existing installation found, pulling latest..."
   cd "$METABOT_HOME"
   OLD_HEAD="$(git rev-parse HEAD)"
-  git pull --ff-only || warn "git pull failed, continuing with existing code"
+  if ! git pull --ff-only; then
+    error "git pull --ff-only failed at $METABOT_HOME."
+    error "Your checkout has diverged from origin or has uncommitted changes."
+    error "Continuing with stale code would silently break later phases (e.g. Phase 6 'skill not found')."
+    error ""
+    error "Fix one of these and re-run install.sh:"
+    error "  - Inspect:        cd $METABOT_HOME && git status && git log --oneline -5"
+    error "  - Stash & retry:  cd $METABOT_HOME && git stash && git pull --ff-only"
+    error "  - Reset to origin (DESTROYS local commits/edits):"
+    error "      cd $METABOT_HOME && git fetch origin && git reset --hard origin/main"
+    exit 1
+  fi
   NEW_HEAD="$(git rev-parse HEAD)"
   # Re-exec with the updated install.sh if it changed (avoids running stale code from memory)
   if [[ "$OLD_HEAD" != "$NEW_HEAD" && -z "${METABOT_REEXEC:-}" ]]; then
@@ -744,6 +755,18 @@ step "Phase 6: Installing skills and setting up workspace"
 
 SKILLS_DIR="$HOME/.claude/skills"
 mkdir -p "$SKILLS_DIR"
+
+# Sanity check: bundled skill tree must exist in the checked-out repo.
+# If it's missing, the user's checkout is stale (predates the skill bundling
+# commits) — fail with a clear message instead of cryptic cp errors.
+SKILL_SENTINEL="$METABOT_HOME/src/skills/metaskill/SKILL.md"
+if [[ ! -f "$SKILL_SENTINEL" ]]; then
+  error "Bundled skill source not found at: $SKILL_SENTINEL"
+  error "Your $METABOT_HOME checkout appears to be stale or incomplete."
+  error "Try: cd $METABOT_HOME && git fetch origin && git reset --hard origin/main"
+  error "(WARNING: 'git reset --hard' discards uncommitted local changes.)"
+  exit 1
+fi
 
 # Install metaskill (bundled in src/skills/metaskill/)
 info "Installing metaskill skill..."
