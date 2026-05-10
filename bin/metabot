@@ -4,7 +4,19 @@
 
 set -euo pipefail
 
-METABOT_HOME="${METABOT_HOME:-$HOME/metabot}"
+# Resolve METABOT_HOME: env var > script's parent dir (follows symlinks) > $HOME/metabot
+if [[ -z "${METABOT_HOME:-}" ]]; then
+  _src="${BASH_SOURCE[0]}"
+  if command -v readlink &>/dev/null; then
+    _src="$(readlink -f "$_src" 2>/dev/null || echo "$_src")"
+  fi
+  _sd="$(cd "$(dirname "$_src")/.." 2>/dev/null && pwd)" || _sd=""
+  if [[ -n "$_sd" && -d "$_sd/.git" && -f "$_sd/package.json" ]]; then
+    METABOT_HOME="$_sd"
+  else
+    METABOT_HOME="$HOME/metabot"
+  fi
+fi
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
