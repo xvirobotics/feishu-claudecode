@@ -199,6 +199,12 @@ export class ClaudeExecutor {
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
     };
 
+    if (this.config.claude.pluginDir) {
+      queryOptions.extraArgs = {
+        'plugin-dir': this.config.claude.pluginDir,
+      };
+    }
+
     // Build system prompt appendix from sections
     const appendSections: string[] = [];
 

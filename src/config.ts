@@ -28,6 +28,7 @@ export interface BotConfigBase {
     apiKey: string | undefined;
     outputsBaseDir: string;
     downloadsDir: string;
+    pluginDir: string | undefined;
   };
   /** Kimi-specific overrides. Populated only when engine === 'kimi'. Phase 2. */
   kimi?: {
@@ -187,6 +188,7 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   downloadsDir?: string;
   /** When true, respond to all messages in group chats without requiring @mention. */
   groupNoMention?: boolean;
+  pluginDir?: string;
 }
 
 function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
@@ -229,6 +231,7 @@ export interface TelegramBotJsonEntry extends EngineJsonFields {
   apiKey?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
+  pluginDir?: string;
 }
 
 function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
@@ -328,6 +331,7 @@ function buildClaudeConfig(entry: {
   apiKey?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
+  pluginDir?: string;
 }): BotConfigBase['claude'] {
   return {
     defaultWorkingDirectory: expandUserPath(entry.defaultWorkingDirectory),
@@ -337,6 +341,7 @@ function buildClaudeConfig(entry: {
     apiKey: entry.apiKey || undefined,
     outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
     downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+    pluginDir: entry.pluginDir || process.env.CLAUDE_PLUGIN_DIR || undefined,
   };
 }
 
@@ -375,6 +380,7 @@ function feishuBotFromEnv(): BotConfig {
       apiKey: undefined,
       outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+      pluginDir: process.env.CLAUDE_PLUGIN_DIR || undefined,
     },
   };
 }
@@ -396,6 +402,7 @@ function telegramBotFromEnv(): TelegramBotConfig {
       apiKey: undefined,
       outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+      pluginDir: process.env.CLAUDE_PLUGIN_DIR || undefined,
     },
   };
 }
@@ -417,6 +424,7 @@ function wechatBotFromEnv(): WechatBotConfig {
       apiKey: undefined,
       outputsBaseDir: expandUserPath(process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`)),
       downloadsDir: expandUserPath(process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`)),
+      pluginDir: process.env.CLAUDE_PLUGIN_DIR || undefined,
     },
   };
 }
