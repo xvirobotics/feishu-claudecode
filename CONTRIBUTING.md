@@ -50,7 +50,7 @@ src/
 
 ### Submitting Pull Requests
 
-1. Fork the repo and create a branch from `main`
+1. Fork the repo and create a branch from `dev`
 2. Make your changes with clear commit messages
 3. Ensure `npm run build` passes with no errors
 4. Open a PR with a clear description of what changed and why
