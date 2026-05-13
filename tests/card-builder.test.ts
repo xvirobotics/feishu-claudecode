@@ -151,6 +151,46 @@ describe('buildCard', () => {
     const bg = json.elements.find((e: any) => e.tag === 'markdown' && /Background/.test(e.content));
     expect(bg).toBeUndefined();
   });
+
+  // Regression — keep parity with card-builder-v2: both builders must render
+  // these or /goal and Agent Teams become invisible to users.
+  it('renders 🎯 Goal badge when goalCondition is set (regression)', () => {
+    const state: CardState = {
+      status:        'running',
+      userPrompt:    't',
+      responseText:  '',
+      toolCalls:     [],
+      goalCondition: 'Ship the PR by Friday',
+    };
+    const json = JSON.parse(buildCard(state));
+    const goal = json.elements.find(
+      (e: any) => e.tag === 'markdown' && typeof e.content === 'string' && e.content.includes('🎯'),
+    );
+    expect(goal).toBeDefined();
+    expect(goal.content).toContain('Ship the PR by Friday');
+  });
+
+  it('renders 🧑‍🤝‍🧑 Team panel when teamState has members or tasks (regression)', () => {
+    const state: CardState = {
+      status:       'running',
+      userPrompt:   't',
+      responseText: '',
+      toolCalls:    [],
+      teamState: {
+        name:      'feishu-ux-review',
+        teammates: [{ name: 'ux-researcher', status: 'working', lastSubject: 'audit' }],
+        tasks:     [{ taskId: 't1', subject: 'UX audit', status: 'in_progress', teammate: 'ux-researcher' }],
+      },
+    };
+    const json = JSON.parse(buildCard(state));
+    const team = json.elements.find(
+      (e: any) => e.tag === 'markdown' && typeof e.content === 'string' && /Teammates/.test(e.content),
+    );
+    expect(team).toBeDefined();
+    expect(team.content).toContain('feishu-ux-review');
+    expect(team.content).toContain('ux-researcher');
+    expect(team.content).toContain('UX audit');
+  });
 });
 
 describe('buildHelpCard', () => {
