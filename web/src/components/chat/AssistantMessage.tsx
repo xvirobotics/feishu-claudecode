@@ -155,6 +155,80 @@ export function AssistantMessageView({ msg, onAnswer, onPreview }: AssistantMess
         </div>
       )}
       <StatusIndicator status={state.status} />
+      {state.goalCondition && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 8,
+            padding: '8px 12px',
+            marginBottom: 8,
+            borderRadius: 8,
+            background: 'var(--accent-soft, rgba(99, 102, 241, 0.1))',
+            border: '1px solid var(--accent-border, rgba(99, 102, 241, 0.3))',
+            fontSize: 13,
+            lineHeight: 1.5,
+          }}
+        >
+          <span style={{ flexShrink: 0 }}>🎯</span>
+          <span>
+            <strong>Goal:</strong> {state.goalCondition}
+          </span>
+        </div>
+      )}
+      {state.teamState && (state.teamState.teammates.length > 0 || state.teamState.tasks.length > 0) && (
+        <div
+          style={{
+            padding: '10px 12px',
+            marginBottom: 8,
+            borderRadius: 8,
+            background: 'var(--surface-2, rgba(255, 255, 255, 0.04))',
+            border: '1px solid var(--border, rgba(255, 255, 255, 0.08))',
+            fontSize: 13,
+            lineHeight: 1.55,
+          }}
+        >
+          <div style={{ marginBottom: 6 }}>
+            <strong>🧑‍🤝‍🧑 Team</strong>
+            {state.teamState.name && (
+              <code style={{ marginLeft: 6, opacity: 0.75 }}>{state.teamState.name}</code>
+            )}
+          </div>
+          {state.teamState.teammates.length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              {state.teamState.teammates.map((m) => (
+                <div key={m.name} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                  <span>{m.status === 'working' ? '⏳' : '💤'}</span>
+                  <code>{m.name}</code>
+                  <span style={{ opacity: 0.6 }}>({m.status})</span>
+                  {m.lastSubject && <span style={{ opacity: 0.7 }}>— {m.lastSubject}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {state.teamState.tasks.length > 0 && (
+            <div>
+              {state.teamState.tasks
+                .filter((t) => t.status === 'in_progress')
+                .map((t) => (
+                  <div key={t.taskId}>
+                    ⏳ {t.subject}
+                    {t.teammate && <span style={{ opacity: 0.6 }}> → {t.teammate}</span>}
+                  </div>
+                ))}
+              {state.teamState.tasks
+                .filter((t) => t.status === 'completed')
+                .slice(-5)
+                .map((t) => (
+                  <div key={t.taskId} style={{ opacity: 0.7 }}>
+                    ✅ {t.subject}
+                    {t.teammate && <span style={{ opacity: 0.6 }}> ({t.teammate})</span>}
+                  </div>
+                ))}
+            </div>
+          )}
+        </div>
+      )}
       <ToolCallsSection toolCalls={state.toolCalls} />
       {state.responseText && (
         <div className={styles.responseContent}>

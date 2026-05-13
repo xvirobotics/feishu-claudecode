@@ -30,5 +30,6 @@ export type {
   ExecutionHandle,
   ExecutorOptions,
   ApiContext,
+  TeamEvent,
 } from './executor.js';
 export type { DetectedTool } from './stream-processor.js';

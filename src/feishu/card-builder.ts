@@ -45,6 +45,53 @@ export function buildCard(state: CardState): string {
   const config = STATUS_CONFIG[state.status];
   const elements: unknown[] = [];
 
+  // Goal badge — pinned at the top so users see at a glance that the
+  // session is in goal-driven mode (Claude /goal). Persists across turns
+  // until /goal clear or /reset.
+  if (state.goalCondition) {
+    elements.push({
+      tag: 'markdown',
+      content: `🎯 **Goal:** ${truncate(state.goalCondition, 200)}`,
+    });
+    elements.push({ tag: 'hr' });
+  }
+
+  // Agent Teams panel — teammates + shared task list. Driven by Claude
+  // Code's TaskCreated / TaskCompleted / TeammateIdle hooks; rendered here
+  // so the user sees the team state without having to switch panes.
+  if (state.teamState && (state.teamState.teammates.length > 0 || state.teamState.tasks.length > 0)) {
+    const ts = state.teamState;
+    const lines: string[] = [];
+    const header = ts.name ? `🧑‍🤝‍🧑 **Team:** \`${ts.name}\`` : '🧑‍🤝‍🧑 **Team**';
+    lines.push(header);
+    if (ts.teammates.length > 0) {
+      lines.push('');
+      lines.push('**Teammates:**');
+      for (const m of ts.teammates) {
+        const icon = m.status === 'working' ? '⏳' : '💤';
+        const subj = m.lastSubject ? ` — _${truncate(m.lastSubject, 60)}_` : '';
+        lines.push(`${icon} \`${m.name}\` (${m.status})${subj}`);
+      }
+    }
+    if (ts.tasks.length > 0) {
+      // Show in-progress first, then most recent completions
+      const inProgress = ts.tasks.filter(t => t.status === 'in_progress');
+      const completed = ts.tasks.filter(t => t.status === 'completed').slice(-5);
+      lines.push('');
+      lines.push(`**Tasks:** ${inProgress.length} in progress · ${ts.tasks.filter(t => t.status === 'completed').length} done`);
+      for (const t of inProgress) {
+        const owner = t.teammate ? ` → \`${t.teammate}\`` : '';
+        lines.push(`⏳ ${truncate(t.subject, 80)}${owner}`);
+      }
+      for (const t of completed) {
+        const owner = t.teammate ? ` (\`${t.teammate}\`)` : '';
+        lines.push(`✅ ${truncate(t.subject, 80)}${owner}`);
+      }
+    }
+    elements.push({ tag: 'markdown', content: lines.join('\n') });
+    elements.push({ tag: 'hr' });
+  }
+
   // Tool calls section
   if (state.toolCalls.length > 0) {
     const toolLines = state.toolCalls.map((t) => {

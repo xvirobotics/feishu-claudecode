@@ -22,6 +22,14 @@ export interface UserSession {
   modelEngine?: EngineName;
   /** Per-session engine override. Falls back to bot default when undefined. */
   engine?: EngineName;
+  /**
+   * Mirrored Claude /goal condition. The actual goal mechanism runs inside
+   * Claude Code (prompt-based Stop hook); we just remember the text so the
+   * Feishu card can show a persistent "🎯 Goal" badge across turns.
+   */
+  activeGoal?: string;
+  /** Wall-clock when the current goal was set (ms since epoch). */
+  goalSetAt?: number;
 }
 
 interface PersistedSession {
@@ -35,6 +43,8 @@ interface PersistedSession {
   model?: string;
   modelEngine?: EngineName;
   engine?: EngineName;
+  activeGoal?: string;
+  goalSetAt?: number;
 }
 
 // Sessions never expire — user can /reset manually.
@@ -139,6 +149,24 @@ export class SessionManager {
     this.saveToDisk();
   }
 
+  /**
+   * Set the mirrored /goal condition for this session. Pass undefined to
+   * clear it. The actual goal mechanism runs inside Claude Code; this is
+   * purely so the card can display a persistent badge.
+   */
+  setGoal(chatId: string, condition: string | undefined): void {
+    const session = this.getSession(chatId);
+    if (condition) {
+      session.activeGoal = condition;
+      session.goalSetAt = Date.now();
+    } else {
+      session.activeGoal = undefined;
+      session.goalSetAt = undefined;
+    }
+    this.logger.info({ chatId, hasGoal: !!condition }, 'Session goal updated');
+    this.saveToDisk();
+  }
+
   /** Accumulate token/cost/duration from a completed query into the session totals. */
   addUsage(chatId: string, tokens: number, costUsd: number, durationMs: number): void {
     const session = this.getSession(chatId);
@@ -156,6 +184,8 @@ export class SessionManager {
       session.cumulativeTokens = 0;
       session.cumulativeCostUsd = 0;
       session.cumulativeDurationMs = 0;
+      session.activeGoal = undefined;
+      session.goalSetAt = undefined;
       // Keep working directory
       this.logger.info({ chatId }, 'Session reset');
       this.saveToDisk();
@@ -181,8 +211,8 @@ export class SessionManager {
     try {
       const data: Record<string, PersistedSession> = {};
       for (const [chatId, session] of this.sessions) {
-        // Persist sessions that have a sessionId, model, or engine override
-        if (session.sessionId || session.model || session.engine) {
+        // Persist sessions that have a sessionId, model, engine override, or active goal
+        if (session.sessionId || session.model || session.engine || session.activeGoal) {
           data[chatId] = {
             sessionId: session.sessionId || '',
             sessionIdEngine: session.sessionIdEngine,
@@ -194,6 +224,8 @@ export class SessionManager {
             model: session.model,
             modelEngine: session.modelEngine,
             engine: session.engine,
+            activeGoal: session.activeGoal,
+            goalSetAt: session.goalSetAt,
           };
         }
       }
@@ -224,6 +256,8 @@ export class SessionManager {
           model: persisted.model,
           modelEngine: persisted.modelEngine,
           engine: persisted.engine,
+          activeGoal: persisted.activeGoal,
+          goalSetAt: persisted.goalSetAt,
         });
         loaded++;
       }

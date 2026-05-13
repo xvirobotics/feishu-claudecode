@@ -3,11 +3,13 @@ import * as fsPromises from 'node:fs/promises';
 import * as path from 'node:path';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
-import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
+import type { IncomingMessage, CardState, PendingQuestion, TeamState, TeamMember, TeamTask } from '../types.js';
+import type { TeamEvent } from '../engines/index.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
+import { ExecutorRegistry } from '../engines/claude/executor-registry.js';
 import { RateLimiter } from './rate-limiter.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
@@ -22,6 +24,13 @@ const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
 const MAX_QUEUE_SIZE = 5; // max queued messages per chat
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour idle → abort
+/**
+ * Stage 3 — coalesce window for spontaneous Feishu cards. When teammates
+ * (or /goal evaluators, or background tasks) emit messages while no user
+ * turn is active, we batch them into a single card every COALESCE_MS to
+ * avoid spamming the chat.
+ */
+const SPONTANEOUS_COALESCE_MS = 30 * 1000;
 const FINAL_CARD_RETRIES = 3;
 const FINAL_CARD_BASE_DELAY_MS = 2000;
 const TASK_TIMEOUT_MESSAGE = 'Task timed out (24 hour limit)';
@@ -49,6 +58,8 @@ interface RunningTask {
   processor: StreamProcessor;
   rateLimiter: RateLimiter;
   chatId: string;
+  /** Live snapshot of the active Agent Team, accumulated from team hooks. */
+  teamState?: TeamState;
 }
 
 export interface ApiTaskOptions {
@@ -111,6 +122,27 @@ export class MessageBridge {
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
+  /**
+   * Stage 2 — persistent executor pool. Lazy-created on first acquire when
+   * the PERSISTENT_EXECUTOR env feature flag is on. One pool per bot.
+   */
+  private persistentRegistry: ExecutorRegistry | null = null;
+  /**
+   * Stage 3 — track which persistent executors already have a spontaneous-
+   * activity subscription, so we don't double-subscribe across acquisitions.
+   * Cleared when an executor is removed from the pool.
+   */
+  private spontaneousSubscribed = new Set<string>();
+  /**
+   * Stage 3 — accumulator for spontaneous activity per chatId, debounced
+   * into a single Feishu card every COALESCE_MS. Built up by the
+   * 'spontaneous' event handler, flushed by a timer.
+   */
+  private spontaneousBuffers = new Map<string, {
+    teamState: TeamState;
+    snippets: string[];
+    timer: ReturnType<typeof setTimeout>;
+  }>();
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
 
@@ -136,6 +168,7 @@ export class MessageBridge {
       config, logger, sender, this.sessionManager, memoryClient, this.audit,
       (chatId) => this.runningTasks.get(chatId),
       (chatId) => this.stopTask(chatId),
+      (chatId, reason) => this.releaseChatExecutor(chatId, reason),
     );
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
@@ -242,6 +275,285 @@ export class MessageBridge {
     // before the old loop exits, the old finally block would delete the NEW task entry.
   }
 
+  /**
+   * Whether the persistent-executor code path is enabled for this bot.
+   *
+   * Per-bot config wins over env, so individual bots can opt in/out
+   * independently:
+   *   1. config.persistentExecutor.enabled === true  → on
+   *   2. config.persistentExecutor.enabled === false → off
+   *   3. otherwise: METABOT_PERSISTENT_EXECUTOR=true env → on
+   *   4. otherwise: off
+   *
+   * When enabled, each chatId is backed by a long-lived Claude process
+   * (managed by {@link ExecutorRegistry}) instead of spawning a fresh
+   * process per turn. Benefit: Agent Teams teammates, /goal multi-turn
+   * auto-drive, and /background tasks all survive between user messages.
+   */
+  private isPersistentExecutorEnabled(): boolean {
+    const cfg = this.config.persistentExecutor;
+    if (cfg?.enabled === true) return true;
+    if (cfg?.enabled === false) return false;
+    return process.env.METABOT_PERSISTENT_EXECUTOR === 'true'
+        || process.env.METABOT_PERSISTENT_EXECUTOR === '1';
+  }
+
+  /** Lazy-init the registry for the persistent-executor code path. */
+  private getOrCreateRegistry(): ExecutorRegistry {
+    if (!this.persistentRegistry) {
+      // Per-bot config wins over env. Both are optional; registry uses its
+      // own defaults (30 min idle, 20 max concurrent) when neither is set.
+      const cfg = this.config.persistentExecutor;
+      const idleEnv = Number(process.env.METABOT_PERSISTENT_EXECUTOR_IDLE_MS);
+      const maxEnv = Number(process.env.METABOT_PERSISTENT_EXECUTOR_MAX_CONCURRENT);
+      const idleTimeoutMs = cfg?.idleTimeoutMs
+        ?? (Number.isFinite(idleEnv) && idleEnv >= 0 ? idleEnv : undefined);
+      const maxConcurrent = cfg?.maxConcurrent
+        ?? (Number.isFinite(maxEnv) && maxEnv > 0 ? maxEnv : undefined);
+      this.persistentRegistry = new ExecutorRegistry({
+        logger: this.logger,
+        idleTimeoutMs,
+        maxConcurrent,
+        defaultApiKey: this.config.claude.apiKey,
+        defaultModel: this.config.claude.model,
+      });
+      // Stage 3 — every newly added executor gets a spontaneous-activity
+      // subscription so teammate / goal / background pings between turns
+      // surface as Feishu cards.
+      this.persistentRegistry.on('executor-added', (chatId: string) => {
+        this.attachSpontaneousHandler(chatId);
+      });
+      this.persistentRegistry.on('executor-removed', (chatId: string) => {
+        this.spontaneousSubscribed.delete(chatId);
+        // Flush any pending spontaneous buffer so we don't lose accumulated
+        // activity when an executor goes away (e.g. idle eviction).
+        const buf = this.spontaneousBuffers.get(chatId);
+        if (buf) {
+          clearTimeout(buf.timer);
+          void this.flushSpontaneous(chatId);
+        }
+      });
+      this.logger.info(
+        {
+          idleTimeoutMs,
+          maxConcurrent,
+          bot: this.config.name,
+          source: cfg ? 'bot-config' : 'env',
+        },
+        'MessageBridge: persistent-executor registry initialized',
+      );
+    }
+    return this.persistentRegistry;
+  }
+
+  /**
+   * Attach a 'spontaneous' handler to the chat's persistent executor. Called
+   * when a new executor is added to the pool. Idempotent — guarded by
+   * spontaneousSubscribed.
+   */
+  private attachSpontaneousHandler(chatId: string): void {
+    if (this.spontaneousSubscribed.has(chatId)) return;
+    const exec = this.persistentRegistry?.peek(chatId);
+    if (!exec) return;
+    this.spontaneousSubscribed.add(chatId);
+    exec.on('spontaneous', (msg) => {
+      this.handleSpontaneousMessage(chatId, msg);
+    });
+    this.logger.debug({ chatId }, 'MessageBridge: attached spontaneous handler');
+  }
+
+  /**
+   * Buffer a spontaneous message and (re)arm the coalesce timer. We extract
+   * just the human-readable bits — assistant text and tool_use intent —
+   * skipping noisy stream events.
+   */
+  private handleSpontaneousMessage(chatId: string, msg: any): void {
+    let snippet: string | null = null;
+    if (msg?.type === 'assistant' && msg.message?.content) {
+      for (const blk of msg.message.content) {
+        if (blk.type === 'text' && blk.text) {
+          const trimmed = String(blk.text).trim();
+          if (trimmed) snippet = trimmed.slice(0, 400);
+          break;
+        } else if (blk.type === 'tool_use' && blk.name) {
+          snippet = `🔧 ${blk.name}`;
+          break;
+        }
+      }
+    } else if (msg?.type === 'result' && (msg as any).result) {
+      const r = String((msg as any).result).trim();
+      if (r) snippet = `🤖 ${r.slice(0, 400)}`;
+    }
+    // Tool/system events without text aren't worth a card.
+    if (!snippet) return;
+
+    let buf = this.spontaneousBuffers.get(chatId);
+    if (!buf) {
+      buf = {
+        teamState: { teammates: [], tasks: [] },
+        snippets: [],
+        timer: setTimeout(() => {
+          void this.flushSpontaneous(chatId);
+        }, SPONTANEOUS_COALESCE_MS),
+      };
+      this.spontaneousBuffers.set(chatId, buf);
+    }
+    buf.snippets.push(snippet);
+    // Cap to prevent runaway growth in a single window
+    if (buf.snippets.length > 25) buf.snippets.splice(0, buf.snippets.length - 25);
+  }
+
+  /**
+   * Flush any accumulated spontaneous activity for chatId as a single
+   * "background activity" Feishu card. No-op if buffer is empty or there's
+   * an active user turn (we'd rather merge into the live card than spam).
+   */
+  private async flushSpontaneous(chatId: string): Promise<void> {
+    const buf = this.spontaneousBuffers.get(chatId);
+    if (!buf) return;
+    this.spontaneousBuffers.delete(chatId);
+    clearTimeout(buf.timer);
+
+    // If a user turn just started, drop the spontaneous batch — its content
+    // is about to land in the live card anyway.
+    if (this.runningTasks.has(chatId)) {
+      this.logger.debug({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: drop spontaneous (active turn)');
+      return;
+    }
+
+    const responseText = [
+      '_Background activity from your agent team / long-running task:_',
+      '',
+      ...buf.snippets.map((s, i) => `**${i + 1}.** ${s}`),
+    ].join('\n');
+
+    const card: CardState = {
+      status: 'complete',
+      userPrompt: '(background)',
+      responseText,
+      toolCalls: [],
+      teamState: buf.snippets.length > 0 ? buf.teamState : undefined,
+    };
+    try {
+      await this.sender.sendCard(chatId, card);
+      this.logger.info({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: sent spontaneous card');
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'MessageBridge: failed to send spontaneous card');
+    }
+  }
+
+  /**
+   * Get the registry if persistent mode is enabled AND the registry has
+   * already been created. Used for read-only inspection (e.g. observability).
+   */
+  getPersistentRegistry(): ExecutorRegistry | null {
+    return this.persistentRegistry;
+  }
+
+  /**
+   * Shut down all persistent executors. Called on bot shutdown so the
+   * underlying Claude processes (and any teammates) terminate cleanly.
+   */
+  async shutdownPersistentExecutors(reason: string = 'bot-shutdown'): Promise<void> {
+    if (this.persistentRegistry) {
+      await this.persistentRegistry.shutdownAll(reason);
+    }
+  }
+
+  /**
+   * Stage 3b — release a single chat's persistent executor (graceful
+   * shutdown + remove from pool). Used by /reset to discard any teammates
+   * / background tasks tied to the old session before starting fresh.
+   * No-op if persistent mode is off or chat has no executor.
+   */
+  async releaseChatExecutor(chatId: string, reason: string = 'reset'): Promise<void> {
+    if (!this.persistentRegistry) return;
+    await this.persistentRegistry.release(chatId, reason);
+  }
+
+  /**
+   * Apply a single Agent Teams hook event to the running task's team state,
+   * creating it on first event. Returns true if the snapshot changed (so the
+   * caller can schedule a card re-render).
+   */
+  private applyTeamEvent(task: RunningTask, event: TeamEvent): boolean {
+    if (!task.teamState) {
+      task.teamState = { teammates: [], tasks: [] };
+    }
+    const state = task.teamState;
+    const teamName = (event as { teamName?: string }).teamName;
+    if (teamName && !state.name) state.name = teamName;
+
+    const upsertMember = (name: string, status: TeamMember['status'], lastSubject?: string) => {
+      const existing = state.teammates.find(m => m.name === name);
+      if (existing) {
+        existing.status = status;
+        if (lastSubject) existing.lastSubject = lastSubject;
+      } else {
+        state.teammates.push({ name, status, lastSubject });
+      }
+    };
+
+    const upsertTask = (taskId: string, patch: Partial<TeamTask>) => {
+      const existing = state.tasks.find(t => t.taskId === taskId);
+      if (existing) {
+        Object.assign(existing, patch);
+      } else {
+        state.tasks.push({
+          taskId,
+          subject: patch.subject ?? '(untitled)',
+          status: patch.status ?? 'in_progress',
+          teammate: patch.teammate,
+        });
+      }
+    };
+
+    if (event.kind === 'task_created') {
+      upsertTask(event.taskId, {
+        subject: event.subject,
+        status: 'in_progress',
+        teammate: event.teammate,
+      });
+      if (event.teammate) upsertMember(event.teammate, 'working', event.subject);
+    } else if (event.kind === 'task_completed') {
+      upsertTask(event.taskId, {
+        subject: event.subject,
+        status: 'completed',
+        teammate: event.teammate,
+      });
+      // Don't flip teammate to idle here — the TeammateIdle hook is the
+      // authoritative signal; teammates may pick up the next task immediately.
+    } else if (event.kind === 'teammate_idle') {
+      upsertMember(event.teammate, 'idle');
+    }
+    return true;
+  }
+
+  /**
+   * Mirror Claude /goal state into our SessionManager so the Feishu card
+   * can display a persistent "🎯 Goal" badge across turns. The actual goal
+   * mechanism (multi-turn loop with fast-model evaluator) runs inside Claude
+   * Code via a session-scoped Stop hook — we only mirror the condition text.
+   *
+   * Recognized inputs:
+   *   /goal                            → status query (no mutation)
+   *   /goal <condition>                → set goal
+   *   /goal clear|stop|off|reset|none|cancel
+   *                                    → clear goal (per Claude docs aliases)
+   */
+  private mirrorGoalCommand(chatId: string, text: string): void {
+    const trimmed = text.trim();
+    if (!/^\/goal(\s|$)/i.test(trimmed)) return;
+    const rest = trimmed.replace(/^\/goal\s*/i, '').trim();
+    if (!rest) return; // status query — leave existing goal alone
+    const lowered = rest.toLowerCase();
+    if (['clear', 'stop', 'off', 'reset', 'none', 'cancel'].includes(lowered)) {
+      this.sessionManager.setGoal(chatId, undefined);
+      return;
+    }
+    this.sessionManager.setGoal(chatId, rest);
+  }
+
   private processQueue(chatId: string): void {
     const queue = this.messageQueues.get(chatId);
     if (!queue || queue.length === 0) {
@@ -310,6 +622,10 @@ export class MessageBridge {
     if (text.startsWith('/')) {
       const handled = await this.commandHandler.handle(msg);
       if (handled) return;
+
+      // Mirror /goal state locally so the card can show a persistent badge
+      // across turns. The actual goal mechanism still runs inside Claude Code.
+      this.mirrorGoalCommand(chatId, text);
 
       // Unrecognized /xxx command — pass through to Claude
       if (this.runningTasks.has(chatId)) {
@@ -690,11 +1006,16 @@ export class MessageBridge {
       ? `🖼️ [${mediaCount} files] ${text}`
       : fileKey ? '📎 ' + text : imageKey ? '🖼️ ' + text : text;
     const processor = new StreamProcessor(displayPrompt);
+    // Capture mirrored goal once at task start. New /goal messages can't
+    // arrive mid-task (handleMessage rejects them with "Task In Progress"),
+    // so this stays stable for the whole run.
+    const activeGoal = session.activeGoal;
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      goalCondition: activeGoal,
     };
 
     const messageId = await this.sender.sendCard(chatId, initialState);
@@ -706,22 +1027,65 @@ export class MessageBridge {
 
     const apiContext = { botName: this.config.name, chatId };
 
-    // Start multi-turn execution
-    const executionHandle = this.executorForChat(chatId).startExecution({
-      prompt,
-      cwd,
-      sessionId: session.sessionId,
-      abortController,
-      outputsDir,
-      apiContext,
-      model: session.model,
-    });
-
     const rateLimiter = new RateLimiter(1500);
+
+    // Forward-declare runningTask so the team-event callback can read it
+    // before the assignment below — hooks fire from the spawned Claude
+    // process at arbitrary points, not at construction time. Only assigned
+    // once; `let` is required because `const` cannot be uninitialised.
+    // eslint-disable-next-line prefer-const
+    let runningTask: RunningTask;
+
+    const onTeamEvent = (event: TeamEvent) => {
+      if (!runningTask) return;
+      const changed = this.applyTeamEvent(runningTask, event);
+      if (changed && !abortController.signal.aborted) {
+        rateLimiter.schedule(() => {
+          if (!abortController.signal.aborted) {
+            this.sender.updateCard(messageId, {
+              ...processor.getCurrentState(),
+              goalCondition: activeGoal,
+              teamState: runningTask.teamState,
+            });
+          }
+        });
+      }
+    };
+
+    // Branch: persistent executor (one long-lived Claude process per chatId,
+    // teammates/goal/background survive across turns) vs legacy (spawn-per-turn).
+    // Persistent only applies to the Claude engine; Kimi/Codex still go through
+    // the legacy path. Toggle via METABOT_PERSISTENT_EXECUTOR=true.
+    const usePersistent = this.isPersistentExecutorEnabled() && engineName === 'claude';
+    let executionHandle: ExecutionHandle;
+    if (usePersistent) {
+      const exec = await this.getOrCreateRegistry().acquire(chatId, {
+        cwd,
+        resumeSessionId: session.sessionId,
+        onTeamEvent,
+        model: session.model,
+        apiContext,
+        outputsDir,
+      });
+      // TurnHandle is structurally compatible with ExecutionHandle (stream,
+      // sendAnswer, resolveQuestion, finish) — see persistent-executor.ts.
+      executionHandle = exec.nextTurn(prompt) as unknown as ExecutionHandle;
+    } else {
+      executionHandle = this.executorForChat(chatId).startExecution({
+        prompt,
+        cwd,
+        sessionId: session.sessionId,
+        abortController,
+        outputsDir,
+        apiContext,
+        model: session.model,
+        onTeamEvent,
+      });
+    }
 
     // Register running task
     const startTime = Date.now();
-    const runningTask: RunningTask = {
+    runningTask = {
       abortController,
       startTime,
       executionHandle,
@@ -770,6 +1134,8 @@ export class MessageBridge {
         resetIdleTimer();
 
         const state = processor.processMessage(message);
+        if (activeGoal) state.goalCondition = activeGoal;
+        if (runningTask.teamState) state.teamState = runningTask.teamState;
         lastState = state;
 
         // Update session ID if discovered
@@ -1081,12 +1447,14 @@ export class MessageBridge {
     const displayPrompt = prompt;
     const processor = new StreamProcessor(displayPrompt);
     const rateLimiter = new RateLimiter(1500);
+    const activeGoal = session.activeGoal;
 
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      goalCondition: activeGoal,
     };
 
     let messageId: string | undefined;
@@ -1100,20 +1468,65 @@ export class MessageBridge {
 
     const apiContext = { botName: this.config.name, chatId, groupMembers: options.groupMembers, groupId: options.groupId };
 
-    const executionHandle = this.executorForChat(chatId).startExecution({
-      prompt,
-      cwd,
-      sessionId: session.sessionId,
-      abortController,
-      outputsDir,
-      apiContext,
-      maxTurns: options.maxTurns,
-      model: options.model ?? session.model,
-      allowedTools: options.allowedTools,
-    });
+    // Forward-declare for the onTeamEvent closure below (only assigned once;
+    // const cannot be uninitialised — see same pattern in executeQuery).
+    // eslint-disable-next-line prefer-const
+    let runningTask: RunningTask;
+
+    const onTeamEvent = (event: TeamEvent) => {
+      if (!runningTask) return;
+      const changed = this.applyTeamEvent(runningTask, event);
+      if (changed && sendCards && messageId && !abortController.signal.aborted) {
+        rateLimiter.schedule(() => {
+          if (!abortController.signal.aborted) {
+            this.sender.updateCard(messageId!, {
+              ...processor.getCurrentState(),
+              goalCondition: activeGoal,
+              teamState: runningTask.teamState,
+            });
+          }
+        });
+      }
+    };
+
+    // Persistent vs legacy executor — see executeQuery for the same pattern.
+    // API task path also honors the feature flag, but only for Claude engine
+    // and only when no per-turn maxTurns/allowedTools overrides are supplied
+    // (those mid-stream knobs are baked into the legacy executor's per-turn
+    // options; persistent executor would need additional plumbing to apply
+    // them per-turn — out of scope for Stage 2).
+    const persistentEligible = this.isPersistentExecutorEnabled()
+      && engineName === 'claude'
+      && options.maxTurns === undefined
+      && options.allowedTools === undefined;
+    let executionHandle: ExecutionHandle;
+    if (persistentEligible) {
+      const exec = await this.getOrCreateRegistry().acquire(chatId, {
+        cwd,
+        resumeSessionId: session.sessionId,
+        onTeamEvent,
+        model: options.model ?? session.model,
+        apiContext,
+        outputsDir,
+      });
+      executionHandle = exec.nextTurn(prompt) as unknown as ExecutionHandle;
+    } else {
+      executionHandle = this.executorForChat(chatId).startExecution({
+        prompt,
+        cwd,
+        sessionId: session.sessionId,
+        abortController,
+        outputsDir,
+        apiContext,
+        maxTurns: options.maxTurns,
+        model: options.model ?? session.model,
+        allowedTools: options.allowedTools,
+        onTeamEvent,
+      });
+    }
 
     const startTime = Date.now();
-    const runningTask: RunningTask = {
+    runningTask = {
       abortController,
       startTime,
       executionHandle,
@@ -1157,6 +1570,7 @@ export class MessageBridge {
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      goalCondition: activeGoal,
     };
 
     try {
@@ -1165,6 +1579,8 @@ export class MessageBridge {
         resetIdleTimer();
 
         const state = processor.processMessage(message);
+        if (activeGoal) state.goalCondition = activeGoal;
+        if (runningTask.teamState) state.teamState = runningTask.teamState;
         lastState = state;
 
         const newSessionId = processor.getSessionId();
@@ -1542,6 +1958,12 @@ export class MessageBridge {
     }
     this.runningTasks.clear();
     this.sessionManager.destroy();
+    // Tear down persistent executors (Stage 2). Fire-and-forget so destroy()
+    // stays sync — registry.shutdownAll waits for clean SDK process exit
+    // internally and is idempotent.
+    if (this.persistentRegistry) {
+      void this.persistentRegistry.shutdownAll('bridge-destroy');
+    }
   }
 }
 

@@ -40,6 +40,27 @@ export interface BotConfigBase {
   };
   /** Codex-specific overrides. Populated only when engine === 'codex'. */
   codex?: CodexBotConfig;
+  /**
+   * Stage 4 — opt-in to the persistent Claude process pool. When enabled,
+   * each chatId is backed by a long-lived Claude Code process (managed by
+   * ExecutorRegistry) instead of spawning a fresh process per turn.
+   *
+   * Benefits:
+   *   - Agent Teams teammates survive between user messages
+   *   - /goal multi-turn auto-drive works (Stop hook fires the next turn)
+   *   - /background tasks and agentProgressSummaries actually persist
+   *
+   * Per-bot field overrides the global METABOT_PERSISTENT_EXECUTOR env var
+   * (true here forces on, false here forces off). Only applies when the
+   * bot's engine is 'claude'.
+   */
+  persistentExecutor?: {
+    enabled?: boolean;
+    /** Idle timeout (ms) before the executor self-shuts. 0 disables. Default 30 min. */
+    idleTimeoutMs?: number;
+    /** Max concurrent executors per bot (LRU-evicted past this). Default 20. */
+    maxConcurrent?: number;
+  };
 }
 
 /** Codex-specific overrides. Populated only when engine === 'codex'. */
