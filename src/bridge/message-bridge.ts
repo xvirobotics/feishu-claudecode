@@ -28,6 +28,20 @@ import type { SessionRegistry } from '../session/session-registry.js';
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
+
+/**
+ * Default for the persistent-executor pool when no per-bot `persistentExecutor.enabled`
+ * is set. Default: ON (since 2026-05-13). Opt out with
+ * `METABOT_PERSISTENT_EXECUTOR=false` (or `=0`) in the env.
+ *
+ * Pure / side-effect-free / unit-testable — used by both
+ * `MessageBridge.isPersistentExecutorEnabled` and the `/api/executors`
+ * route, so the default flip can't drift between the two.
+ */
+export function resolvePersistentExecutorEnvDefault(envVal: string | undefined): boolean {
+  if (envVal === 'false' || envVal === '0') return false;
+  return true;
+}
 const MAX_QUEUE_SIZE = 5; // max queued messages per chat
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour idle → abort
 /**
@@ -379,24 +393,30 @@ export class MessageBridge {
   /**
    * Whether the persistent-executor code path is enabled for this bot.
    *
-   * Per-bot config wins over env, so individual bots can opt in/out
-   * independently:
-   *   1. config.persistentExecutor.enabled === true  → on
-   *   2. config.persistentExecutor.enabled === false → off
-   *   3. otherwise: METABOT_PERSISTENT_EXECUTOR=true env → on
-   *   4. otherwise: off
-   *
-   * When enabled, each chatId is backed by a long-lived Claude process
+   * Default: ON. Each chatId is backed by a long-lived Claude process
    * (managed by {@link ExecutorRegistry}) instead of spawning a fresh
-   * process per turn. Benefit: Agent Teams teammates, /goal multi-turn
-   * auto-drive, and /background tasks all survive between user messages.
+   * process per turn. This is required for Agent Teams teammates,
+   * `/goal` multi-turn auto-drive, and `/background` tasks to survive
+   * across user messages — features that the user-facing card UI now
+   * advertises, so turning the persistent executor off silently breaks
+   * what users expect.
+   *
+   * Per-bot config wins over env, so individual bots can opt out without
+   * affecting siblings:
+   *   1. config.persistentExecutor.enabled === false → off
+   *   2. config.persistentExecutor.enabled === true  → on
+   *   3. otherwise: METABOT_PERSISTENT_EXECUTOR=false (or '0') env → off
+   *   4. otherwise: on (the default)
+   *
+   * Was opt-in originally (until 2026-05-13) while we burned through
+   * the team-review P0 blockers; both shipped, telemetry is clean, no
+   * reason to keep new users in the worse default any longer.
    */
   private isPersistentExecutorEnabled(): boolean {
     const cfg = this.config.persistentExecutor;
     if (cfg?.enabled === true) return true;
     if (cfg?.enabled === false) return false;
-    return process.env.METABOT_PERSISTENT_EXECUTOR === 'true'
-        || process.env.METABOT_PERSISTENT_EXECUTOR === '1';
+    return resolvePersistentExecutorEnvDefault(process.env.METABOT_PERSISTENT_EXECUTOR);
   }
 
   /** Lazy-init the registry for the persistent-executor code path. */

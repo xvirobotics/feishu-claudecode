@@ -1,6 +1,7 @@
 import type * as http from 'node:http';
 import { jsonResponse } from './helpers.js';
 import type { RouteContext } from './types.js';
+import { resolvePersistentExecutorEnvDefault } from '../../bridge/message-bridge.js';
 
 /**
  * Stage 4 — observability for the persistent-executor pool.
@@ -9,8 +10,8 @@ import type { RouteContext } from './types.js';
  *     → snapshot of every persistent Claude process MetaBot is currently
  *       holding open (one per active chatId, when persistent mode is on).
  *
- * Returns an empty array when METABOT_PERSISTENT_EXECUTOR isn't set OR no
- * bot has yet acquired an executor (the registry is lazy-init).
+ * Returns an empty array when no bot has yet acquired an executor (the
+ * registry is lazy-init — first ever turn after MetaBot start populates it).
  */
 export async function handleExecutorRoutes(
   ctx: RouteContext,
@@ -50,9 +51,14 @@ export async function handleExecutorRoutes(
     }
   }
 
+  // Shared env-resolution helper — keeps this in sync with
+  // MessageBridge.isPersistentExecutorEnabled(). Per-bot `bots.json`
+  // overrides aren't reflected here; this snapshot is the env default
+  // only, and individual bots may differ.
   jsonResponse(res, 200, {
-    persistentExecutorEnabled: process.env.METABOT_PERSISTENT_EXECUTOR === 'true'
-      || process.env.METABOT_PERSISTENT_EXECUTOR === '1',
+    persistentExecutorEnabled: resolvePersistentExecutorEnvDefault(
+      process.env.METABOT_PERSISTENT_EXECUTOR,
+    ),
     count: out.length,
     executors: out,
   });

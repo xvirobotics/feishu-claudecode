@@ -4,6 +4,7 @@ import {
   normalizePromptForEngine,
   extractSpontaneousSnippet,
   formatSpontaneousCardBody,
+  resolvePersistentExecutorEnvDefault,
   SPONTANEOUS_CARD_HEADER,
 } from '../src/bridge/message-bridge.js';
 import { classifyBurstSource } from '../src/engines/claude/persistent-executor.js';
@@ -271,5 +272,47 @@ describe('classifyBurstSource', () => {
       type: 'result',
       origin: { kind: 'task-notification' },
     })).toBe('spontaneous');
+  });
+});
+
+/**
+ * The persistent executor pool is the load-bearing piece behind background
+ * tasks, Agent Teams continuity, and `/goal` multi-turn auto-drive. As of
+ * 2026-05-13 it's the DEFAULT — installs that haven't set the env var still
+ * get the right behaviour. Opt out with METABOT_PERSISTENT_EXECUTOR=false (or
+ * '0').
+ *
+ * Don't flip the default back to off without a real reason: the card UI now
+ * advertises background tasks, and silently disabling them would surprise
+ * users who installed-and-went.
+ */
+describe('resolvePersistentExecutorEnvDefault', () => {
+  it('returns true when env var is undefined (the new default)', () => {
+    expect(resolvePersistentExecutorEnvDefault(undefined)).toBe(true);
+  });
+
+  it('returns true for empty string (env var present but unset value)', () => {
+    expect(resolvePersistentExecutorEnvDefault('')).toBe(true);
+  });
+
+  it('returns true for explicit on values (back-compat with old opt-in syntax)', () => {
+    expect(resolvePersistentExecutorEnvDefault('true')).toBe(true);
+    expect(resolvePersistentExecutorEnvDefault('1')).toBe(true);
+  });
+
+  it('returns false for explicit opt-out values', () => {
+    expect(resolvePersistentExecutorEnvDefault('false')).toBe(false);
+    expect(resolvePersistentExecutorEnvDefault('0')).toBe(false);
+  });
+
+  it('returns true for unrecognised values (do not silently disable a load-bearing feature on a typo)', () => {
+    // Anything that isn't an explicit opt-out should keep persistent on.
+    // Better to leave a typo-set var on than to silently drop background
+    // tasks; the symptom of "off" is much worse (silent breakage) than the
+    // symptom of "on" (slightly more memory).
+    expect(resolvePersistentExecutorEnvDefault('off')).toBe(true);
+    expect(resolvePersistentExecutorEnvDefault('no')).toBe(true);
+    expect(resolvePersistentExecutorEnvDefault('disabled')).toBe(true);
+    expect(resolvePersistentExecutorEnvDefault('truee')).toBe(true);
   });
 });
