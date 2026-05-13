@@ -3,7 +3,8 @@ import * as fsPromises from 'node:fs/promises';
 import * as path from 'node:path';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
-import type { IncomingMessage, CardState, PendingQuestion } from '../types.js';
+import type { IncomingMessage, CardState, PendingQuestion, TeamState, TeamMember, TeamTask } from '../types.js';
+import type { TeamEvent } from '../engines/index.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
@@ -49,6 +50,8 @@ interface RunningTask {
   processor: StreamProcessor;
   rateLimiter: RateLimiter;
   chatId: string;
+  /** Live snapshot of the active Agent Team, accumulated from team hooks. */
+  teamState?: TeamState;
 }
 
 export interface ApiTaskOptions {
@@ -242,6 +245,89 @@ export class MessageBridge {
     // before the old loop exits, the old finally block would delete the NEW task entry.
   }
 
+  /**
+   * Apply a single Agent Teams hook event to the running task's team state,
+   * creating it on first event. Returns true if the snapshot changed (so the
+   * caller can schedule a card re-render).
+   */
+  private applyTeamEvent(task: RunningTask, event: TeamEvent): boolean {
+    if (!task.teamState) {
+      task.teamState = { teammates: [], tasks: [] };
+    }
+    const state = task.teamState;
+    const teamName = (event as { teamName?: string }).teamName;
+    if (teamName && !state.name) state.name = teamName;
+
+    const upsertMember = (name: string, status: TeamMember['status'], lastSubject?: string) => {
+      const existing = state.teammates.find(m => m.name === name);
+      if (existing) {
+        existing.status = status;
+        if (lastSubject) existing.lastSubject = lastSubject;
+      } else {
+        state.teammates.push({ name, status, lastSubject });
+      }
+    };
+
+    const upsertTask = (taskId: string, patch: Partial<TeamTask>) => {
+      const existing = state.tasks.find(t => t.taskId === taskId);
+      if (existing) {
+        Object.assign(existing, patch);
+      } else {
+        state.tasks.push({
+          taskId,
+          subject: patch.subject ?? '(untitled)',
+          status: patch.status ?? 'in_progress',
+          teammate: patch.teammate,
+        });
+      }
+    };
+
+    if (event.kind === 'task_created') {
+      upsertTask(event.taskId, {
+        subject: event.subject,
+        status: 'in_progress',
+        teammate: event.teammate,
+      });
+      if (event.teammate) upsertMember(event.teammate, 'working', event.subject);
+    } else if (event.kind === 'task_completed') {
+      upsertTask(event.taskId, {
+        subject: event.subject,
+        status: 'completed',
+        teammate: event.teammate,
+      });
+      // Don't flip teammate to idle here — the TeammateIdle hook is the
+      // authoritative signal; teammates may pick up the next task immediately.
+    } else if (event.kind === 'teammate_idle') {
+      upsertMember(event.teammate, 'idle');
+    }
+    return true;
+  }
+
+  /**
+   * Mirror Claude /goal state into our SessionManager so the Feishu card
+   * can display a persistent "🎯 Goal" badge across turns. The actual goal
+   * mechanism (multi-turn loop with fast-model evaluator) runs inside Claude
+   * Code via a session-scoped Stop hook — we only mirror the condition text.
+   *
+   * Recognized inputs:
+   *   /goal                            → status query (no mutation)
+   *   /goal <condition>                → set goal
+   *   /goal clear|stop|off|reset|none|cancel
+   *                                    → clear goal (per Claude docs aliases)
+   */
+  private mirrorGoalCommand(chatId: string, text: string): void {
+    const trimmed = text.trim();
+    if (!/^\/goal(\s|$)/i.test(trimmed)) return;
+    const rest = trimmed.replace(/^\/goal\s*/i, '').trim();
+    if (!rest) return; // status query — leave existing goal alone
+    const lowered = rest.toLowerCase();
+    if (['clear', 'stop', 'off', 'reset', 'none', 'cancel'].includes(lowered)) {
+      this.sessionManager.setGoal(chatId, undefined);
+      return;
+    }
+    this.sessionManager.setGoal(chatId, rest);
+  }
+
   private processQueue(chatId: string): void {
     const queue = this.messageQueues.get(chatId);
     if (!queue || queue.length === 0) {
@@ -310,6 +396,10 @@ export class MessageBridge {
     if (text.startsWith('/')) {
       const handled = await this.commandHandler.handle(msg);
       if (handled) return;
+
+      // Mirror /goal state locally so the card can show a persistent badge
+      // across turns. The actual goal mechanism still runs inside Claude Code.
+      this.mirrorGoalCommand(chatId, text);
 
       // Unrecognized /xxx command — pass through to Claude
       if (this.runningTasks.has(chatId)) {
@@ -690,11 +780,16 @@ export class MessageBridge {
       ? `🖼️ [${mediaCount} files] ${text}`
       : fileKey ? '📎 ' + text : imageKey ? '🖼️ ' + text : text;
     const processor = new StreamProcessor(displayPrompt);
+    // Capture mirrored goal once at task start. New /goal messages can't
+    // arrive mid-task (handleMessage rejects them with "Task In Progress"),
+    // so this stays stable for the whole run.
+    const activeGoal = session.activeGoal;
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      goalCondition: activeGoal,
     };
 
     const messageId = await this.sender.sendCard(chatId, initialState);
@@ -706,6 +801,13 @@ export class MessageBridge {
 
     const apiContext = { botName: this.config.name, chatId };
 
+    const rateLimiter = new RateLimiter(1500);
+
+    // Forward-declare runningTask so the team-event callback can mutate it
+    // before the assignment below — startExecution invokes hooks synchronously
+    // when the spawned Claude process fires them, not at construction time.
+    let runningTask: RunningTask;
+
     // Start multi-turn execution
     const executionHandle = this.executorForChat(chatId).startExecution({
       prompt,
@@ -715,13 +817,26 @@ export class MessageBridge {
       outputsDir,
       apiContext,
       model: session.model,
+      onTeamEvent: (event) => {
+        if (!runningTask) return;
+        const changed = this.applyTeamEvent(runningTask, event);
+        if (changed && !abortController.signal.aborted) {
+          rateLimiter.schedule(() => {
+            if (!abortController.signal.aborted) {
+              this.sender.updateCard(messageId, {
+                ...processor.getCurrentState(),
+                goalCondition: activeGoal,
+                teamState: runningTask.teamState,
+              });
+            }
+          });
+        }
+      },
     });
-
-    const rateLimiter = new RateLimiter(1500);
 
     // Register running task
     const startTime = Date.now();
-    const runningTask: RunningTask = {
+    runningTask = {
       abortController,
       startTime,
       executionHandle,
@@ -770,6 +885,8 @@ export class MessageBridge {
         resetIdleTimer();
 
         const state = processor.processMessage(message);
+        if (activeGoal) state.goalCondition = activeGoal;
+        if (runningTask.teamState) state.teamState = runningTask.teamState;
         lastState = state;
 
         // Update session ID if discovered
@@ -1081,12 +1198,14 @@ export class MessageBridge {
     const displayPrompt = prompt;
     const processor = new StreamProcessor(displayPrompt);
     const rateLimiter = new RateLimiter(1500);
+    const activeGoal = session.activeGoal;
 
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      goalCondition: activeGoal,
     };
 
     let messageId: string | undefined;
@@ -1100,6 +1219,8 @@ export class MessageBridge {
 
     const apiContext = { botName: this.config.name, chatId, groupMembers: options.groupMembers, groupId: options.groupId };
 
+    let runningTask: RunningTask;
+
     const executionHandle = this.executorForChat(chatId).startExecution({
       prompt,
       cwd,
@@ -1110,10 +1231,25 @@ export class MessageBridge {
       maxTurns: options.maxTurns,
       model: options.model ?? session.model,
       allowedTools: options.allowedTools,
+      onTeamEvent: (event) => {
+        if (!runningTask) return;
+        const changed = this.applyTeamEvent(runningTask, event);
+        if (changed && sendCards && messageId && !abortController.signal.aborted) {
+          rateLimiter.schedule(() => {
+            if (!abortController.signal.aborted) {
+              this.sender.updateCard(messageId!, {
+                ...processor.getCurrentState(),
+                goalCondition: activeGoal,
+                teamState: runningTask.teamState,
+              });
+            }
+          });
+        }
+      },
     });
 
     const startTime = Date.now();
-    const runningTask: RunningTask = {
+    runningTask = {
       abortController,
       startTime,
       executionHandle,
@@ -1157,6 +1293,7 @@ export class MessageBridge {
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
+      goalCondition: activeGoal,
     };
 
     try {
@@ -1165,6 +1302,8 @@ export class MessageBridge {
         resetIdleTimer();
 
         const state = processor.processMessage(message);
+        if (activeGoal) state.goalCondition = activeGoal;
+        if (runningTask.teamState) state.teamState = runningTask.teamState;
         lastState = state;
 
         const newSessionId = processor.getSessionId();
