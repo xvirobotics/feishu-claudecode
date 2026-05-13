@@ -77,8 +77,25 @@ function hasCredentialsFile(): boolean {
  * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
  */
 function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+  // Force-use-env mode: pass ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY /
+  // ANTHROPIC_BASE_URL through to the Claude Code subprocess instead of
+  // filtering them out. Triggered by either:
+  //   (a) METABOT_PREFER_ENV_AUTH=true (explicit opt-in flag), or
+  //   (b) presence of ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL
+  //       in the process env (auto-detect — user clearly wants env-based auth).
+  // Use case: a bot points Claude Code at a third-party Anthropic-compatible
+  // proxy while other bots on the same machine still use OAuth via
+  // ~/.claude/.credentials.json (which can't be deleted).
+  const preferEnvAuth =
+    process.env.METABOT_PREFER_ENV_AUTH === 'true' ||
+    !!(
+      process.env.ANTHROPIC_AUTH_TOKEN ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.ANTHROPIC_BASE_URL
+    );
+
   // Decide once whether to filter auth env vars
-  const filterAuthVars = !!(explicitApiKey || hasCredentialsFile());
+  const filterAuthVars = !preferEnvAuth && !!(explicitApiKey || hasCredentialsFile());
 
   return (options: SpawnOptions): SpawnedProcess => {
     // Merge provided env with process.env for a complete environment
