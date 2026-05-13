@@ -4,10 +4,16 @@ import * as path from 'node:path';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
 import type { IncomingMessage, CardState, PendingQuestion, TeamState, TeamMember, TeamTask } from '../types.js';
-import type { TeamEvent } from '../engines/index.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import type { DocSync } from '../sync/doc-sync.js';
-import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
+import type {
+  Engine,
+  Executor,
+  ExecutionHandle,
+  EngineName,
+  TeamEvent,
+  ApiContext,
+} from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
 import { ExecutorRegistry } from '../engines/claude/executor-registry.js';
 import { RateLimiter } from './rate-limiter.js';
@@ -488,6 +494,89 @@ export class MessageBridge {
   async releaseChatExecutor(chatId: string, reason: string = 'reset'): Promise<void> {
     if (!this.persistentRegistry) return;
     await this.persistentRegistry.release(chatId, reason);
+  }
+
+  /**
+   * Start one Claude turn for a chat, honouring the persistent-executor flag.
+   *
+   * This is the **single chokepoint** for spawning a turn — initial-turn paths
+   * AND every retry path (stale-session / context-overflow / catch) must call
+   * this method. Previously, the 5 retry sites bypassed
+   * {@link getOrCreateRegistry} and went straight to {@link executorForChat}
+   * even in persistent mode. The result: the persistent process kept running
+   * with its stale resume-sessionId mapping while the user's new turn happened
+   * in a separate one-off subprocess. Teammates / /goal / /background that
+   * were the whole point of Stage 4 quietly disappeared mid-conversation.
+   *
+   * Per-turn options that the persistent executor cannot rebind (`maxTurns`,
+   * `allowedTools`) automatically fall back to the legacy spawn path here so
+   * callers don't have to think about it.
+   *
+   * When `freshSession: true`, in persistent mode we explicitly release the
+   * current executor first — its `start()` was bound to the now-stale
+   * sessionId, so `acquire()` would otherwise hand back the same broken
+   * instance.
+   */
+  private async runOneTurn(
+    chatId: string,
+    engineName: EngineName,
+    opts: {
+      prompt: string;
+      cwd: string;
+      abortController: AbortController;
+      outputsDir: string;
+      apiContext?: ApiContext;
+      model?: string;
+      onTeamEvent?: (event: TeamEvent) => void;
+      maxTurns?: number;
+      allowedTools?: string[];
+      freshSession?: boolean;
+    },
+  ): Promise<ExecutionHandle> {
+    const session = this.sessionManager.getSession(chatId);
+    // Persistent only applies to Claude. Options that need per-turn binding
+    // (maxTurns / allowedTools) aren't plumbed through the persistent path yet,
+    // so fall back to legacy spawn when they're present — matches the gating
+    // that {@link executeApiTask} previously did inline.
+    const usePersistent =
+      this.isPersistentExecutorEnabled() &&
+      engineName === 'claude' &&
+      opts.maxTurns === undefined &&
+      opts.allowedTools === undefined;
+
+    if (usePersistent) {
+      if (opts.freshSession) {
+        try {
+          await this.releaseChatExecutor(chatId, 'retry-fresh-session');
+        } catch (err) {
+          this.logger.warn({ err, chatId }, 'runOneTurn: failed to release persistent executor before retry');
+        }
+      }
+      const exec = await this.getOrCreateRegistry().acquire(chatId, {
+        cwd: opts.cwd,
+        resumeSessionId: opts.freshSession ? undefined : session.sessionId,
+        onTeamEvent: opts.onTeamEvent,
+        model: opts.model,
+        apiContext: opts.apiContext,
+        outputsDir: opts.outputsDir,
+      });
+      // TurnHandle is structurally compatible with ExecutionHandle (stream,
+      // sendAnswer, resolveQuestion, finish) — see persistent-executor.ts.
+      return exec.nextTurn(opts.prompt) as unknown as ExecutionHandle;
+    }
+
+    return this.executorForChat(chatId).startExecution({
+      prompt: opts.prompt,
+      cwd: opts.cwd,
+      sessionId: opts.freshSession ? undefined : session.sessionId,
+      abortController: opts.abortController,
+      outputsDir: opts.outputsDir,
+      apiContext: opts.apiContext,
+      model: opts.model,
+      onTeamEvent: opts.onTeamEvent,
+      maxTurns: opts.maxTurns,
+      allowedTools: opts.allowedTools,
+    });
   }
 
   /**
@@ -1071,36 +1160,18 @@ export class MessageBridge {
       }
     };
 
-    // Branch: persistent executor (one long-lived Claude process per chatId,
-    // teammates/goal/background survive across turns) vs legacy (spawn-per-turn).
-    // Persistent only applies to the Claude engine; Kimi/Codex still go through
-    // the legacy path. Toggle via METABOT_PERSISTENT_EXECUTOR=true.
-    const usePersistent = this.isPersistentExecutorEnabled() && engineName === 'claude';
-    let executionHandle: ExecutionHandle;
-    if (usePersistent) {
-      const exec = await this.getOrCreateRegistry().acquire(chatId, {
-        cwd,
-        resumeSessionId: session.sessionId,
-        onTeamEvent,
-        model: session.model,
-        apiContext,
-        outputsDir,
-      });
-      // TurnHandle is structurally compatible with ExecutionHandle (stream,
-      // sendAnswer, resolveQuestion, finish) — see persistent-executor.ts.
-      executionHandle = exec.nextTurn(prompt) as unknown as ExecutionHandle;
-    } else {
-      executionHandle = this.executorForChat(chatId).startExecution({
-        prompt,
-        cwd,
-        sessionId: session.sessionId,
-        abortController,
-        outputsDir,
-        apiContext,
-        model: session.model,
-        onTeamEvent,
-      });
-    }
+    // All turn-starting paths (initial + retry) route through runOneTurn so
+    // persistent mode is enforced consistently and stale-session retries
+    // properly release the bound executor before reacquiring.
+    const executionHandle = await this.runOneTurn(chatId, engineName, {
+      prompt,
+      cwd,
+      abortController,
+      outputsDir,
+      apiContext,
+      model: session.model,
+      onTeamEvent,
+    });
 
     // Register running task
     const startTime = Date.now();
@@ -1263,9 +1334,13 @@ export class MessageBridge {
         lastState = { ...lastState, status: 'running', errorMessage: undefined };
         await this.sender.updateCard(messageId, { ...lastState, responseText: '_Session expired, retrying..._' });
 
-        // Retry execution without sessionId
-        const retryHandle = this.executorForChat(chatId).startExecution({
-          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: session.model,
+        // Retry via the shared chokepoint so the persistent executor is
+        // released-then-reacquired (its start() is bound to the now-stale
+        // sessionId; without release, acquire would return the same broken
+        // instance).
+        const retryHandle = await this.runOneTurn(chatId, engineName, {
+          prompt, cwd, abortController, outputsDir, apiContext, model: session.model,
+          onTeamEvent, freshSession: true,
         });
         executionHandle.finish();
         runningTask.executionHandle = retryHandle;
@@ -1290,8 +1365,9 @@ export class MessageBridge {
         lastState = { ...lastState, status: 'running', errorMessage: undefined };
         await this.sender.updateCard(messageId, { ...lastState, responseText: '_Context limit reached, starting fresh session..._' });
 
-        const retryHandle = this.executorForChat(chatId).startExecution({
-          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: session.model,
+        const retryHandle = await this.runOneTurn(chatId, engineName, {
+          prompt, cwd, abortController, outputsDir, apiContext, model: session.model,
+          onTeamEvent, freshSession: true,
         });
         executionHandle.finish();
         runningTask.executionHandle = retryHandle;
@@ -1356,8 +1432,9 @@ export class MessageBridge {
         await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
 
         try {
-          const retryHandle = this.executorForChat(chatId).startExecution({
-            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: session.model,
+          const retryHandle = await this.runOneTurn(chatId, engineName, {
+            prompt, cwd, abortController, outputsDir, apiContext, model: session.model,
+            onTeamEvent, freshSession: true,
           });
           executionHandle.finish();
           runningTask.executionHandle = retryHandle;
@@ -1513,36 +1590,19 @@ export class MessageBridge {
     // and only when no per-turn maxTurns/allowedTools overrides are supplied
     // (those mid-stream knobs are baked into the legacy executor's per-turn
     // options; persistent executor would need additional plumbing to apply
-    // them per-turn — out of scope for Stage 2).
-    const persistentEligible = this.isPersistentExecutorEnabled()
-      && engineName === 'claude'
-      && options.maxTurns === undefined
-      && options.allowedTools === undefined;
-    let executionHandle: ExecutionHandle;
-    if (persistentEligible) {
-      const exec = await this.getOrCreateRegistry().acquire(chatId, {
-        cwd,
-        resumeSessionId: session.sessionId,
-        onTeamEvent,
-        model: options.model ?? session.model,
-        apiContext,
-        outputsDir,
-      });
-      executionHandle = exec.nextTurn(prompt) as unknown as ExecutionHandle;
-    } else {
-      executionHandle = this.executorForChat(chatId).startExecution({
-        prompt,
-        cwd,
-        sessionId: session.sessionId,
-        abortController,
-        outputsDir,
-        apiContext,
-        maxTurns: options.maxTurns,
-        model: options.model ?? session.model,
-        allowedTools: options.allowedTools,
-        onTeamEvent,
-      });
-    }
+    // them per-turn — runOneTurn falls back to legacy spawn automatically
+    // when those are set.
+    const executionHandle = await this.runOneTurn(chatId, engineName, {
+      prompt,
+      cwd,
+      abortController,
+      outputsDir,
+      apiContext,
+      maxTurns: options.maxTurns,
+      model: options.model ?? session.model,
+      allowedTools: options.allowedTools,
+      onTeamEvent,
+    });
 
     const startTime = Date.now();
     runningTask = {
@@ -1679,8 +1739,10 @@ export class MessageBridge {
           await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
         }
 
-        const retryHandle = this.executorForChat(chatId).startExecution({
-          prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: options.model ?? session.model,
+        const retryHandle = await this.runOneTurn(chatId, engineName, {
+          prompt, cwd, abortController, outputsDir, apiContext,
+          model: options.model ?? session.model,
+          onTeamEvent, freshSession: true,
         });
         executionHandle.finish();
         runningTask.executionHandle = retryHandle;
@@ -1757,8 +1819,10 @@ export class MessageBridge {
         }
 
         try {
-          const retryHandle = this.executorForChat(chatId).startExecution({
-            prompt, cwd, sessionId: undefined, abortController, outputsDir, apiContext, model: options.model ?? session.model,
+          const retryHandle = await this.runOneTurn(chatId, engineName, {
+            prompt, cwd, abortController, outputsDir, apiContext,
+            model: options.model ?? session.model,
+            onTeamEvent, freshSession: true,
           });
           executionHandle.finish();
           runningTask.executionHandle = retryHandle;
