@@ -61,6 +61,20 @@ interface PoolEntry {
 
 export class ExecutorRegistry extends EventEmitter {
   private executors = new Map<string, PoolEntry>();
+  /**
+   * In-flight graceful shutdowns by chatId. {@link release} adds an entry
+   * before it kicks off the shutdown await, and removes it once the
+   * shutdown resolves. {@link acquire} consults this map first: if a
+   * shutdown is in flight for the chatId, it awaits completion before
+   * inspecting the executors map.
+   *
+   * Without this, a fast \`/reset\` followed by a new user message would
+   * see {@link release}'s `executors.delete()` already done, fall through
+   * to the "create new" branch, and end up with two executors for the
+   * same chatId in flight — the old one still sending spontaneous-message
+   * callbacks into the new card while it shuts down.
+   */
+  private pendingShutdowns = new Map<string, Promise<void>>();
   private shuttingDown = false;
 
   constructor(private opts: RegistryOptions) {
@@ -71,9 +85,21 @@ export class ExecutorRegistry extends EventEmitter {
    * Get or create a healthy executor for chatId. Existing healthy entries
    * are LRU-bumped; closed/crashed entries are replaced. May evict the
    * least-recently-used executor when at `maxConcurrent` capacity.
+   *
+   * If a release() is mid-shutdown for the same chatId (e.g. a /reset
+   * happened a moment ago), this waits for that shutdown to resolve
+   * before creating a fresh executor — see {@link pendingShutdowns}.
    */
   async acquire(chatId: string, opts: AcquireOptions): Promise<PersistentClaudeExecutor> {
     if (this.shuttingDown) throw new Error('ExecutorRegistry: shutting down');
+
+    // Wait out any in-flight release() for this chat, otherwise we race
+    // with its delete-then-async-shutdown and risk two executors in flight.
+    const pending = this.pendingShutdowns.get(chatId);
+    if (pending) {
+      this.opts.logger.debug({ chatId }, 'ExecutorRegistry: acquire awaiting in-flight release');
+      try { await pending; } catch { /* shutdown errors are logged at the source */ }
+    }
 
     const existing = this.executors.get(chatId);
     if (existing) {
@@ -147,14 +173,41 @@ export class ExecutorRegistry extends EventEmitter {
    * resolves) so subscribers like the bridge's spontaneous handler clean
    * up immediately. The 'closed' listener guards against double-emit
    * because the executor is already gone from the map.
+   *
+   * Records the in-flight shutdown in {@link pendingShutdowns} so a
+   * concurrent {@link acquire} for the same chatId will wait it out
+   * instead of racing to create a second executor.
    */
   async release(chatId: string, reason: string = 'caller'): Promise<void> {
     const entry = this.executors.get(chatId);
-    if (!entry) return;
+    if (!entry) {
+      // Possible nothing to release, but if a previous release is still
+      // in flight (race-on-race), let any caller observing the pending
+      // map see this call complete in order too.
+      const inFlight = this.pendingShutdowns.get(chatId);
+      if (inFlight) {
+        try { await inFlight; } catch { /* logged at source */ }
+      }
+      return;
+    }
     this.executors.delete(chatId);
     this.opts.logger.info({ chatId, reason }, 'ExecutorRegistry: release');
     this.emit('executor-removed', chatId);
-    await entry.executor.shutdown(reason);
+
+    const shutdownPromise = entry.executor.shutdown(reason).catch((err) => {
+      this.opts.logger.warn({ err, chatId }, 'ExecutorRegistry: shutdown rejected');
+    });
+    this.pendingShutdowns.set(chatId, shutdownPromise);
+    try {
+      await shutdownPromise;
+    } finally {
+      // Only clear if our shutdown is still the one registered — a later
+      // release for the same chatId could have replaced it (theoretical,
+      // but cheap defensive check).
+      if (this.pendingShutdowns.get(chatId) === shutdownPromise) {
+        this.pendingShutdowns.delete(chatId);
+      }
+    }
   }
 
   /** Shut down all executors (call on bot shutdown). */
