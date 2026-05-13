@@ -55,6 +55,7 @@ const CLAUDE_ENV_PASSTHROUGH = new Set([
   'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS',
   'CLAUDE_CODE_DISABLE_AGENT_VIEW',
   'CLAUDE_CODE_SIMPLE',
+  'CLAUDE_CODE_DISABLE_AUTO_MEMORY',
 ]);
 const AUTH_ENV_VARS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
 
@@ -93,6 +94,13 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
     if (explicitApiKey) env.ANTHROPIC_API_KEY = explicitApiKey;
     if (env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === undefined) {
       env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
+    }
+    // Default-enable auto-memory so Claude can persist project patterns /
+    // preferences / decisions across sessions. Pin to '0' (= "don't disable")
+    // here so MetaBot stays on this default even if Claude Code flips its
+    // upstream default. Users can disable with CLAUDE_CODE_DISABLE_AUTO_MEMORY=1.
+    if (env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === undefined) {
+      env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '0';
     }
     const child = spawn(options.command, options.args, {
       cwd: options.cwd,

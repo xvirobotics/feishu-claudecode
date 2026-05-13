@@ -42,6 +42,7 @@ const CLAUDE_ENV_PASSTHROUGH = new Set([
   'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS', // /agent teams (multi-instance coordination)
   'CLAUDE_CODE_DISABLE_AGENT_VIEW',       // disable claude agents / --bg / /background
   'CLAUDE_CODE_SIMPLE',                   // --bare equivalent
+  'CLAUDE_CODE_DISABLE_AUTO_MEMORY',      // toggle auto-memory (project patterns/learnings)
 ]);
 
 /**
@@ -129,6 +130,17 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
     // setting CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0 in MetaBot's parent env.
     if (env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === undefined) {
       env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
+    }
+
+    // Default-enable Claude Code auto-memory so Claude can write project
+    // patterns / preferences / decisions to ~/.claude/projects/<projDir>/memory/
+    // across sessions — the user-facing memory system the bot's skills /
+    // metaskill flows rely on. Users can disable by setting
+    // CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 in MetaBot's parent env.
+    // Pinning to '0' here makes the feature immune to upstream default
+    // changes; the user shouldn't need to keep a magic line in .env.
+    if (env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === undefined) {
+      env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '0';
     }
 
     const child = spawn(options.command, options.args, {
