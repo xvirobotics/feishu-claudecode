@@ -47,7 +47,7 @@ export class CommandHandler {
     switch (cmd.toLowerCase()) {
       case '/help':
         await this.sender.sendTextNotice(chatId, '📖 Help', [
-          '**Available Commands:**',
+          '**Bot Commands:**',
           '`/reset` - Clear session, start fresh',
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
@@ -56,6 +56,10 @@ export class CommandHandler {
           '`/model <name>` - Set model for current engine',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
+          '',
+          '**Agent Commands** (pass through to the agent — Claude only):',
+          '`/goal <description>` - Set a goal the agent keeps pursuing across turns',
+          '`/background <prompt>` - Run a task in the background while you continue chatting',
           '',
           '**Usage:**',
           'Send any text message to start a conversation with the configured agent engine.',
