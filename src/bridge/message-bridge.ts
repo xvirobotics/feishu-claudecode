@@ -102,6 +102,14 @@ interface RunningTask {
   /** Accumulated answers keyed by question header (for multi-question calls) */
   collectedAnswers: Record<string, string>;
   cardMessageId: string;
+  /**
+   * Dedicated card for the currently-displayed AskUserQuestion, sent
+   * SEPARATELY from {@link cardMessageId}. On Feishu this is a Schema 1.0
+   * card because v2 mobile drops button blocks; the main streaming card
+   * stays v2 throughout (Feishu refuses to patch v2 → v1). Cleared after
+   * the question is answered.
+   */
+  questionCardMessageId?: string;
   questionTimeoutId?: ReturnType<typeof setTimeout>;
   processor: StreamProcessor;
   rateLimiter: RateLimiter;
@@ -346,6 +354,19 @@ export class MessageBridge {
     const task = this.runningTasks.get(chatId);
     if (!task) return;
     if (task.questionTimeoutId) clearTimeout(task.questionTimeoutId);
+    // Finalize any in-flight question card so the user doesn't see buttons
+    // that go nowhere after the task is gone.
+    if (task.questionCardMessageId) {
+      const upd = this.sender.updateQuestionCard ?? this.sender.updateCard.bind(this.sender);
+      void upd(task.questionCardMessageId, {
+        status: 'error',
+        userPrompt: 'Question',
+        responseText: '_Task stopped before answer received_',
+        toolCalls: [],
+        errorMessage: 'Task was stopped',
+      });
+      task.questionCardMessageId = undefined;
+    }
     task.executionHandle.finish();
     task.abortController.abort();
     // Don't delete from runningTasks here — the finally block in executeQuery will
@@ -1054,6 +1075,20 @@ export class MessageBridge {
       'User answered question',
     );
 
+    // Helper: render the dedicated question card. The question card lives
+    // independent of the main streaming card (Feishu v1 vs v2 schemas can't
+    // patch each other), so all answer-stage rendering goes through this
+    // path, not updateCard. Stays minimal: just header + question + buttons.
+    const updateQ = async (qState: CardState): Promise<void> => {
+      if (!task.questionCardMessageId) return;
+      const upd = this.sender.updateQuestionCard ?? this.sender.updateCard.bind(this.sender);
+      await upd(task.questionCardMessageId, qState);
+    };
+    const sendQ = async (qState: CardState): Promise<string | undefined> => {
+      const fn = this.sender.sendQuestionCard ?? this.sender.sendCard.bind(this.sender);
+      return fn(chatId, qState);
+    };
+
     // Check if more questions remain in this AskUserQuestion call
     if (task.currentQuestionIndex + 1 < pending.questions.length) {
       task.currentQuestionIndex++;
@@ -1065,20 +1100,18 @@ export class MessageBridge {
         this.autoAnswerRemainingQuestions(task);
       }, QUESTION_TIMEOUT_MS);
 
-      // Update card to show next question
-      const currentState = task.processor.getCurrentState();
+      // Update the dedicated question card to the next sub-question
       const nextQ = pending.questions[task.currentQuestionIndex];
       const displayQuestion: PendingQuestion = {
         toolUseId: pending.toolUseId,
         questions: [nextQ],
       };
       const progress = `(${task.currentQuestionIndex + 1}/${pending.questions.length})`;
-      await this.sender.updateCard(task.cardMessageId, {
-        ...currentState,
+      await updateQ({
         status: 'waiting_for_input',
-        responseText: currentState.responseText
-          ? currentState.responseText + `\n\n> **Reply ${progress}:** ${answerText}`
-          : `> **Reply:** ${answerText}`,
+        userPrompt: `Question ${progress}`,
+        responseText: `> **Reply:** ${answerText}`,
+        toolCalls: [],
         pendingQuestion: displayQuestion,
       });
       return;
@@ -1099,19 +1132,31 @@ export class MessageBridge {
     task.collectedAnswers = {};
     task.processor.clearPendingQuestion();
 
+    // Finalize the dedicated question card — strip buttons, show what was picked.
+    const answerSummary = Object.values(collectedAnswers).length > 0
+      ? Object.values(collectedAnswers).join(', ')
+      : answerText;
+    await updateQ({
+      status: 'complete',
+      userPrompt: 'Question',
+      responseText: `> **Reply:** ${answerSummary}`,
+      toolCalls: [],
+    });
+    task.questionCardMessageId = undefined;
+
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
 
     this.logger.info({ chatId, answers: collectedAnswers, toolUseId: pending.toolUseId }, 'Resolved AskUserQuestion hook with collected answers');
 
-    // Check if there are more queued AskUserQuestion calls
+    // Check if there are more queued AskUserQuestion calls (back-to-back
+    // AskUserQuestion tool_uses in one assistant turn). Each call gets its
+    // own fresh question card.
     const nextPending = task.processor.getPendingQuestion();
     if (nextPending) {
       task.pendingQuestion = nextPending;
       task.currentQuestionIndex = 0;
       task.collectedAnswers = {};
 
-      // Show next question call
-      const currentState = task.processor.getCurrentState();
       const displayQuestion: PendingQuestion = {
         toolUseId: nextPending.toolUseId,
         questions: [nextPending.questions[0]],
@@ -1121,21 +1166,18 @@ export class MessageBridge {
         this.autoAnswerRemainingQuestions(task);
       }, QUESTION_TIMEOUT_MS);
 
-      await this.sender.updateCard(task.cardMessageId, {
-        ...currentState,
+      const newQId = await sendQ({
         status: 'waiting_for_input',
-        responseText: currentState.responseText
-          ? currentState.responseText + `\n\n> **Reply:** ${answerText}\n\n_Next question${progress}..._`
-          : `> **Reply:** ${answerText}\n\n_Next question${progress}..._`,
+        userPrompt: progress ? `Question${progress}` : 'Question',
+        responseText: '',
+        toolCalls: [],
         pendingQuestion: displayQuestion,
       });
+      if (newQId) task.questionCardMessageId = newQId;
       return;
     }
 
-    // No more questions — resume normal execution
-    const answerSummary = Object.values(task.collectedAnswers).length > 0
-      ? Object.values(task.collectedAnswers).join(', ')
-      : answerText;
+    // No more questions — bump the main streaming card so it visibly resumes.
     const currentState = task.processor.getCurrentState();
     await this.sender.updateCard(task.cardMessageId, {
       ...currentState,
@@ -1166,6 +1208,20 @@ export class MessageBridge {
     task.currentQuestionIndex = 0;
     task.collectedAnswers = {};
     task.processor.clearPendingQuestion();
+
+    // Finalize the dedicated question card to "(timed out)" — fire-and-forget,
+    // resolveQuestion below doesn't depend on this completing.
+    if (task.questionCardMessageId) {
+      const upd = this.sender.updateQuestionCard ?? this.sender.updateCard.bind(this.sender);
+      void upd(task.questionCardMessageId, {
+        status: 'error',
+        userPrompt: 'Question',
+        responseText: '_用户未及时回复，已自动跳过_',
+        toolCalls: [],
+        errorMessage: 'Timed out waiting for answer',
+      });
+      task.questionCardMessageId = undefined;
+    }
 
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
   }
@@ -1433,17 +1489,23 @@ export class MessageBridge {
 
         // Check if we hit a waiting_for_input state
         if (state.status === 'waiting_for_input' && state.pendingQuestion) {
-          // Only initialize tracking when we see a NEW question call
-          if (!runningTask.pendingQuestion || runningTask.pendingQuestion.toolUseId !== state.pendingQuestion.toolUseId) {
+          // Only initialize tracking when we see a NEW question call (different toolUseId).
+          // Multi-question calls (same toolUseId, advance currentQuestionIndex) reuse the
+          // already-sent question card via updateQuestionCard below.
+          const isNewQuestionCall =
+            !runningTask.pendingQuestion ||
+            runningTask.pendingQuestion.toolUseId !== state.pendingQuestion.toolUseId;
+          if (isNewQuestionCall) {
             runningTask.pendingQuestion = state.pendingQuestion;
             runningTask.currentQuestionIndex = 0;
             runningTask.collectedAnswers = {};
+            runningTask.questionCardMessageId = undefined; // a fresh question card will be sent
           }
 
           await rateLimiter.flush();
 
-          // Show only the current question (not all at once)
-          const pending = runningTask.pendingQuestion;
+          // Non-null after the isNewQuestionCall branch assigned it (or it was already set)
+          const pending = runningTask.pendingQuestion!;
           const currentQ = pending.questions[runningTask.currentQuestionIndex];
           const displayQuestion: PendingQuestion = {
             toolUseId: pending.toolUseId,
@@ -1452,14 +1514,53 @@ export class MessageBridge {
           const progress = pending.questions.length > 1
             ? ` (${runningTask.currentQuestionIndex + 1}/${pending.questions.length})`
             : '';
+
+          // 1) Update the MAIN streaming card without the pendingQuestion field,
+          //    so it stays clean v2 (Feishu refuses to patch v2 ↔ v1, and v2
+          //    mobile silently drops the button block anyway). Show only a
+          //    pointer note in the response so the user knows where to look.
+          const mainCardHint = progress
+            ? `_Waiting for your answer to the question card${progress} below…_`
+            : '_Waiting for your answer to the question card below…_';
           await this.sender.updateCard(messageId, {
             ...state,
-            pendingQuestion: displayQuestion,
-            // Append progress indicator to response if multi-question
-            responseText: progress
-              ? (state.responseText || '') + (state.responseText ? '\n\n' : '') + `_Question${progress}_`
-              : state.responseText,
+            pendingQuestion: undefined,
+            responseText: state.responseText
+              ? state.responseText + '\n\n' + mainCardHint
+              : mainCardHint,
           });
+
+          // 2) Send / update a DEDICATED question card (v1 on Feishu) — this is
+          //    where the option buttons live. See memory:
+          //    bug-feishu-v2-mobile-action-buttons.
+          const questionCardState: CardState = {
+            status: 'waiting_for_input',
+            userPrompt: progress ? `Question${progress}` : 'Question',
+            responseText: '',
+            toolCalls: [],
+            pendingQuestion: displayQuestion,
+          };
+          if (runningTask.questionCardMessageId && this.sender.updateQuestionCard) {
+            await this.sender.updateQuestionCard(runningTask.questionCardMessageId, questionCardState);
+          } else {
+            const sendQ = this.sender.sendQuestionCard ?? this.sender.sendCard.bind(this.sender);
+            const qMsgId = await sendQ(chatId, questionCardState);
+            if (qMsgId) {
+              runningTask.questionCardMessageId = qMsgId;
+            } else {
+              // Sender refused. Fall back to the legacy in-card render so the
+              // user still sees the question (even if mobile renders without
+              // buttons — text fallback "type the number" still works).
+              this.logger.warn({ chatId }, 'sendQuestionCard returned no messageId; falling back to inline render');
+              await this.sender.updateCard(messageId, {
+                ...state,
+                pendingQuestion: displayQuestion,
+                responseText: progress
+                  ? (state.responseText || '') + (state.responseText ? '\n\n' : '') + `_Question${progress}_`
+                  : state.responseText,
+              });
+            }
+          }
 
           // Set/reset timeout for auto-answer
           if (runningTask.questionTimeoutId) {
