@@ -759,7 +759,7 @@ mkdir -p "$SKILLS_DIR"
 # Sanity check: bundled skill tree must exist in the checked-out repo.
 # If it's missing, the user's checkout is stale (predates the skill bundling
 # commits) — fail with a clear message instead of cryptic cp errors.
-SKILL_SENTINEL="$METABOT_HOME/src/skills/metaskill/SKILL.md"
+SKILL_SENTINEL="$METABOT_HOME/src/skills/metabot/SKILL.md"
 if [[ ! -f "$SKILL_SENTINEL" ]]; then
   error "Bundled skill source not found at: $SKILL_SENTINEL"
   error "Your $METABOT_HOME checkout appears to be stale or incomplete."
@@ -768,14 +768,13 @@ if [[ ! -f "$SKILL_SENTINEL" ]]; then
   exit 1
 fi
 
-# Install metaskill (bundled in src/skills/metaskill/)
-info "Installing metaskill skill..."
-mkdir -p "$SKILLS_DIR/metaskill/flows"
-cp "$METABOT_HOME/src/skills/metaskill/SKILL.md" "$SKILLS_DIR/metaskill/SKILL.md"
-cp "$METABOT_HOME/src/skills/metaskill/flows/team.md" "$SKILLS_DIR/metaskill/flows/team.md"
-cp "$METABOT_HOME/src/skills/metaskill/flows/agent.md" "$SKILLS_DIR/metaskill/flows/agent.md"
-cp "$METABOT_HOME/src/skills/metaskill/flows/skill.md" "$SKILLS_DIR/metaskill/flows/skill.md"
-success "metaskill skill installed → $SKILLS_DIR/metaskill"
+# Clean up legacy metaskill skill if present — no longer installed by default.
+# Users who still want the agent-team generator can copy it back from
+# $METABOT_HOME/src/skills/metaskill/ (the source files remain bundled in the repo).
+if [[ -d "$SKILLS_DIR/metaskill" ]]; then
+  rm -rf "$SKILLS_DIR/metaskill"
+  info "Removed legacy metaskill skill from $SKILLS_DIR (now opt-in — see src/skills/metaskill/)"
+fi
 
 # Install metamemory skill (bundled in src/memory/skill/)
 info "Installing metamemory skill..."
@@ -894,8 +893,12 @@ fi
 if [[ -n "${DEPLOY_WORK_DIR:-}" ]]; then
   SKILLS_DEST="$DEPLOY_WORK_DIR/.claude/skills"
 
-  # Copy skills (common + lark-cli skills if Feishu)
-  DEPLOY_SKILLS="metaskill metamemory metabot voice skill-hub"
+  # Copy skills (common + lark-cli skills if Feishu).
+  # metaskill (agent-team generator) and metaschedule (persistent server-side
+  # scheduler) are no longer installed by default — copy them from
+  # $METABOT_HOME/src/skills/ if you want them. CC native CronCreate / /loop
+  # already cover ad-hoc, session-scoped scheduling.
+  DEPLOY_SKILLS="metamemory metabot voice skill-hub"
   if [[ "$SETUP_LARK_CLI" == "true" ]]; then
     for lark_skill in lark-base lark-calendar lark-contact lark-doc lark-drive lark-event lark-im lark-mail lark-minutes lark-openapi-explorer lark-shared lark-sheets lark-skill-maker lark-task lark-vc lark-whiteboard lark-wiki lark-workflow-meeting-summary lark-workflow-standup-report; do
       [[ -d "$SKILLS_DIR/$lark_skill" ]] && DEPLOY_SKILLS="$DEPLOY_SKILLS $lark_skill"

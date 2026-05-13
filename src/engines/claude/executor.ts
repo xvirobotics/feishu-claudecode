@@ -134,8 +134,8 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
 
     // Default-enable Claude Code auto-memory so Claude can write project
     // patterns / preferences / decisions to ~/.claude/projects/<projDir>/memory/
-    // across sessions — the user-facing memory system the bot's skills /
-    // metaskill flows rely on. Users can disable by setting
+    // across sessions — the user-facing memory system the bot's skills
+    // rely on. Users can disable by setting
     // CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 in MetaBot's parent env.
     // Pinning to '0' here makes the feature immune to upstream default
     // changes; the user shouldn't need to keep a magic line in .env.
