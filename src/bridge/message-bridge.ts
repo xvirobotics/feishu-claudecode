@@ -168,6 +168,7 @@ export class MessageBridge {
       config, logger, sender, this.sessionManager, memoryClient, this.audit,
       (chatId) => this.runningTasks.get(chatId),
       (chatId) => this.stopTask(chatId),
+      (chatId) => this.clearChatQueue(chatId),
       (chatId, reason) => this.releaseChatExecutor(chatId, reason),
     );
 
@@ -262,6 +263,24 @@ export class MessageBridge {
     if (!this.runningTasks.has(chatId)) return false;
     this.stopTask(chatId);
     return true;
+  }
+
+  /**
+   * Discard every queued message for a chat without touching the running
+   * task. Returns the number of messages discarded. Used by the /stop
+   * command so the user's "stop" intent isn't immediately undone by the
+   * next queued message taking over via {@link processQueue}.
+   *
+   * Not called from internal timeout / error paths — those keep the queue
+   * intact in case the user wants follow-up to still process.
+   */
+  clearChatQueue(chatId: string): number {
+    const queue = this.messageQueues.get(chatId);
+    if (!queue || queue.length === 0) return 0;
+    const cleared = queue.length;
+    this.messageQueues.delete(chatId);
+    this.logger.info({ chatId, cleared }, 'MessageBridge: cleared chat queue');
+    return cleared;
   }
 
   private stopTask(chatId: string): void {
