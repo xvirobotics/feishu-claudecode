@@ -357,7 +357,9 @@ export class MessageBridge {
     // Finalize any in-flight question card so the user doesn't see buttons
     // that go nowhere after the task is gone.
     if (task.questionCardMessageId) {
-      const upd = this.sender.updateQuestionCard ?? this.sender.updateCard.bind(this.sender);
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
       void upd(task.questionCardMessageId, {
         status: 'error',
         userPrompt: 'Question',
@@ -1079,13 +1081,22 @@ export class MessageBridge {
     // independent of the main streaming card (Feishu v1 vs v2 schemas can't
     // patch each other), so all answer-stage rendering goes through this
     // path, not updateCard. Stays minimal: just header + question + buttons.
+    //
+    // Bind `this.sender` on both the question-card path AND the fallback,
+    // otherwise calling the plucked method later loses its `this` and the
+    // inner `this.sender.sendCard(...)` blows up with "Cannot read
+    // properties of undefined (reading 'sender')".
     const updateQ = async (qState: CardState): Promise<void> => {
       if (!task.questionCardMessageId) return;
-      const upd = this.sender.updateQuestionCard ?? this.sender.updateCard.bind(this.sender);
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
       await upd(task.questionCardMessageId, qState);
     };
     const sendQ = async (qState: CardState): Promise<string | undefined> => {
-      const fn = this.sender.sendQuestionCard ?? this.sender.sendCard.bind(this.sender);
+      const fn = this.sender.sendQuestionCard
+        ? this.sender.sendQuestionCard.bind(this.sender)
+        : this.sender.sendCard.bind(this.sender);
       return fn(chatId, qState);
     };
 
@@ -1212,7 +1223,9 @@ export class MessageBridge {
     // Finalize the dedicated question card to "(timed out)" — fire-and-forget,
     // resolveQuestion below doesn't depend on this completing.
     if (task.questionCardMessageId) {
-      const upd = this.sender.updateQuestionCard ?? this.sender.updateCard.bind(this.sender);
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
       void upd(task.questionCardMessageId, {
         status: 'error',
         userPrompt: 'Question',
@@ -1543,7 +1556,13 @@ export class MessageBridge {
           if (runningTask.questionCardMessageId && this.sender.updateQuestionCard) {
             await this.sender.updateQuestionCard(runningTask.questionCardMessageId, questionCardState);
           } else {
-            const sendQ = this.sender.sendQuestionCard ?? this.sender.sendCard.bind(this.sender);
+            // Bind explicitly — `this.sender.sendQuestionCard ?? ...bind(...)`
+            // would pluck the method off without `this`, and calling it
+            // later throws "Cannot read properties of undefined (reading
+            // 'sender')" inside the Feishu adapter.
+            const sendQ = this.sender.sendQuestionCard
+              ? this.sender.sendQuestionCard.bind(this.sender)
+              : this.sender.sendCard.bind(this.sender);
             const qMsgId = await sendQ(chatId, questionCardState);
             if (qMsgId) {
               runningTask.questionCardMessageId = qMsgId;
