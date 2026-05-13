@@ -60,9 +60,26 @@ describe('FeishuSenderAdapter.sendQuestionCard / updateQuestionCard', () => {
     expect(sendCard).toHaveBeenCalledOnce();
     const cardJson = sendCard.mock.calls[0][1] as string;
     expect(cardJson).not.toContain('"schema":"2.0"');
-    expect(cardJson).toContain('answer_question');
     expect(cardJson).toContain('吃鸡');
     expect(cardJson).toContain('吃鸭');
+  });
+
+  it('question cards render text-only — no `tag: action` button block, no `answer_question` callback', () => {
+    // Buttons were removed because mobile Feishu has unfixable click
+    // problems on both schemas (v2 doesn't render, v1 returns code 200340).
+    // The typed-answer path works reliably; don't reintroduce buttons
+    // without first verifying the underlying mobile-render / v1-callback
+    // bugs are fixed Feishu-side.
+    const { adapter, sendCard } = makeAdapter();
+    void adapter.sendQuestionCard('oc_test', questionState);
+    const cardJson = sendCard.mock.calls[0][1] as string;
+    expect(cardJson).not.toContain('"tag":"action"');
+    expect(cardJson).not.toContain('answer_question');
+    // Numbered options + typed-reply prompt must still be present so users
+    // know HOW to answer without buttons.
+    expect(cardJson).toContain('**1.** 吃鸡');
+    expect(cardJson).toContain('**2.** 吃鸭');
+    expect(cardJson).toContain('请回复数字');
   });
 
   it('updateQuestionCard always builds a v1 card', async () => {

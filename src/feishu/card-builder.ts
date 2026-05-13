@@ -134,11 +134,20 @@ export function buildCard(state: CardState): string {
     });
   }
 
-  // Pending question section — interactive buttons + text-fallback hint
+  // Pending question section — text-only: numbered options + prominent
+  // "type the number" instruction. Buttons used to live here, but:
+  //   - Card Schema 2.0 mobile silently drops `tag: action` button blocks
+  //     (bug-feishu-v2-mobile-action-buttons), so buttons go invisible.
+  //   - Card Schema 1.0 buttons DO render on mobile, but clicks return
+  //     Feishu code 200340 (the click event never reaches us, suspected
+  //     v1 callbacks no longer route through `WSClient` persistent
+  //     connection in the v2 era — would require setting up an HTTP
+  //     webhook URL in the Feishu Open Platform app config).
+  // Decision: drop buttons entirely, default to typed answers. The text
+  // path is reliable on every Feishu surface (desktop / mobile / web).
   if (state.pendingQuestion) {
     elements.push({ tag: 'hr' });
-    state.pendingQuestion.questions.forEach((q, qi) => {
-      // Question prompt
+    state.pendingQuestion.questions.forEach((q) => {
       const descLines = q.options.map(
         (opt, i) => `**${i + 1}.** ${opt.label} — _${opt.description}_`,
       );
@@ -146,26 +155,10 @@ export function buildCard(state: CardState): string {
         tag: 'markdown',
         content: [`**[${q.header}] ${q.question}**`, '', ...descLines].join('\n'),
       });
-      // Interactive buttons: one per option + an explicit "Other" button
-      const actions = q.options.map((opt, oi) => ({
-        tag: 'button',
-        text: { tag: 'plain_text', content: `${oi + 1}. ${opt.label}` },
-        type: 'primary',
-        value: {
-          action: 'answer_question',
-          toolUseId: state.pendingQuestion!.toolUseId,
-          questionIndex: qi,
-          optionIndex: oi,
-        },
-      }));
-      elements.push({
-        tag: 'action',
-        actions,
-      });
     });
     elements.push({
       tag: 'markdown',
-      content: '_点击按钮选择，或直接输入自定义答案_',
+      content: '**👇 请回复数字（1/2/…）或直接输入文字答案**',
     });
   }
 
