@@ -45,6 +45,48 @@ const BATCH_DEBOUNCE_MS = 2000; // 2s window to collect multiple images/files
 const DEFAULT_IMAGE_TEXT = '请分析这张图片';
 const DEFAULT_FILE_TEXT = '请分析这个文件';
 
+/**
+ * Header text shown at the top of a between-turns "agent activity" card.
+ * Intentionally avoids the previous "long-running task" phrasing — that
+ * read to users as "still running" when in fact the card is emitted at
+ * the END of a burst (snippet buffer flushed after 30 s of quiet).
+ */
+export const SPONTANEOUS_CARD_HEADER =
+  'Agent activity between turns (background task return, teammate ping, or `/goal` evaluator):';
+
+/**
+ * Extract a one-line summary from an SDK stream message for the spontaneous
+ * activity card. Returns null if the message has nothing user-readable.
+ *
+ * Intentionally only handles `assistant` messages — `result` messages would
+ * always duplicate the last assistant text block (SDK's `result.result` is a
+ * verbatim echo), so including them caused the same content to show up twice
+ * in the card with two different prefixes. Don't add a `result` branch back
+ * without first verifying the SDK no longer echoes.
+ */
+export function extractSpontaneousSnippet(msg: unknown): string | null {
+  const m = msg as { type?: string; message?: { content?: Array<{ type?: string; text?: string; name?: string }> } };
+  if (m?.type !== 'assistant' || !m.message?.content) return null;
+  for (const blk of m.message.content) {
+    if (blk.type === 'text' && blk.text) {
+      const trimmed = String(blk.text).trim();
+      if (trimmed) return trimmed.slice(0, 400);
+    } else if (blk.type === 'tool_use' && blk.name) {
+      return `🔧 ${blk.name}`;
+    }
+  }
+  return null;
+}
+
+/** Build the markdown body of a spontaneous activity card from collected snippets. */
+export function formatSpontaneousCardBody(snippets: string[]): string {
+  return [
+    `_${SPONTANEOUS_CARD_HEADER}_`,
+    '',
+    ...snippets.map((s, i) => `**${i + 1}.** ${s}`),
+  ].join('\n');
+}
+
 interface PendingBatch {
   messages: IncomingMessage[];
   timerId: ReturnType<typeof setTimeout>;
@@ -391,24 +433,16 @@ export class MessageBridge {
    * Buffer a spontaneous message and (re)arm the coalesce timer. We extract
    * just the human-readable bits — assistant text and tool_use intent —
    * skipping noisy stream events.
+   *
+   * `result`-type messages are intentionally NOT snippeted: the SDK's
+   * `result.result` field is almost always a verbatim echo of the previous
+   * assistant text block, so emitting it would mean every spontaneous burst
+   * shows the same content twice in the card (once with no prefix from the
+   * assistant message, once with a 🤖 prefix from the result). Skipping
+   * result here removes that duplication.
    */
-  private handleSpontaneousMessage(chatId: string, msg: any): void {
-    let snippet: string | null = null;
-    if (msg?.type === 'assistant' && msg.message?.content) {
-      for (const blk of msg.message.content) {
-        if (blk.type === 'text' && blk.text) {
-          const trimmed = String(blk.text).trim();
-          if (trimmed) snippet = trimmed.slice(0, 400);
-          break;
-        } else if (blk.type === 'tool_use' && blk.name) {
-          snippet = `🔧 ${blk.name}`;
-          break;
-        }
-      }
-    } else if (msg?.type === 'result' && (msg as any).result) {
-      const r = String((msg as any).result).trim();
-      if (r) snippet = `🤖 ${r.slice(0, 400)}`;
-    }
+  private handleSpontaneousMessage(chatId: string, msg: unknown): void {
+    const snippet = extractSpontaneousSnippet(msg);
     // Tool/system events without text aren't worth a card.
     if (!snippet) return;
 
@@ -430,8 +464,16 @@ export class MessageBridge {
 
   /**
    * Flush any accumulated spontaneous activity for chatId as a single
-   * "background activity" Feishu card. No-op if buffer is empty or there's
+   * "agent activity" Feishu card. No-op if buffer is empty or there's
    * an active user turn (we'd rather merge into the live card than spam).
+   *
+   * Card title intentionally avoids the previous "long-running task"
+   * wording — users read that as "agent is still running long-running
+   * work", but the card is in fact emitted at the END of a between-turn
+   * burst (e.g. after a `run_in_background` Bash command's task-notification
+   * triggered the agent to summarize a result). Calling it "agent activity"
+   * + green status lets the user read it as "the agent did this and is now
+   * quiet" — which is the correct signal.
    */
   private async flushSpontaneous(chatId: string): Promise<void> {
     const buf = this.spontaneousBuffers.get(chatId);
@@ -446,15 +488,11 @@ export class MessageBridge {
       return;
     }
 
-    const responseText = [
-      '_Background activity from your agent team / long-running task:_',
-      '',
-      ...buf.snippets.map((s, i) => `**${i + 1}.** ${s}`),
-    ].join('\n');
+    const responseText = formatSpontaneousCardBody(buf.snippets);
 
     const card: CardState = {
       status: 'complete',
-      userPrompt: '(background)',
+      userPrompt: '(agent activity)',
       responseText,
       toolCalls: [],
       teamState: buf.snippets.length > 0 ? buf.teamState : undefined,
