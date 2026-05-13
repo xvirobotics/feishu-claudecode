@@ -67,7 +67,17 @@ function hasCredentialsFile(): boolean {
 }
 
 function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
-  const filterAuthVars = !!(explicitApiKey || hasCredentialsFile());
+  // Mirror executor.ts: when env-based Anthropic auth is in use (proxy /
+  // gateway via ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN), bypass the
+  // credentials.json filter so ANTHROPIC_AUTH_TOKEN reaches the subprocess.
+  const preferEnvAuth =
+    process.env.METABOT_PREFER_ENV_AUTH === 'true' ||
+    !!(
+      process.env.ANTHROPIC_AUTH_TOKEN ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.ANTHROPIC_BASE_URL
+    );
+  const filterAuthVars = !preferEnvAuth && !!(explicitApiKey || hasCredentialsFile());
   return (options: SpawnOptions): SpawnedProcess => {
     const baseEnv = options.env && Object.keys(options.env).length > 0
       ? { ...process.env, ...options.env }
