@@ -44,6 +44,7 @@ function buildHandler() {
     audit,
     () => undefined, // getRunningTask
     () => {},        // stopTask
+    () => 0,         // clearQueue — /help doesn't touch the queue
     async () => {},  // releaseExecutor
   );
   return { handler, notices };

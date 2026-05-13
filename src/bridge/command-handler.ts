@@ -21,6 +21,14 @@ export class CommandHandler {
     private getRunningTask: (chatId: string) => { startTime: number } | undefined,
     private stopTask: (chatId: string) => void,
     /**
+     * Drain the chat's queued-message buffer, returning the number of
+     * messages discarded. Called from /stop so the user's "stop" intent
+     * isn't immediately undone by the next queued message — without this
+     * the bridge's processQueue would start the next one as soon as the
+     * aborted task's finally block runs.
+     */
+    private clearQueue: (chatId: string) => number,
+    /**
      * Release the persistent Claude process associated with this chat
      * (no-op if the persistent-executor feature flag is off or no
      * executor exists). Called on /reset so teammates and /goal state
@@ -92,10 +100,26 @@ export class CommandHandler {
 
       case '/stop': {
         const task = this.getRunningTask(chatId);
+        // Always drain the queue first — otherwise the running task's
+        // finally block immediately picks the next queued message via
+        // processQueue and the user's "stop" intent silently fails.
+        const cleared = this.clearQueue(chatId);
         if (task) {
-          this.audit.log({ event: 'task_stopped', botName: this.config.name, chatId, userId, durationMs: Date.now() - task.startTime });
+          this.audit.log({ event: 'task_stopped', botName: this.config.name, chatId, userId, durationMs: Date.now() - task.startTime, meta: { clearedQueue: cleared } });
           this.stopTask(chatId);
-          await this.sender.sendTextNotice(chatId, '🛑 Stopped', 'Current task has been aborted.', 'orange');
+          const body = cleared > 0
+            ? `Current task aborted. Discarded **${cleared}** queued message${cleared === 1 ? '' : 's'}.`
+            : 'Current task has been aborted.';
+          await this.sender.sendTextNotice(chatId, '🛑 Stopped', body, 'orange');
+        } else if (cleared > 0) {
+          // No running task but queued messages existed — clear them too.
+          this.audit.log({ event: 'queue_cleared', botName: this.config.name, chatId, userId, meta: { clearedQueue: cleared } });
+          await this.sender.sendTextNotice(
+            chatId,
+            '🛑 Queue Cleared',
+            `No task was running. Discarded **${cleared}** queued message${cleared === 1 ? '' : 's'}.`,
+            'orange',
+          );
         } else {
           await this.sender.sendTextNotice(chatId, 'ℹ️ No Running Task', 'There is no task to stop.', 'blue');
         }
