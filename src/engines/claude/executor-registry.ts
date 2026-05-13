@@ -97,6 +97,7 @@ export class ExecutorRegistry extends EventEmitter {
       const oldest = this.executors.get(oldestKey)!;
       this.executors.delete(oldestKey);
       this.opts.logger.info({ evictChatId: oldestKey, capacity: max }, 'ExecutorRegistry: LRU evicting');
+      this.emit('executor-removed', oldestKey);
       void oldest.executor.shutdown('lru-evict');
     }
 
@@ -141,12 +142,18 @@ export class ExecutorRegistry extends EventEmitter {
    * Force-release the executor for chatId (graceful shutdown). Used by
    * /reset to discard any teammates / background tasks tied to the old
    * session before starting fresh.
+   *
+   * Emits 'executor-removed' eagerly (before the underlying shutdown
+   * resolves) so subscribers like the bridge's spontaneous handler clean
+   * up immediately. The 'closed' listener guards against double-emit
+   * because the executor is already gone from the map.
    */
   async release(chatId: string, reason: string = 'caller'): Promise<void> {
     const entry = this.executors.get(chatId);
     if (!entry) return;
     this.executors.delete(chatId);
     this.opts.logger.info({ chatId, reason }, 'ExecutorRegistry: release');
+    this.emit('executor-removed', chatId);
     await entry.executor.shutdown(reason);
   }
 

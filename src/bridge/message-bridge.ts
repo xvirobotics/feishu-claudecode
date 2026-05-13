@@ -24,6 +24,13 @@ const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
 const MAX_QUEUE_SIZE = 5; // max queued messages per chat
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour idle → abort
+/**
+ * Stage 3 — coalesce window for spontaneous Feishu cards. When teammates
+ * (or /goal evaluators, or background tasks) emit messages while no user
+ * turn is active, we batch them into a single card every COALESCE_MS to
+ * avoid spamming the chat.
+ */
+const SPONTANEOUS_COALESCE_MS = 30 * 1000;
 const FINAL_CARD_RETRIES = 3;
 const FINAL_CARD_BASE_DELAY_MS = 2000;
 const TASK_TIMEOUT_MESSAGE = 'Task timed out (24 hour limit)';
@@ -120,6 +127,22 @@ export class MessageBridge {
    * the PERSISTENT_EXECUTOR env feature flag is on. One pool per bot.
    */
   private persistentRegistry: ExecutorRegistry | null = null;
+  /**
+   * Stage 3 — track which persistent executors already have a spontaneous-
+   * activity subscription, so we don't double-subscribe across acquisitions.
+   * Cleared when an executor is removed from the pool.
+   */
+  private spontaneousSubscribed = new Set<string>();
+  /**
+   * Stage 3 — accumulator for spontaneous activity per chatId, debounced
+   * into a single Feishu card every COALESCE_MS. Built up by the
+   * 'spontaneous' event handler, flushed by a timer.
+   */
+  private spontaneousBuffers = new Map<string, {
+    teamState: TeamState;
+    snippets: string[];
+    timer: ReturnType<typeof setTimeout>;
+  }>();
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
 
@@ -145,6 +168,7 @@ export class MessageBridge {
       config, logger, sender, this.sessionManager, memoryClient, this.audit,
       (chatId) => this.runningTasks.get(chatId),
       (chatId) => this.stopTask(chatId),
+      (chatId, reason) => this.releaseChatExecutor(chatId, reason),
     );
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
@@ -279,6 +303,22 @@ export class MessageBridge {
         defaultApiKey: this.config.claude.apiKey,
         defaultModel: this.config.claude.model,
       });
+      // Stage 3 — every newly added executor gets a spontaneous-activity
+      // subscription so teammate / goal / background pings between turns
+      // surface as Feishu cards.
+      this.persistentRegistry.on('executor-added', (chatId: string) => {
+        this.attachSpontaneousHandler(chatId);
+      });
+      this.persistentRegistry.on('executor-removed', (chatId: string) => {
+        this.spontaneousSubscribed.delete(chatId);
+        // Flush any pending spontaneous buffer so we don't lose accumulated
+        // activity when an executor goes away (e.g. idle eviction).
+        const buf = this.spontaneousBuffers.get(chatId);
+        if (buf) {
+          clearTimeout(buf.timer);
+          void this.flushSpontaneous(chatId);
+        }
+      });
       this.logger.info(
         {
           idleTimeoutMs: idleEnv,
@@ -289,6 +329,102 @@ export class MessageBridge {
       );
     }
     return this.persistentRegistry;
+  }
+
+  /**
+   * Attach a 'spontaneous' handler to the chat's persistent executor. Called
+   * when a new executor is added to the pool. Idempotent — guarded by
+   * spontaneousSubscribed.
+   */
+  private attachSpontaneousHandler(chatId: string): void {
+    if (this.spontaneousSubscribed.has(chatId)) return;
+    const exec = this.persistentRegistry?.peek(chatId);
+    if (!exec) return;
+    this.spontaneousSubscribed.add(chatId);
+    exec.on('spontaneous', (msg) => {
+      this.handleSpontaneousMessage(chatId, msg);
+    });
+    this.logger.debug({ chatId }, 'MessageBridge: attached spontaneous handler');
+  }
+
+  /**
+   * Buffer a spontaneous message and (re)arm the coalesce timer. We extract
+   * just the human-readable bits — assistant text and tool_use intent —
+   * skipping noisy stream events.
+   */
+  private handleSpontaneousMessage(chatId: string, msg: any): void {
+    let snippet: string | null = null;
+    if (msg?.type === 'assistant' && msg.message?.content) {
+      for (const blk of msg.message.content) {
+        if (blk.type === 'text' && blk.text) {
+          const trimmed = String(blk.text).trim();
+          if (trimmed) snippet = trimmed.slice(0, 400);
+          break;
+        } else if (blk.type === 'tool_use' && blk.name) {
+          snippet = `🔧 ${blk.name}`;
+          break;
+        }
+      }
+    } else if (msg?.type === 'result' && (msg as any).result) {
+      const r = String((msg as any).result).trim();
+      if (r) snippet = `🤖 ${r.slice(0, 400)}`;
+    }
+    // Tool/system events without text aren't worth a card.
+    if (!snippet) return;
+
+    let buf = this.spontaneousBuffers.get(chatId);
+    if (!buf) {
+      buf = {
+        teamState: { teammates: [], tasks: [] },
+        snippets: [],
+        timer: setTimeout(() => {
+          void this.flushSpontaneous(chatId);
+        }, SPONTANEOUS_COALESCE_MS),
+      };
+      this.spontaneousBuffers.set(chatId, buf);
+    }
+    buf.snippets.push(snippet);
+    // Cap to prevent runaway growth in a single window
+    if (buf.snippets.length > 25) buf.snippets.splice(0, buf.snippets.length - 25);
+  }
+
+  /**
+   * Flush any accumulated spontaneous activity for chatId as a single
+   * "background activity" Feishu card. No-op if buffer is empty or there's
+   * an active user turn (we'd rather merge into the live card than spam).
+   */
+  private async flushSpontaneous(chatId: string): Promise<void> {
+    const buf = this.spontaneousBuffers.get(chatId);
+    if (!buf) return;
+    this.spontaneousBuffers.delete(chatId);
+    clearTimeout(buf.timer);
+
+    // If a user turn just started, drop the spontaneous batch — its content
+    // is about to land in the live card anyway.
+    if (this.runningTasks.has(chatId)) {
+      this.logger.debug({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: drop spontaneous (active turn)');
+      return;
+    }
+
+    const responseText = [
+      '_Background activity from your agent team / long-running task:_',
+      '',
+      ...buf.snippets.map((s, i) => `**${i + 1}.** ${s}`),
+    ].join('\n');
+
+    const card: CardState = {
+      status: 'complete',
+      userPrompt: '(background)',
+      responseText,
+      toolCalls: [],
+      teamState: buf.snippets.length > 0 ? buf.teamState : undefined,
+    };
+    try {
+      await this.sender.sendCard(chatId, card);
+      this.logger.info({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: sent spontaneous card');
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'MessageBridge: failed to send spontaneous card');
+    }
   }
 
   /**
@@ -307,6 +443,17 @@ export class MessageBridge {
     if (this.persistentRegistry) {
       await this.persistentRegistry.shutdownAll(reason);
     }
+  }
+
+  /**
+   * Stage 3b — release a single chat's persistent executor (graceful
+   * shutdown + remove from pool). Used by /reset to discard any teammates
+   * / background tasks tied to the old session before starting fresh.
+   * No-op if persistent mode is off or chat has no executor.
+   */
+  async releaseChatExecutor(chatId: string, reason: string = 'reset'): Promise<void> {
+    if (!this.persistentRegistry) return;
+    await this.persistentRegistry.release(chatId, reason);
   }
 
   /**
@@ -1791,6 +1938,12 @@ export class MessageBridge {
     }
     this.runningTasks.clear();
     this.sessionManager.destroy();
+    // Tear down persistent executors (Stage 2). Fire-and-forget so destroy()
+    // stays sync — registry.shutdownAll waits for clean SDK process exit
+    // internally and is idempotent.
+    if (this.persistentRegistry) {
+      void this.persistentRegistry.shutdownAll('bridge-destroy');
+    }
   }
 }
 

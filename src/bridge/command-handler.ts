@@ -20,6 +20,13 @@ export class CommandHandler {
     private audit: AuditLogger,
     private getRunningTask: (chatId: string) => { startTime: number } | undefined,
     private stopTask: (chatId: string) => void,
+    /**
+     * Release the persistent Claude process associated with this chat
+     * (no-op if the persistent-executor feature flag is off or no
+     * executor exists). Called on /reset so teammates and /goal state
+     * tied to the old session are torn down with the conversation.
+     */
+    private releaseExecutor: (chatId: string, reason: string) => Promise<void>,
   ) {}
 
   /** Set the doc sync service (optional, only available for Feishu bots). */
@@ -67,6 +74,15 @@ export class CommandHandler {
 
       case '/reset':
         this.sessionManager.resetSession(chatId);
+        // Tear down the persistent Claude process for this chat (Stage 3b).
+        // Otherwise the old long-lived executor would keep running with its
+        // stale (now-cleared) sessionId mapping. No-op when persistent mode
+        // is off. Best-effort — log but don't fail the /reset on shutdown errors.
+        try {
+          await this.releaseExecutor(chatId, 'reset-command');
+        } catch (err) {
+          this.logger.warn({ err, chatId }, 'Failed to release persistent executor on /reset');
+        }
         await this.sender.sendTextNotice(chatId, '✅ Session Reset', 'Conversation cleared. Working directory preserved.', 'green');
         return true;
 
