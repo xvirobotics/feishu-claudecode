@@ -191,6 +191,17 @@ export class MessageBridge {
     snippets: string[];
     timer: ReturnType<typeof setTimeout>;
   }>();
+  /**
+   * In-flight continuation cards — main-line agent bursts triggered by an
+   * SDK `<task-notification>` injection (background bash returns etc.).
+   * Tracked separately from {@link runningTasks} so user messages can
+   * still queue / be processed normally while a continuation is rendering.
+   */
+  private continuationTasks = new Map<string, {
+    abortController: AbortController;
+    cardMessageId: string;
+    turnId: string;
+  }>();
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
 
@@ -399,6 +410,14 @@ export class MessageBridge {
           clearTimeout(buf.timer);
           void this.flushSpontaneous(chatId);
         }
+        // Abort any in-flight continuation card — its stream is bound to the
+        // executor we're tearing down and will never deliver another message.
+        // The handleContinuationTurn loop will finalize the card to an error
+        // state via its abort-aware fallback.
+        const cont = this.continuationTasks.get(chatId);
+        if (cont) {
+          cont.abortController.abort();
+        }
       });
       this.logger.info(
         {
@@ -414,9 +433,16 @@ export class MessageBridge {
   }
 
   /**
-   * Attach a 'spontaneous' handler to the chat's persistent executor. Called
-   * when a new executor is added to the pool. Idempotent — guarded by
+   * Attach event handlers to the chat's persistent executor. Called when a
+   * new executor is added to the pool. Idempotent — guarded by
    * spontaneousSubscribed.
+   *
+   * Wires two channels for between-turn agent output:
+   *   - `spontaneous` — teammate / `/goal` / status pings; coalesced into the
+   *     "Agent activity between turns" card every 30 s.
+   *   - `continuation-turn` — SDK-initiated continuation turn (background
+   *     task settled, agent now replying in main-line). Rendered as a fresh
+   *     streaming card just like a user-prompted turn.
    */
   private attachSpontaneousHandler(chatId: string): void {
     if (this.spontaneousSubscribed.has(chatId)) return;
@@ -426,7 +452,12 @@ export class MessageBridge {
     exec.on('spontaneous', (msg) => {
       this.handleSpontaneousMessage(chatId, msg);
     });
-    this.logger.debug({ chatId }, 'MessageBridge: attached spontaneous handler');
+    exec.on('continuation-turn', (handle) => {
+      // Fire-and-forget — handleContinuationTurn manages its own lifecycle
+      // (card + stream loop + finalize). Errors are logged inside.
+      void this.handleContinuationTurn(chatId, handle as ExecutionHandle);
+    });
+    this.logger.debug({ chatId }, 'MessageBridge: attached executor subscriptions');
   }
 
   /**
@@ -502,6 +533,134 @@ export class MessageBridge {
       this.logger.info({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: sent spontaneous card');
     } catch (err) {
       this.logger.warn({ err, chatId }, 'MessageBridge: failed to send spontaneous card');
+    }
+  }
+
+  /**
+   * Render an SDK-initiated continuation turn as a fresh streaming card —
+   * the same blue → green lifecycle a user-prompted turn produces, NOT the
+   * coalesced "agent activity" card.
+   *
+   * Trigger: a `run_in_background` Bash command (or other deferred tool)
+   * settled, causing the SDK to inject a `<task-notification>` user message;
+   * the persistent executor's consumeLoop classified that burst as
+   * `continuation` and emitted this handle. Semantically the burst is the
+   * main agent continuing its work, so it should look like a normal reply.
+   *
+   * Lifecycle:
+   *   - send initial thinking card
+   *   - stream the handle, updating the card on each delta via RateLimiter
+   *   - finalize via sendFinalCard once a `result` arrives (or the executor
+   *     is torn down — abort flips the card to error)
+   *
+   * Concurrency:
+   *   - tracked in {@link continuationTasks} (NOT {@link runningTasks}), so
+   *     a user message arriving mid-continuation still queues / runs via
+   *     the normal executeQuery path — the two render side-by-side as
+   *     separate cards.
+   *   - at most one continuation card per chatId at a time; if one is
+   *     already in flight, the second arrival is logged and dropped (the
+   *     SDK opens one continuation turn per task-notification burst, so
+   *     overlap is unusual but possible if two background tasks settle
+   *     simultaneously — we accept dropping the second card's chrome since
+   *     the active card's stream still receives that burst's messages).
+   */
+  private async handleContinuationTurn(chatId: string, handle: ExecutionHandle): Promise<void> {
+    if (this.continuationTasks.has(chatId)) {
+      // Rare but possible — log and drain silently so the SDK turn still
+      // terminates. The visible signal is already on the in-flight card.
+      this.logger.warn({ chatId }, 'MessageBridge: continuation turn already in flight — draining new handle');
+      try {
+        for await (const _msg of handle.stream) {
+          // drop
+        }
+      } catch (err) {
+        this.logger.debug({ err, chatId }, 'MessageBridge: drained extra continuation handle');
+      }
+      return;
+    }
+
+    const displayPrompt = '(agent continuation: background task return)';
+    const processor = new StreamProcessor(displayPrompt);
+    const rateLimiter = new RateLimiter(1500);
+    const abortController = new AbortController();
+    const session = this.sessionManager.getSession(chatId);
+    const activeGoal = session.activeGoal;
+
+    const initialState: CardState = {
+      status: 'thinking',
+      userPrompt: displayPrompt,
+      responseText: '',
+      toolCalls: [],
+      goalCondition: activeGoal,
+    };
+
+    const messageId = await this.sender.sendCard(chatId, initialState);
+    if (!messageId) {
+      this.logger.warn({ chatId }, 'MessageBridge: failed to send continuation initial card');
+      // Drain stream so the SDK turn still completes cleanly
+      try { for await (const _msg of handle.stream) { /* drop */ } } catch { /* ignore */ }
+      try { handle.finish(); } catch { /* ignore */ }
+      return;
+    }
+
+    this.continuationTasks.set(chatId, {
+      abortController,
+      cardMessageId: messageId,
+      turnId: (handle as unknown as { turnId?: string }).turnId ?? 'continuation',
+    });
+    this.logger.info({ chatId, messageId }, 'MessageBridge: continuation card opened');
+
+    let lastState: CardState = initialState;
+    const startTime = Date.now();
+    const outputsDir = this.outputsManager.prepareDir(chatId);
+
+    try {
+      for await (const message of handle.stream) {
+        if (abortController.signal.aborted) break;
+        const state = processor.processMessage(message);
+        if (activeGoal) state.goalCondition = activeGoal;
+        lastState = state;
+        if (state.status === 'complete' || state.status === 'error') break;
+        rateLimiter.schedule(() => {
+          if (!abortController.signal.aborted) {
+            this.sender.updateCard(messageId, state);
+          }
+        });
+      }
+      await rateLimiter.cancelAndWait();
+
+      if (lastState.status !== 'complete' && lastState.status !== 'error') {
+        if (abortController.signal.aborted) {
+          lastState = { ...lastState, status: 'error', errorMessage: 'Continuation interrupted (executor released)' };
+        } else if (lastState.responseText) {
+          lastState = { ...lastState, status: 'complete' };
+        } else {
+          lastState = { ...lastState, status: 'error', errorMessage: 'Continuation ended unexpectedly' };
+        }
+      }
+
+      await this.sendFinalCard(messageId, lastState, chatId);
+      const durationMs = Date.now() - startTime;
+      await this.sendCompletionNotice(chatId, lastState, durationMs);
+      // Output files for continuation turns too — agent may have produced
+      // artifacts in the bash background task whose summary triggered this.
+      await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+    } catch (err: any) {
+      this.logger.error({ err, chatId }, 'MessageBridge: continuation stream errored');
+      const errorState: CardState = {
+        ...lastState,
+        status: 'error',
+        errorMessage: err?.message || 'Continuation failed',
+      };
+      try { await rateLimiter.cancelAndWait(); } catch { /* ignore */ }
+      try { await this.sendFinalCard(messageId, errorState, chatId); } catch { /* ignore */ }
+    } finally {
+      try { handle.finish(); } catch { /* ignore */ }
+      if (this.continuationTasks.get(chatId)?.cardMessageId === messageId) {
+        this.continuationTasks.delete(chatId);
+      }
+      try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
   }
 
@@ -2078,6 +2237,13 @@ export class MessageBridge {
       this.logger.info({ chatId }, 'Aborted running task during shutdown');
     }
     this.runningTasks.clear();
+    // Abort any in-flight continuation cards too — their executors are
+    // about to be torn down by shutdownAll below.
+    for (const [chatId, cont] of this.continuationTasks) {
+      cont.abortController.abort();
+      this.logger.info({ chatId }, 'Aborted continuation task during shutdown');
+    }
+    this.continuationTasks.clear();
     this.sessionManager.destroy();
     // Tear down persistent executors (Stage 2). Fire-and-forget so destroy()
     // stays sync — registry.shutdownAll waits for clean SDK process exit

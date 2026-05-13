@@ -203,6 +203,48 @@ interface ActiveTurn {
   /** abort() promise resolves when the SDK actually drains this turn's result. */
   drainPromise?: Promise<void>;
   drainResolve?: () => void;
+  /**
+   * True when this turn was opened by the SDK itself (a `<task-notification>`
+   * continuation), NOT by a user prompt routed through nextTurn(). The bridge
+   * uses this to pick its rendering path:
+   *   - normal turns → executeQuery rendering (already handled by the bridge
+   *     awaiting nextTurn's TurnHandle)
+   *   - continuation turns → fresh-card rendering via 'continuation-turn' event
+   * Spontaneous events (teammates / /goal Stop hooks) DON'T get a turn — they
+   * still flow through the spontaneous coalesce buffer.
+   */
+  continuation?: boolean;
+}
+
+/**
+ * Source classification for the first SDK message in a between-turn burst.
+ * Pure (no executor state); exported so it can be unit-tested without spinning
+ * up a real Query.
+ *
+ * Returns:
+ *   - 'continuation' — a user-role message whose `origin.kind` is
+ *     `task-notification`. This means a background bash command (or other
+ *     deferred tool) settled and the SDK has now woken the main agent to
+ *     summarise the result. The follow-up assistant burst is the agent's
+ *     MAIN-LINE work, so the bridge should render it as a fresh user-style
+ *     turn card (blue → green), not a coalesced "agent activity" card.
+ *   - 'spontaneous' — anything else that arrives outside an active turn:
+ *     teammate `SendMessage` injections, `/goal` Stop-hook user messages,
+ *     status/progress system messages, etc. These get the existing
+ *     coalesce-into-one-card treatment.
+ *
+ * The classifier ONLY runs on the FIRST raw message of a between-turn burst
+ * — subsequent messages (assistant deltas, tool_use, result) belong to
+ * whichever bucket the burst opened with.
+ */
+export type BurstSource = 'continuation' | 'spontaneous';
+
+export function classifyBurstSource(raw: unknown): BurstSource {
+  const m = raw as { type?: string; origin?: { kind?: string } };
+  if (m?.type === 'user' && m?.origin?.kind === 'task-notification') {
+    return 'continuation';
+  }
+  return 'spontaneous';
 }
 
 export class PersistentClaudeExecutor extends EventEmitter {
@@ -441,6 +483,58 @@ export class PersistentClaudeExecutor extends EventEmitter {
     };
   }
 
+  /**
+   * Build a TurnHandle for an SDK-initiated continuation turn. Behaviourally
+   * identical to nextTurn's handle except that the bridge did NOT enqueue a
+   * user prompt — the SDK already injected one (the task-notification user
+   * message), which we forwarded into the queue from consumeLoop.
+   *
+   * abort() interrupts the in-flight LLM call the same way nextTurn's does;
+   * sendAnswer / resolveQuestion still route through the standard pending-
+   * question / input-queue mechanisms.
+   */
+  private makeContinuationHandle(turn: ActiveTurn): TurnHandle {
+    const turnId = turn.id;
+    const stream: AsyncIterable<SDKMessage> = {
+      [Symbol.asyncIterator]: () => turn.queue[Symbol.asyncIterator](),
+    };
+    const abort = async (): Promise<void> => {
+      if (turn.completed) return;
+      if (this.activeTurn !== turn) return;
+      if (turn.detached) {
+        if (turn.drainPromise) await turn.drainPromise;
+        return;
+      }
+      turn.detached = true;
+      turn.queue.finish();
+      turn.drainPromise = new Promise<void>((resolve) => { turn.drainResolve = resolve; });
+      try {
+        if (this.queryHandle && typeof (this.queryHandle as any).interrupt === 'function') {
+          await (this.queryHandle as any).interrupt();
+        }
+      } catch (err) {
+        this.options.logger.warn({ err, turnId }, 'PersistentExecutor: interrupt() threw (continuation)');
+      }
+      await turn.drainPromise;
+      this.options.logger.debug({ turnId }, 'PersistentExecutor: continuation turn aborted');
+      this.emit('turn-aborted', turnId);
+    };
+    return {
+      turnId,
+      stream,
+      isAborted: () => turn.detached,
+      isCompleted: () => turn.completed,
+      abort,
+      sendAnswer: (toolUseId: string, _sessionId: string, answerText: string) => {
+        this.sendAnswer(toolUseId, answerText);
+      },
+      resolveQuestion: (toolUseId: string, answers: Record<string, string>) => {
+        this.resolveQuestion(toolUseId, answers);
+      },
+      finish: () => { void abort(); },
+    };
+  }
+
   /** Drain spontaneous messages that arrived between turns. */
   drainSpontaneous(): SDKMessage[] {
     const out = this.spontaneousBuffer;
@@ -636,6 +730,17 @@ export class PersistentClaudeExecutor extends EventEmitter {
    * Background consumer: drives the SDK stream, dispatching each message
    * either to the active turn or to the spontaneous buffer. Handles clean
    * shutdown (stream completes), crashes (stream throws), and idle.
+   *
+   * Between-turn bursts (activeTurn === null) are classified by
+   * {@link classifyBurstSource} on their FIRST message:
+   *   - `continuation` → SDK woke the agent to summarise a background task.
+   *     Open a synthetic ActiveTurn flagged `continuation: true`, emit
+   *     `continuation-turn` so the bridge can render a fresh-style card.
+   *     The opening user message goes into the turn's queue too, so the
+   *     bridge has the full burst to render. Subsequent messages flow
+   *     through the active-turn path until `result`.
+   *   - `spontaneous` → teammates, /goal Stop-hook user prompts, etc.
+   *     Buffered into the coalesced "Agent activity between turns" card.
    */
   private async consumeLoop(): Promise<void> {
     if (!this.rawStream) return;
@@ -654,7 +759,10 @@ export class PersistentClaudeExecutor extends EventEmitter {
               turn.completed = true;
               turn.queue.finish();
               this.activeTurn = null;
-              this.options.logger.debug({ turnId: turn.id }, 'PersistentExecutor: turn completed');
+              this.options.logger.debug(
+                { turnId: turn.id, continuation: !!turn.continuation },
+                'PersistentExecutor: turn completed',
+              );
               this.emit('turn-completed', turn.id);
               this.armIdleTimer();
             }
@@ -669,6 +777,29 @@ export class PersistentClaudeExecutor extends EventEmitter {
             }
             // (drop other messages — caller has detached)
           }
+        } else if (classifyBurstSource(msg) === 'continuation') {
+          // SDK-initiated continuation: a background task settled and the
+          // agent is now responding. Open a synthetic main-line turn so
+          // the bridge can render a fresh streaming card.
+          const turnId = `c${++this.turnCounter}-${Date.now().toString(36)}`;
+          const queue = new AsyncQueue<SDKMessage>();
+          const continuationTurn: ActiveTurn = {
+            id: turnId,
+            queue,
+            detached: false,
+            completed: false,
+            continuation: true,
+          };
+          this.activeTurn = continuationTurn;
+          // The opening user message is part of the burst — push it through
+          // too so the bridge's stream processor sees the full picture.
+          queue.enqueue(msg);
+          const handle = this.makeContinuationHandle(continuationTurn);
+          this.options.logger.info({ turnId }, 'PersistentExecutor: continuation turn started');
+          this.emit('continuation-turn', handle);
+          // result, if it's already this same message (shouldn't be — origin
+          // marker is on user-role), would be handled on next iteration via
+          // the active-turn branch above.
         } else {
           this.pushSpontaneous(msg);
         }

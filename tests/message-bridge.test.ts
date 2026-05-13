@@ -6,6 +6,7 @@ import {
   formatSpontaneousCardBody,
   SPONTANEOUS_CARD_HEADER,
 } from '../src/bridge/message-bridge.js';
+import { classifyBurstSource } from '../src/engines/claude/persistent-executor.js';
 
 describe('isStaleSessionError', () => {
   it('matches the GitHub issue error text', () => {
@@ -162,5 +163,113 @@ describe('formatSpontaneousCardBody', () => {
   it('renders even with empty snippets array (header still present)', () => {
     const body = formatSpontaneousCardBody([]);
     expect(body).toContain(SPONTANEOUS_CARD_HEADER);
+  });
+});
+
+/**
+ * Burst-source classifier — distinguishes SDK-initiated continuation turns
+ * (the agent waking up to summarise a `run_in_background` Bash return) from
+ * everything else that arrives between user turns (teammate pings, /goal
+ * Stop-hook user messages, system status events).
+ *
+ * The classification matters for UX:
+ *   - continuation → render as a fresh streaming card (looks like a user
+ *     turn) so the user reads the burst as "the agent continued its work"
+ *   - spontaneous  → coalesce into the "Agent activity between turns" card
+ *     so multiple ambient pings don't spam the chat
+ *
+ * The signal we key on is the SDK's `origin.kind === 'task-notification'`
+ * field on the FIRST message of a between-turn burst. Don't relax the
+ * classifier to also fire on assistant text alone — both buckets see
+ * assistant messages after the burst opens; only the OPENING message
+ * carries the origin marker.
+ */
+describe('classifyBurstSource', () => {
+  it('returns continuation for a user message with task-notification origin', () => {
+    const msg = {
+      type: 'user',
+      message: { role: 'user', content: 'background task finished' },
+      origin: { kind: 'task-notification' },
+    };
+    expect(classifyBurstSource(msg)).toBe('continuation');
+  });
+
+  it('returns spontaneous for a user message with no origin (e.g. /goal Stop hook synthesis)', () => {
+    const msg = {
+      type: 'user',
+      message: { role: 'user', content: 'Goal evaluator says: continue' },
+    };
+    expect(classifyBurstSource(msg)).toBe('spontaneous');
+  });
+
+  it('returns spontaneous for a user message with peer origin (teammate SendMessage)', () => {
+    const msg = {
+      type: 'user',
+      message: { role: 'user', content: 'hi from teammate' },
+      origin: { kind: 'peer', from: 'researcher' },
+    };
+    expect(classifyBurstSource(msg)).toBe('spontaneous');
+  });
+
+  it('returns spontaneous for human-origin user message (manual injection, defensive)', () => {
+    // Shouldn't happen in the consumeLoop path (humans go through nextTurn),
+    // but the classifier must be conservative — anything not explicitly a
+    // task-notification falls back to the coalesced bucket.
+    const msg = {
+      type: 'user',
+      message: { role: 'user', content: 'hello' },
+      origin: { kind: 'human' },
+    };
+    expect(classifyBurstSource(msg)).toBe('spontaneous');
+  });
+
+  it('returns spontaneous for assistant text (e.g. teammate burst opening with assistant)', () => {
+    // origin is on USER messages, not assistant. An assistant-led burst is
+    // either a continuation already in progress (handled by activeTurn) or
+    // a teammate ping (spontaneous).
+    const msg = {
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: 'doing the thing' }] },
+    };
+    expect(classifyBurstSource(msg)).toBe('spontaneous');
+  });
+
+  it('returns spontaneous for system task_notification system message (the SDK status event itself)', () => {
+    // The SDKTaskNotificationMessage (type:'system' subtype:'task_notification')
+    // is the SETTLE event, NOT the wake-up. The wake-up is the follow-up
+    // user-role message with origin.kind === 'task-notification'. Keep this
+    // routed to spontaneous so the status doesn't accidentally open a card
+    // by itself.
+    const msg = {
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 't1',
+      status: 'completed',
+      summary: 'done',
+    };
+    expect(classifyBurstSource(msg)).toBe('spontaneous');
+  });
+
+  it('handles malformed input defensively (null / missing fields → spontaneous)', () => {
+    expect(classifyBurstSource(null)).toBe('spontaneous');
+    expect(classifyBurstSource(undefined)).toBe('spontaneous');
+    expect(classifyBurstSource({})).toBe('spontaneous');
+    expect(classifyBurstSource({ type: 'user' })).toBe('spontaneous');
+    expect(classifyBurstSource({ type: 'user', origin: {} })).toBe('spontaneous');
+    expect(classifyBurstSource({ type: 'user', origin: { kind: 'unknown-future' } })).toBe('spontaneous');
+  });
+
+  it('requires BOTH type==="user" AND origin.kind to fire continuation (not type alone)', () => {
+    // Defensive: don't open a continuation just because origin happens to be
+    // present on a non-user message — origin lives on user/result types per
+    // the SDK type defs, and assistants/system never carry task-notification.
+    expect(classifyBurstSource({
+      type: 'assistant',
+      origin: { kind: 'task-notification' },
+    })).toBe('spontaneous');
+    expect(classifyBurstSource({
+      type: 'result',
+      origin: { kind: 'task-notification' },
+    })).toBe('spontaneous');
   });
 });
