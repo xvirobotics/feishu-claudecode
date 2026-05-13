@@ -1029,9 +1029,11 @@ export class MessageBridge {
 
     const rateLimiter = new RateLimiter(1500);
 
-    // Forward-declare runningTask so the team-event callback can mutate it
+    // Forward-declare runningTask so the team-event callback can read it
     // before the assignment below — hooks fire from the spawned Claude
-    // process at arbitrary points, not at construction time.
+    // process at arbitrary points, not at construction time. Only assigned
+    // once; `let` is required because `const` cannot be uninitialised.
+    // eslint-disable-next-line prefer-const
     let runningTask: RunningTask;
 
     const onTeamEvent = (event: TeamEvent) => {
@@ -1466,6 +1468,9 @@ export class MessageBridge {
 
     const apiContext = { botName: this.config.name, chatId, groupMembers: options.groupMembers, groupId: options.groupId };
 
+    // Forward-declare for the onTeamEvent closure below (only assigned once;
+    // const cannot be uninitialised — see same pattern in executeQuery).
+    // eslint-disable-next-line prefer-const
     let runningTask: RunningTask;
 
     const onTeamEvent = (event: TeamEvent) => {
