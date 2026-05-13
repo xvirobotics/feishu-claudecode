@@ -103,9 +103,20 @@ async function testLiveSpontaneousFlow(): Promise<void> {
   await drainTurn(t1);
 
   // After the user turn ends, the teammate sends idle notifications etc.
-  // These should arrive as spontaneous messages within a few seconds.
-  log.info('Waiting 6s for spontaneous teammate notifications...');
-  await new Promise(r => setTimeout(r, 6000));
+  // Wait until we've seen at least one assistant or result spontaneous
+  // message (which is what handleSpontaneousMessage in the bridge would
+  // actually render), or up to 30s. Polling here makes the test robust
+  // against teammate response-time variance — earlier 6s was too tight.
+  log.info('Waiting up to 30s for spontaneous teammate notifications...');
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const hasRenderable = spontaneous.some(m =>
+      (m.type === 'assistant' && m.message?.content?.some(b => (b.type === 'text' && b.text) || b.type === 'tool_use'))
+      || (m.type === 'result' && (m as any).result),
+    );
+    if (hasRenderable) break;
+    await new Promise(r => setTimeout(r, 500));
+  }
 
   record('S3-3. spontaneous messages arrived between turns',
     spontaneous.length > 0,

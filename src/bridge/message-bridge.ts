@@ -276,17 +276,24 @@ export class MessageBridge {
   }
 
   /**
-   * Whether the persistent-executor code path is enabled. Set via
-   * METABOT_PERSISTENT_EXECUTOR=true in the parent env. When enabled, each
-   * chatId is backed by a long-lived Claude process (managed by
-   * {@link ExecutorRegistry}) instead of spawning a fresh process per turn.
+   * Whether the persistent-executor code path is enabled for this bot.
    *
-   * The benefit: Agent Teams teammates, /goal multi-turn auto-drive, and
-   * /background tasks all survive between user messages — they don't get
-   * killed when one user turn ends. See decision_persistent_executor in
-   * MEMORY.md for the full migration plan.
+   * Per-bot config wins over env, so individual bots can opt in/out
+   * independently:
+   *   1. config.persistentExecutor.enabled === true  → on
+   *   2. config.persistentExecutor.enabled === false → off
+   *   3. otherwise: METABOT_PERSISTENT_EXECUTOR=true env → on
+   *   4. otherwise: off
+   *
+   * When enabled, each chatId is backed by a long-lived Claude process
+   * (managed by {@link ExecutorRegistry}) instead of spawning a fresh
+   * process per turn. Benefit: Agent Teams teammates, /goal multi-turn
+   * auto-drive, and /background tasks all survive between user messages.
    */
   private isPersistentExecutorEnabled(): boolean {
+    const cfg = this.config.persistentExecutor;
+    if (cfg?.enabled === true) return true;
+    if (cfg?.enabled === false) return false;
     return process.env.METABOT_PERSISTENT_EXECUTOR === 'true'
         || process.env.METABOT_PERSISTENT_EXECUTOR === '1';
   }
@@ -294,12 +301,19 @@ export class MessageBridge {
   /** Lazy-init the registry for the persistent-executor code path. */
   private getOrCreateRegistry(): ExecutorRegistry {
     if (!this.persistentRegistry) {
+      // Per-bot config wins over env. Both are optional; registry uses its
+      // own defaults (30 min idle, 20 max concurrent) when neither is set.
+      const cfg = this.config.persistentExecutor;
       const idleEnv = Number(process.env.METABOT_PERSISTENT_EXECUTOR_IDLE_MS);
       const maxEnv = Number(process.env.METABOT_PERSISTENT_EXECUTOR_MAX_CONCURRENT);
+      const idleTimeoutMs = cfg?.idleTimeoutMs
+        ?? (Number.isFinite(idleEnv) && idleEnv >= 0 ? idleEnv : undefined);
+      const maxConcurrent = cfg?.maxConcurrent
+        ?? (Number.isFinite(maxEnv) && maxEnv > 0 ? maxEnv : undefined);
       this.persistentRegistry = new ExecutorRegistry({
         logger: this.logger,
-        idleTimeoutMs: Number.isFinite(idleEnv) && idleEnv >= 0 ? idleEnv : undefined,
-        maxConcurrent: Number.isFinite(maxEnv) && maxEnv > 0 ? maxEnv : undefined,
+        idleTimeoutMs,
+        maxConcurrent,
         defaultApiKey: this.config.claude.apiKey,
         defaultModel: this.config.claude.model,
       });
@@ -321,9 +335,10 @@ export class MessageBridge {
       });
       this.logger.info(
         {
-          idleTimeoutMs: idleEnv,
-          maxConcurrent: maxEnv,
+          idleTimeoutMs,
+          maxConcurrent,
           bot: this.config.name,
+          source: cfg ? 'bot-config' : 'env',
         },
         'MessageBridge: persistent-executor registry initialized',
       );
