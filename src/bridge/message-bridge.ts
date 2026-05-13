@@ -9,6 +9,7 @@ import type { IMessageSender } from './message-sender.interface.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import type { Engine, Executor, ExecutionHandle, EngineName } from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
+import { ExecutorRegistry } from '../engines/claude/executor-registry.js';
 import { RateLimiter } from './rate-limiter.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
@@ -114,6 +115,11 @@ export class MessageBridge {
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
+  /**
+   * Stage 2 — persistent executor pool. Lazy-created on first acquire when
+   * the PERSISTENT_EXECUTOR env feature flag is on. One pool per bot.
+   */
+  private persistentRegistry: ExecutorRegistry | null = null;
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
 
@@ -243,6 +249,64 @@ export class MessageBridge {
     // Don't delete from runningTasks here — the finally block in executeQuery will
     // handle cleanup. Deleting early creates a race: if the user sends a new message
     // before the old loop exits, the old finally block would delete the NEW task entry.
+  }
+
+  /**
+   * Whether the persistent-executor code path is enabled. Set via
+   * METABOT_PERSISTENT_EXECUTOR=true in the parent env. When enabled, each
+   * chatId is backed by a long-lived Claude process (managed by
+   * {@link ExecutorRegistry}) instead of spawning a fresh process per turn.
+   *
+   * The benefit: Agent Teams teammates, /goal multi-turn auto-drive, and
+   * /background tasks all survive between user messages — they don't get
+   * killed when one user turn ends. See decision_persistent_executor in
+   * MEMORY.md for the full migration plan.
+   */
+  private isPersistentExecutorEnabled(): boolean {
+    return process.env.METABOT_PERSISTENT_EXECUTOR === 'true'
+        || process.env.METABOT_PERSISTENT_EXECUTOR === '1';
+  }
+
+  /** Lazy-init the registry for the persistent-executor code path. */
+  private getOrCreateRegistry(): ExecutorRegistry {
+    if (!this.persistentRegistry) {
+      const idleEnv = Number(process.env.METABOT_PERSISTENT_EXECUTOR_IDLE_MS);
+      const maxEnv = Number(process.env.METABOT_PERSISTENT_EXECUTOR_MAX_CONCURRENT);
+      this.persistentRegistry = new ExecutorRegistry({
+        logger: this.logger,
+        idleTimeoutMs: Number.isFinite(idleEnv) && idleEnv >= 0 ? idleEnv : undefined,
+        maxConcurrent: Number.isFinite(maxEnv) && maxEnv > 0 ? maxEnv : undefined,
+        defaultApiKey: this.config.claude.apiKey,
+        defaultModel: this.config.claude.model,
+      });
+      this.logger.info(
+        {
+          idleTimeoutMs: idleEnv,
+          maxConcurrent: maxEnv,
+          bot: this.config.name,
+        },
+        'MessageBridge: persistent-executor registry initialized',
+      );
+    }
+    return this.persistentRegistry;
+  }
+
+  /**
+   * Get the registry if persistent mode is enabled AND the registry has
+   * already been created. Used for read-only inspection (e.g. observability).
+   */
+  getPersistentRegistry(): ExecutorRegistry | null {
+    return this.persistentRegistry;
+  }
+
+  /**
+   * Shut down all persistent executors. Called on bot shutdown so the
+   * underlying Claude processes (and any teammates) terminate cleanly.
+   */
+  async shutdownPersistentExecutors(reason: string = 'bot-shutdown'): Promise<void> {
+    if (this.persistentRegistry) {
+      await this.persistentRegistry.shutdownAll(reason);
+    }
   }
 
   /**
@@ -804,35 +868,56 @@ export class MessageBridge {
     const rateLimiter = new RateLimiter(1500);
 
     // Forward-declare runningTask so the team-event callback can mutate it
-    // before the assignment below — startExecution invokes hooks synchronously
-    // when the spawned Claude process fires them, not at construction time.
+    // before the assignment below — hooks fire from the spawned Claude
+    // process at arbitrary points, not at construction time.
     let runningTask: RunningTask;
 
-    // Start multi-turn execution
-    const executionHandle = this.executorForChat(chatId).startExecution({
-      prompt,
-      cwd,
-      sessionId: session.sessionId,
-      abortController,
-      outputsDir,
-      apiContext,
-      model: session.model,
-      onTeamEvent: (event) => {
-        if (!runningTask) return;
-        const changed = this.applyTeamEvent(runningTask, event);
-        if (changed && !abortController.signal.aborted) {
-          rateLimiter.schedule(() => {
-            if (!abortController.signal.aborted) {
-              this.sender.updateCard(messageId, {
-                ...processor.getCurrentState(),
-                goalCondition: activeGoal,
-                teamState: runningTask.teamState,
-              });
-            }
-          });
-        }
-      },
-    });
+    const onTeamEvent = (event: TeamEvent) => {
+      if (!runningTask) return;
+      const changed = this.applyTeamEvent(runningTask, event);
+      if (changed && !abortController.signal.aborted) {
+        rateLimiter.schedule(() => {
+          if (!abortController.signal.aborted) {
+            this.sender.updateCard(messageId, {
+              ...processor.getCurrentState(),
+              goalCondition: activeGoal,
+              teamState: runningTask.teamState,
+            });
+          }
+        });
+      }
+    };
+
+    // Branch: persistent executor (one long-lived Claude process per chatId,
+    // teammates/goal/background survive across turns) vs legacy (spawn-per-turn).
+    // Persistent only applies to the Claude engine; Kimi/Codex still go through
+    // the legacy path. Toggle via METABOT_PERSISTENT_EXECUTOR=true.
+    const usePersistent = this.isPersistentExecutorEnabled() && engineName === 'claude';
+    let executionHandle: ExecutionHandle;
+    if (usePersistent) {
+      const exec = await this.getOrCreateRegistry().acquire(chatId, {
+        cwd,
+        resumeSessionId: session.sessionId,
+        onTeamEvent,
+        model: session.model,
+        apiContext,
+        outputsDir,
+      });
+      // TurnHandle is structurally compatible with ExecutionHandle (stream,
+      // sendAnswer, resolveQuestion, finish) — see persistent-executor.ts.
+      executionHandle = exec.nextTurn(prompt) as unknown as ExecutionHandle;
+    } else {
+      executionHandle = this.executorForChat(chatId).startExecution({
+        prompt,
+        cwd,
+        sessionId: session.sessionId,
+        abortController,
+        outputsDir,
+        apiContext,
+        model: session.model,
+        onTeamEvent,
+      });
+    }
 
     // Register running task
     const startTime = Date.now();
@@ -1221,32 +1306,57 @@ export class MessageBridge {
 
     let runningTask: RunningTask;
 
-    const executionHandle = this.executorForChat(chatId).startExecution({
-      prompt,
-      cwd,
-      sessionId: session.sessionId,
-      abortController,
-      outputsDir,
-      apiContext,
-      maxTurns: options.maxTurns,
-      model: options.model ?? session.model,
-      allowedTools: options.allowedTools,
-      onTeamEvent: (event) => {
-        if (!runningTask) return;
-        const changed = this.applyTeamEvent(runningTask, event);
-        if (changed && sendCards && messageId && !abortController.signal.aborted) {
-          rateLimiter.schedule(() => {
-            if (!abortController.signal.aborted) {
-              this.sender.updateCard(messageId!, {
-                ...processor.getCurrentState(),
-                goalCondition: activeGoal,
-                teamState: runningTask.teamState,
-              });
-            }
-          });
-        }
-      },
-    });
+    const onTeamEvent = (event: TeamEvent) => {
+      if (!runningTask) return;
+      const changed = this.applyTeamEvent(runningTask, event);
+      if (changed && sendCards && messageId && !abortController.signal.aborted) {
+        rateLimiter.schedule(() => {
+          if (!abortController.signal.aborted) {
+            this.sender.updateCard(messageId!, {
+              ...processor.getCurrentState(),
+              goalCondition: activeGoal,
+              teamState: runningTask.teamState,
+            });
+          }
+        });
+      }
+    };
+
+    // Persistent vs legacy executor — see executeQuery for the same pattern.
+    // API task path also honors the feature flag, but only for Claude engine
+    // and only when no per-turn maxTurns/allowedTools overrides are supplied
+    // (those mid-stream knobs are baked into the legacy executor's per-turn
+    // options; persistent executor would need additional plumbing to apply
+    // them per-turn — out of scope for Stage 2).
+    const persistentEligible = this.isPersistentExecutorEnabled()
+      && engineName === 'claude'
+      && options.maxTurns === undefined
+      && options.allowedTools === undefined;
+    let executionHandle: ExecutionHandle;
+    if (persistentEligible) {
+      const exec = await this.getOrCreateRegistry().acquire(chatId, {
+        cwd,
+        resumeSessionId: session.sessionId,
+        onTeamEvent,
+        model: options.model ?? session.model,
+        apiContext,
+        outputsDir,
+      });
+      executionHandle = exec.nextTurn(prompt) as unknown as ExecutionHandle;
+    } else {
+      executionHandle = this.executorForChat(chatId).startExecution({
+        prompt,
+        cwd,
+        sessionId: session.sessionId,
+        abortController,
+        outputsDir,
+        apiContext,
+        maxTurns: options.maxTurns,
+        model: options.model ?? session.model,
+        allowedTools: options.allowedTools,
+        onTeamEvent,
+      });
+    }
 
     const startTime = Date.now();
     runningTask = {

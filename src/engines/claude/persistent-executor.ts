@@ -34,7 +34,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage, SpawnOptions, SpawnedProcess, Query } from '@anthropic-ai/claude-agent-sdk';
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
-import type { SDKMessage, TeamEvent } from './executor.js';
+import type { SDKMessage, TeamEvent, ApiContext } from './executor.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -108,6 +108,18 @@ export interface PersistentExecutorOptions {
   apiKey?: string;
   model?: string;
   logger: Logger;
+  /**
+   * MetaBot bot/chat context. Stable for the lifetime of the executor
+   * (the executor is keyed by chatId in the registry). Baked into the
+   * system prompt at start() so all turns see it.
+   */
+  apiContext?: ApiContext;
+  /**
+   * Per-chat outputs directory (stable across turns). Baked into the
+   * system prompt at start() to tell the agent where to drop files.
+   * The bridge scans this dir for new files at turn end.
+   */
+  outputsDir?: string;
   /** Auto-shutdown after this many ms of silence (no turn, no spontaneous msg). 0 disables. Default 30 min. */
   idleTimeoutMs?: number;
   /** Max consecutive restart attempts before giving up. Default 3. */
@@ -156,6 +168,19 @@ export interface TurnHandle {
    * PersistentClaudeExecutor.shutdown().
    */
   abort(): Promise<void>;
+
+  // ── ExecutionHandle compatibility (so the bridge can use TurnHandle as a
+  //    drop-in for the legacy ClaudeExecutor.ExecutionHandle). ────────────
+  /** Inject a tool_result into the conversation (legacy fallback path). */
+  sendAnswer(toolUseId: string, sessionId: string, answerText: string): void;
+  /** Resolve a pending AskUserQuestion PreToolUse hook with answers. */
+  resolveQuestion(toolUseId: string, answers: Record<string, string>): void;
+  /**
+   * Compatibility shim — called by the bridge to "end" a handle. Under the
+   * persistent model this is a turn-level abort (NOT executor shutdown),
+   * fired-and-forgotten so it stays synchronous like the legacy API.
+   */
+  finish(): void;
 }
 
 interface ActiveTurn {
@@ -178,6 +203,8 @@ export class PersistentClaudeExecutor extends EventEmitter {
   private queryHandle?: Query;
   private sessionId?: string;
   private activeTurn: ActiveTurn | null = null;
+  /** AskUserQuestion PreToolUse hook resolvers, keyed by tool_use_id. */
+  private pendingQuestionResolvers = new Map<string, (answers: Record<string, string>) => void>();
   /** Spontaneous-message ring buffer (between-turn events). */
   private spontaneousBuffer: SDKMessage[] = [];
   private idleTimerId?: ReturnType<typeof setTimeout>;
@@ -232,10 +259,59 @@ export class PersistentClaudeExecutor extends EventEmitter {
     const resume = this.sessionId ?? this.options.resumeSessionId;
     if (resume) queryOptions.resume = resume;
 
-    // Wire Agent Teams hooks for observability + downstream callback. These
-    // are best-effort: if SDK 0.2.140 doesn't actually fire them under this
-    // registration shape (Bug #1), we'll see no log output and know.
-    queryOptions.hooks = this.buildTeamHooks();
+    // System prompt: bake in MetaBot context + outputs dir + team namespace
+    // guidance. Stable for the lifetime of this executor (this differs from
+    // the legacy executor which rebuilds per turn).
+    const appendSections: string[] = [];
+    if (this.options.outputsDir) {
+      appendSections.push(
+        `## Output Files\nWhen producing output files for the user (images, PDFs, documents, archives, code files, etc.), copy them to: ${this.options.outputsDir}\nUse \`cp\` via the Bash tool. The bridge will automatically send files placed there to the user.`,
+      );
+    }
+    if (this.options.apiContext) {
+      const ctx = this.options.apiContext;
+      appendSections.push(
+        `## MetaBot API\nYou are running as bot "${ctx.botName}" in chat "${ctx.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
+      );
+      if (ctx.groupMembers && ctx.groupMembers.length > 0) {
+        const others = ctx.groupMembers.filter((m) => m !== ctx.botName);
+        if (ctx.groupId) {
+          appendSections.push(
+            `## Group Chat\nYou are in a group chat (group: ${ctx.groupId}) with these bots: ${others.join(', ')}.\nTo talk to another bot, use: \`mb talk <botName> grouptalk-${ctx.groupId}-<botName> "message"\`\nExample: \`mb talk ${others[0]} grouptalk-${ctx.groupId}-${others[0]} "hello"\`\nIMPORTANT: Always use the grouptalk-${ctx.groupId}-<botName> chatId pattern when talking to other bots in this group.`,
+          );
+        } else {
+          appendSections.push(
+            `## Group Chat\nYou are in a group chat with these bots: ${others.join(', ')}.\nUse \`mb talk <botName> <chatId> "message"\` to communicate with other bots in the group.`,
+          );
+        }
+      }
+      const teamNs = `${ctx.botName}-${ctx.chatId.slice(0, 8)}`;
+      appendSections.push(
+        [
+          '## Agent Teams (experimental)',
+          `When the user asks you to create an agent team, ALWAYS prefix the team name with \`${teamNs}-\` to avoid collisions with other MetaBot chats sharing this machine. For example: \`${teamNs}-research\`, \`${teamNs}-refactor\`.`,
+          'Display mode is forced to `in-process` (no tmux/iTerm2 in MetaBot). Teammates show up in the user\'s Feishu card via TeammateIdle / TaskCreated / TaskCompleted events — you don\'t need to walk the user through Shift+Down navigation.',
+          'Clean up the team yourself when work is done so resources don\'t leak (`Clean up the team`).',
+          '',
+          '## Persistent Session',
+          'You are running inside a LONG-LIVED Claude Code session: this same process serves all the user\'s turns in this chat. Teammates, /goal multi-turn loops, and background tasks survive across user messages — feel free to leave work running between user prompts. The session is only torn down on /reset or after 30 minutes of total silence.',
+        ].join('\n'),
+      );
+    }
+    if (appendSections.length > 0) {
+      queryOptions.systemPrompt = {
+        type: 'preset',
+        preset: 'claude_code',
+        append: '\n\n' + appendSections.join('\n\n'),
+      };
+    }
+    // Beta flags (parity with legacy executor)
+    queryOptions.betas = ['context-1m-2025-08-07'];
+
+    // Hooks: AskUserQuestion (mirrored from legacy executor — required so
+    // that questions can be answered by users via Feishu cards) + Agent
+    // Teams observation hooks for the team panel.
+    queryOptions.hooks = this.buildHooks();
 
     const stream = query({
       prompt: this.inputQueue,
@@ -306,37 +382,51 @@ export class PersistentClaudeExecutor extends EventEmitter {
     const stream: AsyncIterable<SDKMessage> = {
       [Symbol.asyncIterator]: () => queue[Symbol.asyncIterator](),
     };
+    const abort = async (): Promise<void> => {
+      if (turn.completed) return;
+      if (this.activeTurn !== turn) return; // already cleared by completion / restart
+      if (turn.detached) {
+        // already aborting; just await the existing drainPromise
+        if (turn.drainPromise) await turn.drainPromise;
+        return;
+      }
+      turn.detached = true;
+      turn.queue.finish();
+      // Set up drain promise BEFORE interrupt(), so consumeLoop can resolve it
+      turn.drainPromise = new Promise<void>((resolve) => { turn.drainResolve = resolve; });
+      // Best-effort: ask the SDK to interrupt the LLM. If interrupt() is
+      // unavailable / fails, we still drain naturally to the next result.
+      try {
+        if (this.queryHandle && typeof (this.queryHandle as any).interrupt === 'function') {
+          await (this.queryHandle as any).interrupt();
+        }
+      } catch (err) {
+        this.options.logger.warn({ err, turnId }, 'PersistentExecutor: interrupt() threw');
+      }
+      await turn.drainPromise;
+      this.options.logger.debug({ turnId }, 'PersistentExecutor: turn aborted (drained)');
+      this.emit('turn-aborted', turnId);
+    };
+
     return {
       turnId,
       stream,
-      // Caller invoked abort() (regardless of whether SDK has finished draining).
       isAborted: () => turn.detached,
-      // SDK observed terminal `result` for this turn (cleanly or post-interrupt).
       isCompleted: () => turn.completed,
-      abort: async () => {
-        if (turn.completed) return;
-        if (this.activeTurn !== turn) return; // already cleared by completion / restart
-        if (turn.detached) {
-          // already aborting; just await the existing drainPromise
-          if (turn.drainPromise) await turn.drainPromise;
-          return;
-        }
-        turn.detached = true;
-        turn.queue.finish();
-        // Set up drain promise BEFORE interrupt(), so consumeLoop can resolve it
-        turn.drainPromise = new Promise<void>((resolve) => { turn.drainResolve = resolve; });
-        // Best-effort: ask the SDK to interrupt the LLM. If interrupt() is
-        // unavailable / fails, we still drain naturally to the next result.
-        try {
-          if (this.queryHandle && typeof (this.queryHandle as any).interrupt === 'function') {
-            await (this.queryHandle as any).interrupt();
-          }
-        } catch (err) {
-          this.options.logger.warn({ err, turnId }, 'PersistentExecutor: interrupt() threw');
-        }
-        await turn.drainPromise;
-        this.options.logger.debug({ turnId }, 'PersistentExecutor: turn aborted (drained)');
-        this.emit('turn-aborted', turnId);
+      abort,
+      // ExecutionHandle compatibility — lets the bridge use TurnHandle as a
+      // drop-in for the legacy ClaudeExecutor.ExecutionHandle.
+      sendAnswer: (toolUseId: string, _sessionId: string, answerText: string) => {
+        this.sendAnswer(toolUseId, answerText);
+      },
+      resolveQuestion: (toolUseId: string, answers: Record<string, string>) => {
+        this.resolveQuestion(toolUseId, answers);
+      },
+      finish: () => {
+        // Turn-level finish in the persistent model = abort the current turn.
+        // Fire-and-forget so it stays sync like the legacy API; the executor
+        // (and any teammates spawned in this turn) keeps running.
+        void abort();
       },
     };
   }
@@ -396,10 +486,10 @@ export class PersistentClaudeExecutor extends EventEmitter {
     }
   }
 
-  private buildTeamHooks(): Record<string, unknown> {
+  private buildHooks(): Record<string, unknown> {
     const log = this.options.logger;
     const onTeamEvent = this.options.onTeamEvent;
-    const observer = (kind: TeamEvent['kind']) => {
+    const teamObserver = (kind: TeamEvent['kind']) => {
       return async (input: any): Promise<Record<string, unknown>> => {
         log.info(
           { kind, taskId: input?.task_id, teammate: input?.teammate_name, team: input?.team_name },
@@ -440,11 +530,86 @@ export class PersistentClaudeExecutor extends EventEmitter {
         return {};
       };
     };
-    return {
-      TaskCreated: [{ hooks: [observer('task_created') as any] }],
-      TaskCompleted: [{ hooks: [observer('task_completed') as any] }],
-      TeammateIdle: [{ hooks: [observer('teammate_idle') as any] }],
+
+    // AskUserQuestion PreToolUse hook — mirrors legacy executor. The SDK
+    // marks AskUserQuestion as requiresUserInteraction; in bypassPermissions
+    // mode we intercept, pause until the bridge supplies the user's answers,
+    // then return them as updatedInput so the SDK auto-allows.
+    const askUserQuestionHook = async (
+      input: { hook_event_name: string; tool_name: string; tool_input: unknown; tool_use_id: string },
+      _toolUseId: string | undefined,
+      { signal }: { signal: AbortSignal },
+    ): Promise<Record<string, unknown>> => {
+      const toolInput = input.tool_input as Record<string, unknown>;
+      const id = input.tool_use_id;
+      const answers = await new Promise<Record<string, string>>((resolve) => {
+        this.pendingQuestionResolvers.set(id, resolve);
+        const timeout = setTimeout(() => {
+          if (this.pendingQuestionResolvers.delete(id)) {
+            log.warn({ toolUseId: id }, 'AskUserQuestion hook timed out (6 min) — empty answers');
+            resolve({});
+          }
+        }, 6 * 60 * 1000);
+        signal.addEventListener('abort', () => {
+          clearTimeout(timeout);
+          this.pendingQuestionResolvers.delete(id);
+          resolve({});
+        }, { once: true });
+      });
+      return {
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
+          updatedInput: { ...toolInput, answers },
+        },
+      };
     };
+
+    return {
+      PreToolUse: [{
+        matcher: 'AskUserQuestion',
+        hooks: [askUserQuestionHook as any],
+      }],
+      TaskCreated: [{ hooks: [teamObserver('task_created') as any] }],
+      TaskCompleted: [{ hooks: [teamObserver('task_completed') as any] }],
+      TeammateIdle: [{ hooks: [teamObserver('teammate_idle') as any] }],
+    };
+  }
+
+  /**
+   * Resolve a pending AskUserQuestion PreToolUse hook with the user's
+   * collected answers. Used by the bridge after the user clicks card
+   * buttons or answers via text reply.
+   */
+  resolveQuestion(toolUseId: string, answers: Record<string, string>): void {
+    const resolver = this.pendingQuestionResolvers.get(toolUseId);
+    if (resolver) {
+      this.pendingQuestionResolvers.delete(toolUseId);
+      this.options.logger.info({ toolUseId, count: Object.keys(answers).length }, 'PersistentExecutor: resolving AskUserQuestion');
+      resolver(answers);
+    } else {
+      // Fallback path: enqueue tool_result via inputQueue.
+      this.options.logger.warn({ toolUseId }, 'PersistentExecutor: no pending resolver — using sendAnswer fallback');
+      this.sendAnswer(toolUseId, JSON.stringify({ answers }));
+    }
+  }
+
+  /**
+   * Inject a synthesized tool_result into the conversation. Used as a
+   * fallback for tool answers that the SDK isn't auto-handling, and for
+   * teammate-style messages routed through the bridge.
+   */
+  sendAnswer(toolUseId: string, answerText: string): void {
+    const msg: SDKUserMessage = {
+      type: 'user',
+      message: {
+        role: 'user' as const,
+        content: [{ type: 'tool_result', tool_use_id: toolUseId, content: answerText }],
+      },
+      parent_tool_use_id: null,
+      session_id: this.sessionId || '',
+    };
+    this.inputQueue.enqueue(msg);
   }
 
   private pushSpontaneous(msg: SDKMessage): void {
