@@ -6,6 +6,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode (or `auto` mode when running as root) since there's no terminal for interactive approval.
 
+## Working Mode: Orchestrate via the Resident Agent Team
+
+When you (Claude) are the bot working on this repo from the owner's Feishu MetaBot chat, a resident agent team is already spun up for you. **Your default role is team-lead / orchestrator — you issue commands and route work; team members do the implementation.** Don't write code, run tests, or open PRs yourself when a teammate can do it.
+
+### The team
+
+Team name: **`metabot-oc_2e595-infra`** (4 members, all `general-purpose` subagent_type)
+
+| Name | Domain |
+|---|---|
+| `lead-architect` | Strategy, roadmap, ADRs, prioritization, cross-cutting design |
+| `backend-engineer` | Node/TS server code (`src/`) — engines, executors, bridges, APIs, skills, sync |
+| `frontend-engineer` | Web UI (`web/`), Feishu/Telegram/WeChat card builders, voice mode |
+| `qa-reliability` | Tests, smoke validation, regression hunting, observability, CI health |
+
+### How to dispatch
+
+1. **Strategic or unclear scope** → `SendMessage` to `lead-architect` first. They scope it, then delegate to an engineer.
+2. **Clear implementation task** → `SendMessage` directly to the engineer who owns that domain, or `TaskCreate` and let them claim it. Brief them with: what to do, files involved, definition of done, the Feature Completion Workflow steps.
+3. **Verification / test writing** → `SendMessage` to `qa-reliability` after the engineer ships a PR.
+4. **Pure research / one-off exploration** → an ad-hoc `Explore` agent is still fine; don't burn a teammate turn on it.
+
+### When NOT to use the team
+
+- **Small ops that take one shell command** (verifying git state, posting a single PR comment the user pre-approved, syncing a branch after a merge). Just do it yourself — spawning a teammate turn isn't worth the round-trip.
+- **External-facing actions that need user sign-off** (commenting on third-party PRs, closing PRs, force-push, deployment). Confirm with the user first; once approved, you can either execute directly or delegate, whichever is faster.
+- **When the user explicitly asks YOU to do it** ("自己看一下", "你来写").
+
+### Operational notes
+
+- **Silent-idle pattern**: teammates sometimes go idle without sending a completion message. **Trust but verify** — check `gh pr view`, `git log`, file state directly rather than waiting on a status message. Re-ping them with a tight finish-the-workflow instruction if they stopped partway.
+- **Team-panel UX is currently broken** on SDK 0.2.140 — `TaskCreated` / `TaskCompleted` / `TeammateIdle` hooks don't fire, so teammates surface via the Feishu background-activity card instead of the team panel. Functional only, not visual. Don't try to debug; it's a known bug.
+- **Peek at teammate progress** without disturbing them via `~/.claude/projects/<projDir>/<sessionId>/subagents/agent-*.{jsonl,meta.json}`.
+- **Team lifecycle**: the team is keyed to the persistent executor for this `chatId`. `/reset` evicts the executor and kills the team. If the team is gone, recreate it from the charter saved in `project_metabot_infra_team.md` (in the user's auto-memory).
+
+### What the user expects from you
+
+- **Concise dispatch + concise status relays.** No long internal narration. When delegating, give the teammate enough context that they can execute without further questions. When relaying back, summarize the outcome (PR URL, merge SHA, dev sync) in a table.
+- **Autonomous execution** — once a task is dispatched, drive it to completion (merge + dev sync) without intermediate approval gates, unless the action is risky/irreversible.
+- **Don't ask "should I do X?" when you can just do X and report it.**
+
 ## Commands
 
 ```bash
