@@ -72,11 +72,16 @@ export const SPONTANEOUS_CARD_HEADER =
  * Extract a one-line summary from an SDK stream message for the spontaneous
  * activity card. Returns null if the message has nothing user-readable.
  *
- * Intentionally only handles `assistant` messages — `result` messages would
- * always duplicate the last assistant text block (SDK's `result.result` is a
- * verbatim echo), so including them caused the same content to show up twice
- * in the card with two different prefixes. Don't add a `result` branch back
- * without first verifying the SDK no longer echoes.
+ * Intentionally only handles `assistant` *text* blocks — same UX bet we made
+ * for the main card in PR #268: the user only cares about the agent's
+ * conclusion, not the per-tool play-by-play. `🔧 <ToolName>` lines used to
+ * be included for tool_use blocks but that's the exact intermediate noise
+ * we just hid from the live card; surfacing it on the spontaneous card
+ * would just re-introduce the same complaint between turns.
+ *
+ * Result-type messages are also ignored — SDK's `result.result` is a
+ * verbatim echo of the last assistant text block, so including them caused
+ * the same content to show up twice in the card.
  */
 export function extractSpontaneousSnippet(msg: unknown): string | null {
   const m = msg as { type?: string; message?: { content?: Array<{ type?: string; text?: string; name?: string }> } };
@@ -85,20 +90,29 @@ export function extractSpontaneousSnippet(msg: unknown): string | null {
     if (blk.type === 'text' && blk.text) {
       const trimmed = String(blk.text).trim();
       if (trimmed) return trimmed.slice(0, 400);
-    } else if (blk.type === 'tool_use' && blk.name) {
-      return `🔧 ${blk.name}`;
     }
+    // tool_use blocks intentionally fall through — see docstring above.
   }
   return null;
 }
 
-/** Build the markdown body of a spontaneous activity card from collected snippets. */
+/**
+ * Build the markdown body of a spontaneous activity card from collected
+ * snippets. Shows ONLY the latest snippet (the agent's conclusion of the
+ * burst); if multiple snippets were coalesced, a small footer notes the
+ * count so users know there was more activity if they want to dig into
+ * logs. Mirrors the "show only the final result, hide the play-by-play"
+ * pattern from PR #268's main-card tool indicator.
+ */
 export function formatSpontaneousCardBody(snippets: string[]): string {
-  return [
-    `_${SPONTANEOUS_CARD_HEADER}_`,
-    '',
-    ...snippets.map((s, i) => `**${i + 1}.** ${s}`),
-  ].join('\n');
+  const lines: string[] = [`_${SPONTANEOUS_CARD_HEADER}_`, ''];
+  if (snippets.length === 0) return lines.join('\n');
+  lines.push(snippets[snippets.length - 1]);
+  if (snippets.length > 1) {
+    lines.push('');
+    lines.push(`_(${snippets.length} events coalesced; showing latest)_`);
+  }
+  return lines.join('\n');
 }
 
 interface PendingBatch {

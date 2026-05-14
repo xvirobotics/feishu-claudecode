@@ -81,15 +81,20 @@ describe('extractSpontaneousSnippet', () => {
     expect(extractSpontaneousSnippet(msg)).toBe('Weather is sunny');
   });
 
-  it('returns 🔧 prefixed tool name for tool_use blocks', () => {
+  // Tool-use blocks used to render as `🔧 <ToolName>` lines in the
+  // spontaneous card. That's the exact intermediate noise we hid from the
+  // main card in PR #268 — surfacing it between turns would just put it
+  // right back. extractSpontaneousSnippet now drops tool_use blocks
+  // entirely; only text snippets (the agent's actual conclusion) survive.
+  it('returns null for tool_use-only assistant messages (intermediate noise dropped)', () => {
     const msg = {
       type: 'assistant',
       message: { content: [{ type: 'tool_use', name: 'Bash' }] },
     };
-    expect(extractSpontaneousSnippet(msg)).toBe('🔧 Bash');
+    expect(extractSpontaneousSnippet(msg)).toBeNull();
   });
 
-  it('prefers the first usable block (text wins over later tool_use)', () => {
+  it('returns text and ignores adjacent tool_use blocks', () => {
     const msg = {
       type: 'assistant',
       message: { content: [
@@ -98,6 +103,17 @@ describe('extractSpontaneousSnippet', () => {
       ] },
     };
     expect(extractSpontaneousSnippet(msg)).toBe('hello');
+  });
+
+  it('returns null when only tool_use blocks are present (text-less burst)', () => {
+    const msg = {
+      type: 'assistant',
+      message: { content: [
+        { type: 'tool_use', name: 'Read' },
+        { type: 'tool_use', name: 'Bash' },
+      ] },
+    };
+    expect(extractSpontaneousSnippet(msg)).toBeNull();
   });
 
   it('truncates very long text to 400 chars', () => {
@@ -124,7 +140,7 @@ describe('extractSpontaneousSnippet', () => {
     expect(extractSpontaneousSnippet({})).toBeNull();
   });
 
-  it('returns null for assistant messages with no text/tool_use content', () => {
+  it('returns null for assistant messages with no usable text content', () => {
     const msg = {
       type: 'assistant',
       message: { content: [{ type: 'thinking', text: 'silent' }, { type: 'image' }] },
@@ -142,11 +158,34 @@ describe('extractSpontaneousSnippet', () => {
 });
 
 describe('formatSpontaneousCardBody', () => {
-  it('renders snippets as a numbered list under the header', () => {
-    const body = formatSpontaneousCardBody(['🔧 Bash', 'Weather is sunny']);
+  // After the post-#268 simplification, the card shows ONLY the latest
+  // snippet (the agent's conclusion of the burst). Earlier snippets are
+  // hidden — same UX bet as the main card's single-line tool indicator,
+  // i.e. surface only the final result, not the play-by-play. If the user
+  // wants the intermediate steps, they can read pm2 logs or the web UI's
+  // expandable tool view.
+  it('renders only the latest snippet when a single snippet is present', () => {
+    const body = formatSpontaneousCardBody(['Weather is sunny']);
     expect(body).toContain(SPONTANEOUS_CARD_HEADER);
-    expect(body).toMatch(/\*\*1\.\*\*\s+🔧 Bash/);
-    expect(body).toMatch(/\*\*2\.\*\*\s+Weather is sunny/);
+    expect(body).toContain('Weather is sunny');
+    // No numbered prefix — single snippet doesn't need one.
+    expect(body).not.toMatch(/\*\*1\.\*\*/);
+  });
+
+  it('renders only the latest snippet + a coalesced-count footer when N>1', () => {
+    const body = formatSpontaneousCardBody([
+      'Looking at the PR comments…',
+      'Found 3 things to address.',
+      'Pushed commit abc1234 to the branch.',
+    ]);
+    expect(body).toContain(SPONTANEOUS_CARD_HEADER);
+    expect(body).toContain('Pushed commit abc1234 to the branch.');
+    expect(body).toMatch(/3 events coalesced/);
+    // Earlier snippets must NOT appear in the body.
+    expect(body).not.toContain('Looking at the PR comments');
+    expect(body).not.toContain('Found 3 things to address');
+    // No numbered list prefixes either.
+    expect(body).not.toMatch(/\*\*1\.\*\*/);
   });
 
   // Regression for Bug A (misleading title): the header used to say
