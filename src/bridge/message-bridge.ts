@@ -888,6 +888,10 @@ export class MessageBridge {
 
     let lastState: CardState = initialState;
     const outputsDir = this.outputsManager.prepareDir(chatId);
+    // Set of pending AskUserQuestion toolUseIds we've already surfaced on
+    // this stream — prevents re-sending the question card on every delta
+    // while the same question is still waiting for an answer.
+    const surfacedQuestionIds = new Set<string>();
 
     try {
       for await (const message of handle.stream) {
@@ -895,6 +899,45 @@ export class MessageBridge {
         const state = processor.processMessage(message);
         if (activeGoal) state.goalCondition = activeGoal;
         lastState = state;
+
+        // AskUserQuestion during a continuation turn: route through the
+        // same standalone-question-card path used between turns. The
+        // continuation stream stays open (the SDK hook is awaiting
+        // resolveQuestion) — we just surface the question on its own card
+        // and replace the in-card response with a pointer note. When the
+        // user replies, handleMessage routes the answer via
+        // tryHandleBetweenTurnQuestionReply → executor.resolveQuestion,
+        // which unblocks the hook and the continuation stream continues.
+        if (state.status === 'waiting_for_input' && state.pendingQuestion) {
+          const q = state.pendingQuestion;
+          if (!surfacedQuestionIds.has(q.toolUseId)) {
+            surfacedQuestionIds.add(q.toolUseId);
+            await rateLimiter.flush();
+            // Main card pointer note, mirroring runOneTurn's runtime hint.
+            const hint = '_Waiting for your answer to the question card below…_';
+            const hintedState: CardState = {
+              ...state,
+              pendingQuestion: undefined,
+              responseText: state.responseText
+                ? state.responseText + '\n\n' + hint
+                : hint,
+            };
+            try {
+              await this.sender.updateCard(messageId, hintedState);
+            } catch (err) {
+              this.logger.warn({ err, chatId }, 'MessageBridge: continuation hint update failed');
+            }
+            // Surface the question on its own card via the shared between-
+            // turn pipeline. Re-uses pendingBetweenTurnQuestions bookkeeping
+            // so handleMessage's reply-interception path Just Works.
+            await this.handleBetweenTurnQuestion(chatId, {
+              toolUseId: q.toolUseId,
+              questions: q.questions,
+            });
+          }
+          continue;
+        }
+
         if (state.status === 'complete' || state.status === 'error') break;
         rateLimiter.schedule(() => {
           if (!abortController.signal.aborted) {
