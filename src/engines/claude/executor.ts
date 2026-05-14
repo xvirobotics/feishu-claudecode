@@ -43,6 +43,7 @@ const CLAUDE_ENV_PASSTHROUGH = new Set([
   'CLAUDE_CODE_DISABLE_AGENT_VIEW',       // disable claude agents / --bg / /background
   'CLAUDE_CODE_SIMPLE',                   // --bare equivalent
   'CLAUDE_CODE_DISABLE_AUTO_MEMORY',      // toggle auto-memory (project patterns/learnings)
+  'CLAUDE_CODE_DISABLE_1M_CONTEXT',       // opt out of Max-tier silent 1M context upgrade
 ]);
 
 /**
@@ -161,6 +162,35 @@ export interface ApiContext {
   groupMembers?: string[];
   /** Group ID — used to build grouptalk chatIds for inter-bot communication. */
   groupId?: string;
+}
+
+/**
+ * Apply 1M-context settings based on the effective model name in `queryOptions.model`:
+ *
+ *   - With `[1m]` suffix (e.g. `claude-opus-4-7[1m]`): set the matching
+ *     `betas` flag. The SDK strips the suffix and forwards the beta header
+ *     to the API. Belt-and-braces for API-key auth modes where the SDK
+ *     may not auto-infer the beta from the suffix alone.
+ *
+ *   - Without `[1m]`: set `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` in the
+ *     spawn env. The Claude CLI silently auto-enables 1M context for
+ *     Max-tier OAuth subscriptions on models that support it (opus-4-7,
+ *     opus-4-6, sonnet-4-6) — billing every request at 2× rate even
+ *     though the user didn't request 1M. This env var is the binary's
+ *     opt-out switch. (MetaBot's spawn handler merges `queryOptions.env`
+ *     on top of `process.env`, so we only need to set the override key.)
+ *
+ * Must be called *after* any per-call `options.model` override so the
+ * suffix detection sees the actually-effective model, not the bot default.
+ */
+export function apply1MContextSettings(queryOptions: Record<string, unknown>): void {
+  const model = queryOptions.model as string | undefined;
+  if (model?.includes('[1m]')) {
+    queryOptions.betas = ['context-1m-2025-08-07'];
+  } else {
+    const existingEnv = (queryOptions.env as Record<string, string> | undefined) ?? {};
+    queryOptions.env = { ...existingEnv, CLAUDE_CODE_DISABLE_1M_CONTEXT: '1' };
+  }
 }
 
 /**
@@ -365,21 +395,6 @@ export class ClaudeExecutor {
       queryOptions.resume = sessionId;
     }
 
-    // 1M context window is opt-in via the `[1m]` model-name suffix
-    // (`claude-opus-4-7[1m]`). The suffix is the canonical signal — the SDK
-    // parses it directly on both OAuth and API-key auth paths.
-    //
-    // We *also* set the matching `betas` flag when the suffix is present,
-    // belt-and-braces: harmless when the SDK already inferred it, and a
-    // safety net if a future SDK rev only honors the explicit beta header
-    // for some auth modes. Without the suffix, leave `betas` unset —
-    // setting it unconditionally on API-key auth had the side-effect of
-    // forcing every model (e.g. plain `opus-4-7`) into 1M context at 2×
-    // the price, which the user never asked for.
-    if (this.config.claude.model?.includes('[1m]')) {
-      queryOptions.betas = ['context-1m-2025-08-07'];
-    }
-
     return queryOptions;
   }
 
@@ -412,6 +427,8 @@ export class ClaudeExecutor {
     if (options.allowedTools !== undefined) {
       queryOptions.allowedTools = options.allowedTools;
     }
+
+    apply1MContextSettings(queryOptions);
 
     // AskUserQuestion PreToolUse hook: the SDK marks AskUserQuestion as
     // requiresUserInteraction=true, so in bypassPermissions mode it is denied

@@ -35,6 +35,7 @@ import type { SDKUserMessage, SpawnOptions, SpawnedProcess, Query } from '@anthr
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import type { SDKMessage, TeamEvent, ApiContext } from './executor.js';
+import { apply1MContextSettings } from './executor.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -56,6 +57,7 @@ const CLAUDE_ENV_PASSTHROUGH = new Set([
   'CLAUDE_CODE_DISABLE_AGENT_VIEW',
   'CLAUDE_CODE_SIMPLE',
   'CLAUDE_CODE_DISABLE_AUTO_MEMORY',
+  'CLAUDE_CODE_DISABLE_1M_CONTEXT',
 ]);
 const AUTH_ENV_VARS = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
 
@@ -406,21 +408,7 @@ export class PersistentClaudeExecutor extends EventEmitter {
         append: '\n\n' + appendSections.join('\n\n'),
       };
     }
-    // 1M context window is opt-in via the `[1m]` model-name suffix
-    // (`claude-opus-4-7[1m]`). The suffix is the canonical signal — the SDK
-    // parses it directly on both OAuth and API-key auth paths.
-    //
-    // We *also* set the matching `betas` flag when the suffix is present,
-    // belt-and-braces: harmless when the SDK already inferred it, and a
-    // safety net if a future SDK rev only honors the explicit beta header
-    // for some auth modes. Without the suffix, leave `betas` unset —
-    // setting it unconditionally on API-key auth had the side-effect of
-    // forcing every model (e.g. plain `opus-4-7`) into 1M context at 2×
-    // the price, which the user never asked for. (Parity with legacy
-    // executor; both spots must stay in sync.)
-    if (this.options.model?.includes('[1m]')) {
-      queryOptions.betas = ['context-1m-2025-08-07'];
-    }
+    apply1MContextSettings(queryOptions);
 
     // Hooks: AskUserQuestion (mirrored from legacy executor — required so
     // that questions can be answered by users via Feishu cards) + Agent
