@@ -20,6 +20,21 @@ export class CommandHandler {
     private audit: AuditLogger,
     private getRunningTask: (chatId: string) => { startTime: number } | undefined,
     private stopTask: (chatId: string) => void,
+    /**
+     * Drain the chat's queued-message buffer, returning the number of
+     * messages discarded. Called from /stop so the user's "stop" intent
+     * isn't immediately undone by the next queued message — without this
+     * the bridge's processQueue would start the next one as soon as the
+     * aborted task's finally block runs.
+     */
+    private clearQueue: (chatId: string) => number,
+    /**
+     * Release the persistent Claude process associated with this chat
+     * (no-op if the persistent-executor feature flag is off or no
+     * executor exists). Called on /reset so teammates and /goal state
+     * tied to the old session are torn down with the conversation.
+     */
+    private releaseExecutor: (chatId: string, reason: string) => Promise<void>,
   ) {}
 
   /** Set the doc sync service (optional, only available for Feishu bots). */
@@ -40,7 +55,7 @@ export class CommandHandler {
     switch (cmd.toLowerCase()) {
       case '/help':
         await this.sender.sendTextNotice(chatId, '📖 Help', [
-          '**Available Commands:**',
+          '**Bot Commands:**',
           '`/reset` - Clear session, start fresh',
           '`/stop` - Abort current running task',
           '`/status` - Show current session info',
@@ -49,6 +64,10 @@ export class CommandHandler {
           '`/model <name>` - Set model for current engine',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
+          '',
+          '**Agent Commands** (pass through to the agent — Claude only):',
+          '`/goal <description>` - Set a goal the agent keeps pursuing across turns',
+          '`/background <prompt>` - Run a task in the background while you continue chatting',
           '',
           '**Usage:**',
           'Send any text message to start a conversation with the configured agent engine.',
@@ -67,15 +86,40 @@ export class CommandHandler {
 
       case '/reset':
         this.sessionManager.resetSession(chatId);
+        // Tear down the persistent Claude process for this chat (Stage 3b).
+        // Otherwise the old long-lived executor would keep running with its
+        // stale (now-cleared) sessionId mapping. No-op when persistent mode
+        // is off. Best-effort — log but don't fail the /reset on shutdown errors.
+        try {
+          await this.releaseExecutor(chatId, 'reset-command');
+        } catch (err) {
+          this.logger.warn({ err, chatId }, 'Failed to release persistent executor on /reset');
+        }
         await this.sender.sendTextNotice(chatId, '✅ Session Reset', 'Conversation cleared. Working directory preserved.', 'green');
         return true;
 
       case '/stop': {
         const task = this.getRunningTask(chatId);
+        // Always drain the queue first — otherwise the running task's
+        // finally block immediately picks the next queued message via
+        // processQueue and the user's "stop" intent silently fails.
+        const cleared = this.clearQueue(chatId);
         if (task) {
-          this.audit.log({ event: 'task_stopped', botName: this.config.name, chatId, userId, durationMs: Date.now() - task.startTime });
+          this.audit.log({ event: 'task_stopped', botName: this.config.name, chatId, userId, durationMs: Date.now() - task.startTime, meta: { clearedQueue: cleared } });
           this.stopTask(chatId);
-          await this.sender.sendTextNotice(chatId, '🛑 Stopped', 'Current task has been aborted.', 'orange');
+          const body = cleared > 0
+            ? `Current task aborted. Discarded **${cleared}** queued message${cleared === 1 ? '' : 's'}.`
+            : 'Current task has been aborted.';
+          await this.sender.sendTextNotice(chatId, '🛑 Stopped', body, 'orange');
+        } else if (cleared > 0) {
+          // No running task but queued messages existed — clear them too.
+          this.audit.log({ event: 'queue_cleared', botName: this.config.name, chatId, userId, meta: { clearedQueue: cleared } });
+          await this.sender.sendTextNotice(
+            chatId,
+            '🛑 Queue Cleared',
+            `No task was running. Discarded **${cleared}** queued message${cleared === 1 ? '' : 's'}.`,
+            'orange',
+          );
         } else {
           await this.sender.sendTextNotice(chatId, 'ℹ️ No Running Task', 'There is no task to stop.', 'blue');
         }
@@ -348,7 +392,7 @@ export class CommandHandler {
 
     // Set the model (use only the first token, ignore trailing junk)
     const newModel = args.split(/\s+/)[0];
-    this.sessionManager.setSessionModel(chatId, newModel);
+    this.sessionManager.setSessionModel(chatId, newModel, activeEngine);
     await this.sender.sendTextNotice(
       chatId,
       '✅ Model Set',

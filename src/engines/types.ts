@@ -6,6 +6,7 @@ import type {
   ExecutorOptions,
   SDKMessage,
   ApiContext,
+  TeamEvent,
 } from './claude/executor.js';
 import type { CodexExecutor } from './codex/executor.js';
 import type { StreamProcessor } from './claude/stream-processor.js';
@@ -49,6 +50,7 @@ export type {
   ExecutorOptions,
   SDKMessage,
   ApiContext,
+  TeamEvent,
 };
 
 /** Context passed to engine factory. */

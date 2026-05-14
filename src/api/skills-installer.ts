@@ -5,8 +5,17 @@ import * as url from 'node:url';
 import { execFileSync, execSync } from 'node:child_process';
 import type { Logger } from '../utils/logger.js';
 
-/** Skills installed for all platforms. */
-const COMMON_SKILLS = ['metaskill', 'metamemory', 'metabot', 'phone-call', 'skill-hub'];
+/** Skills installed for all platforms.
+ *
+ *  Not in this list (opt-in only):
+ *   - `metaskill`     — agent-team generator. Source: src/skills/metaskill/
+ *   - `metaschedule`  — MetaBot's persistent server-side scheduler.
+ *                       Source: src/skills/metaschedule/
+ *
+ *  Default ad-hoc scheduling is handled by Claude Code's native `CronCreate`
+ *  and `/loop` tools, so the persistent scheduler skill is now opt-in.
+ */
+const COMMON_SKILLS = ['metamemory', 'metabot', 'phone-call', 'skill-hub'];
 
 /** Lark CLI AI Agent skills — installed via `npx skills add larksuite/cli` and
  *  symlinked into ~/.claude/skills/ automatically. We copy them to the bot
@@ -29,24 +38,31 @@ export interface InstallSkillsOptions {
 
 export function installSkillsToWorkDir(workDir: string, logger: Logger, options?: InstallSkillsOptions): void {
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
-  const destSkillsDir = path.join(workDir, '.claude', 'skills');
+  const destSkillDirs = [
+    path.join(workDir, '.claude', 'skills'),
+    path.join(workDir, '.codex', 'skills'),
+  ];
 
   const skillNames = options?.platform === 'feishu'
     ? [...COMMON_SKILLS, ...LARK_CLI_SKILLS]
     : COMMON_SKILLS;
 
   for (const skill of skillNames) {
-    const src = path.join(userSkillsDir, skill);
+    const src = fs.existsSync(path.join(userSkillsDir, skill))
+      ? path.join(userSkillsDir, skill)
+      : bundledSkillSource(skill);
 
-    if (!fs.existsSync(src)) {
+    if (!src || !fs.existsSync(src)) {
       logger.debug({ skill }, 'Skill source not found, skipping');
       continue;
     }
 
-    const dest = path.join(destSkillsDir, skill);
-    fs.mkdirSync(dest, { recursive: true });
-    fs.cpSync(src, dest, { recursive: true });
-    logger.info({ skill, src, dest }, 'Skill installed to working directory');
+    for (const destSkillsDir of destSkillDirs) {
+      const dest = path.join(destSkillsDir, skill);
+      fs.mkdirSync(dest, { recursive: true });
+      fs.cpSync(src, dest, { recursive: true });
+      logger.info({ skill, src, dest }, 'Skill installed to working directory');
+    }
   }
 
   // For Feishu bots, ensure lark-cli is configured
@@ -54,23 +70,7 @@ export function installSkillsToWorkDir(workDir: string, logger: Logger, options?
     ensureLarkCliConfig(options.feishuAppId, options.feishuAppSecret, logger);
   }
 
-  // Deploy workspace CLAUDE.md if not already present
-  const destClaudeMd = path.join(workDir, 'CLAUDE.md');
-  if (!fs.existsSync(destClaudeMd)) {
-    const thisFile = url.fileURLToPath(import.meta.url);
-    const thisDir = path.dirname(thisFile);
-    // Try src/workspace/CLAUDE.md (tsx) or dist/workspace/CLAUDE.md (compiled)
-    for (const candidate of [
-      path.join(thisDir, '..', 'workspace', 'CLAUDE.md'),
-      path.join(thisDir, '..', '..', 'src', 'workspace', 'CLAUDE.md'),
-    ]) {
-      if (fs.existsSync(candidate)) {
-        fs.copyFileSync(candidate, destClaudeMd);
-        logger.info({ dest: destClaudeMd }, 'CLAUDE.md deployed to working directory');
-        break;
-      }
-    }
-  }
+  deployWorkspaceInstructions(workDir, logger);
 }
 
 /**
@@ -114,19 +114,86 @@ export function installSkillFromHub(
   referencesTar: Buffer | undefined,
   logger: Logger,
 ): void {
-  const destDir = path.join(workDir, '.claude', 'skills', skillName);
-  fs.mkdirSync(destDir, { recursive: true });
-  fs.writeFileSync(path.join(destDir, 'SKILL.md'), skillMd, 'utf-8');
+  const destDirs = [
+    path.join(workDir, '.claude', 'skills', skillName),
+    path.join(workDir, '.codex', 'skills', skillName),
+  ];
 
-  if (referencesTar && referencesTar.length > 0) {
-    try {
-      execSync(`tar xf - -C "${destDir}"`, { input: referencesTar, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 });
-    } catch (err: any) {
-      logger.warn({ err: err.message, skillName }, 'Failed to extract references tar');
+  for (const destDir of destDirs) {
+    fs.mkdirSync(destDir, { recursive: true });
+    fs.writeFileSync(path.join(destDir, 'SKILL.md'), skillMd, 'utf-8');
+
+    if (referencesTar && referencesTar.length > 0) {
+      try {
+        execSync(`tar xf - -C "${destDir}"`, { input: referencesTar, stdio: ['pipe', 'pipe', 'pipe'], timeout: 30_000 });
+      } catch (err: any) {
+        logger.warn({ err: err.message, skillName, destDir }, 'Failed to extract references tar');
+      }
     }
-  }
 
-  logger.info({ skillName, dest: destDir }, 'Skill installed from Hub');
+    logger.info({ skillName, dest: destDir }, 'Skill installed from Hub');
+  }
+}
+
+function deployWorkspaceInstructions(workDir: string, logger: Logger): void {
+  const thisFile = url.fileURLToPath(import.meta.url);
+  const thisDir = path.dirname(thisFile);
+  const existingClaudeMd = path.join(workDir, 'CLAUDE.md');
+  for (const candidate of [
+    path.join(thisDir, '..', 'workspace', 'CLAUDE.md'),
+    path.join(thisDir, '..', '..', 'src', 'workspace', 'CLAUDE.md'),
+  ]) {
+    if (!fs.existsSync(candidate)) continue;
+
+    copyInstructionFile(candidate, existingClaudeMd, 'CLAUDE.md', logger);
+    copyInstructionFile(fs.existsSync(existingClaudeMd) ? existingClaudeMd : candidate, path.join(workDir, 'AGENTS.md'), 'AGENTS.md', logger);
+    break;
+  }
+}
+
+function bundledSkillSource(skill: string): string | undefined {
+  const thisFile = url.fileURLToPath(import.meta.url);
+  const thisDir = path.dirname(thisFile);
+  const candidatesBySkill: Record<string, string[]> = {
+    // metaskill / metaschedule are opt-in: not in COMMON_SKILLS, but bundled
+    // here so users who copy them into `~/.claude/skills/` get the source
+    // resolved correctly if they later install a bot with installSkills:true.
+    metaskill: [
+      path.join(thisDir, '..', 'skills', 'metaskill'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'metaskill'),
+    ],
+    metaschedule: [
+      path.join(thisDir, '..', 'skills', 'metaschedule'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'metaschedule'),
+    ],
+    metamemory: [
+      path.join(thisDir, '..', 'memory', 'skill'),
+      path.join(thisDir, '..', '..', 'src', 'memory', 'skill'),
+    ],
+    metabot: [
+      path.join(thisDir, '..', 'skills', 'metabot'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'metabot'),
+    ],
+    voice: [
+      path.join(thisDir, '..', 'skills', 'voice'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'voice'),
+    ],
+    'skill-hub': [
+      path.join(thisDir, '..', 'skills', 'skill-hub'),
+      path.join(thisDir, '..', '..', 'src', 'skills', 'skill-hub'),
+    ],
+  };
+  return candidatesBySkill[skill]?.find((candidate) => fs.existsSync(candidate));
+}
+
+function copyInstructionFile(src: string, dest: string, fileName: string, logger: Logger): void {
+  if (fs.existsSync(dest)) return;
+  try {
+    fs.copyFileSync(src, dest);
+    logger.info({ dest }, `${fileName} deployed to working directory`);
+  } catch (err: any) {
+    logger.warn({ err: err.message, src, dest }, `Failed to deploy ${fileName}`);
+  }
 }
 
 /** Locate the lark-cli executable. */

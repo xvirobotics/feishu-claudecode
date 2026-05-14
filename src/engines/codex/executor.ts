@@ -1,4 +1,7 @@
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type { BotConfigBase, CodexBotConfig } from '../../config.js';
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
@@ -15,6 +18,7 @@ import {
 } from './jsonl-translator.js';
 
 const isWindows = process.platform === 'win32';
+const FALLBACK_CODEX_CONTEXT_WINDOW = 272000;
 
 function resolveCodexPath(): string {
   if (process.env.CODEX_EXECUTABLE_PATH) return process.env.CODEX_EXECUTABLE_PATH;
@@ -22,11 +26,103 @@ function resolveCodexPath(): string {
     const cmd = isWindows ? 'where codex' : 'which codex';
     return execSync(cmd, { encoding: 'utf-8' }).trim().split(/\r?\n/)[0];
   } catch {
-    return isWindows ? 'codex' : '/usr/local/bin/codex';
+    if (!isWindows) {
+      for (const candidate of ['/usr/local/bin/codex', '/usr/bin/codex', '/opt/homebrew/bin/codex']) {
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+    return 'codex';
   }
 }
 
 const CODEX_EXECUTABLE = resolveCodexPath();
+
+interface CodexModelMetadata {
+  model?: string;
+  contextWindow?: number;
+}
+
+export function resolveCodexModelMetadata(codexConfig: CodexBotConfig, requestedModel?: string): CodexModelMetadata {
+  const model = requestedModel
+    || codexConfig.model
+    || codexConfig.displayModel
+    || readCodexConfigModel(codexConfig.profile)
+    || readDefaultModelFromCache();
+  return {
+    model,
+    contextWindow: codexConfig.contextWindow ?? readContextWindowFromCache(model) ?? (model ? FALLBACK_CODEX_CONTEXT_WINDOW : undefined),
+  };
+}
+
+function readCodexConfigModel(profile?: string): string | undefined {
+  const configPath = process.env.CODEX_HOME
+    ? path.join(process.env.CODEX_HOME, 'config.toml')
+    : path.join(os.homedir(), '.codex', 'config.toml');
+  try {
+    const text = readFileSync(configPath, 'utf-8');
+    const profileModel = profile ? readTomlSectionValue(text, `profiles.${profile}`, 'model') : undefined;
+    return profileModel ?? readTomlTopLevelValue(text, 'model');
+  } catch {
+    return undefined;
+  }
+}
+
+function readDefaultModelFromCache(): string | undefined {
+  return readModelsCache()?.models?.find((m) => m.slug)?.slug;
+}
+
+function readContextWindowFromCache(model: string | undefined): number | undefined {
+  if (!model) return undefined;
+  const found = readModelsCache()?.models?.find((m) => m.slug === model);
+  return found?.context_window ?? found?.max_context_window;
+}
+
+function readModelsCache(): { models?: Array<{ slug?: string; context_window?: number; max_context_window?: number }> } | undefined {
+  const cachePath = process.env.CODEX_HOME
+    ? path.join(process.env.CODEX_HOME, 'models_cache.json')
+    : path.join(os.homedir(), '.codex', 'models_cache.json');
+  try {
+    return JSON.parse(readFileSync(cachePath, 'utf-8')) as { models?: Array<{ slug?: string; context_window?: number; max_context_window?: number }> };
+  } catch {
+    return undefined;
+  }
+}
+
+function readTomlTopLevelValue(text: string, key: string): string | undefined {
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    if (trimmed.startsWith('[')) return undefined;
+    const value = parseTomlStringAssignment(trimmed, key);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function readTomlSectionValue(text: string, section: string, key: string): string | undefined {
+  let inSection = false;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const header = trimmed.match(/^\[([^\]]+)\]$/);
+    if (header) {
+      inSection = header[1] === section;
+      continue;
+    }
+    if (!inSection) continue;
+    const value = parseTomlStringAssignment(trimmed, key);
+    if (value) return value;
+  }
+  return undefined;
+}
+
+function parseTomlStringAssignment(line: string, key: string): string | undefined {
+  const match = line.match(new RegExp(`^${key}\\s*=\\s*(.+?)(?:\\s+#.*)?$`));
+  if (!match) return undefined;
+  const raw = match[1].trim();
+  const quoted = raw.match(/^["'](.+)["']$/);
+  return quoted ? quoted[1] : raw;
+}
 
 /**
  * Build the argv array for `codex exec`. Exported for unit testing.
@@ -48,7 +144,7 @@ export function buildCodexArgs(
     args.push('--dangerously-bypass-approvals-and-sandbox');
   } else {
     args.push('-a', codexConfig.approvalPolicy ?? 'never');
-    args.push('--sandbox', codexConfig.sandbox ?? 'workspace-write');
+    args.push('--sandbox', codexConfig.sandbox ?? 'danger-full-access');
   }
 
   args.push('-C', cwd);
@@ -75,11 +171,12 @@ export class CodexExecutor {
     const { prompt, cwd, sessionId, abortController, outputsDir, apiContext } = options;
     const codexConfig = this.config.codex ?? {};
     const model = options.model ?? codexConfig.model;
+    const modelMetadata = resolveCodexModelMetadata(codexConfig, model);
     const fullPrompt = this.buildPromptWithContext(prompt, outputsDir, apiContext);
     const queue = new AsyncQueue<SDKMessage>();
     const state = createCodexTranslatorState({
-      model: model || codexConfig.displayModel,
-      contextWindow: codexConfig.contextWindow,
+      model: modelMetadata.model,
+      contextWindow: modelMetadata.contextWindow,
     });
     const args = buildCodexArgs(codexConfig, cwd, fullPrompt, sessionId, model);
     const startTime = Date.now();

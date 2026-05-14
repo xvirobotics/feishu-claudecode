@@ -287,7 +287,20 @@ if (Test-Path (Join-Path $MetabotHome ".git")) {
     Write-Info "Existing installation found, pulling latest..."
     Push-Location $MetabotHome
     $OldHead = git rev-parse HEAD
-    try { git pull --ff-only } catch { Write-Warn "git pull failed, continuing with existing code" }
+    git pull --ff-only
+    if ($LASTEXITCODE -ne 0) {
+        Pop-Location
+        Write-Err "git pull --ff-only failed at $MetabotHome."
+        Write-Err "Your checkout has diverged from origin or has uncommitted changes."
+        Write-Err "Continuing with stale code would silently break later phases (e.g. Phase 6 'skill not found')."
+        Write-Err ""
+        Write-Err "Fix one of these and re-run install.ps1:"
+        Write-Err "  - Inspect: cd $MetabotHome; git status; git log --oneline -5"
+        Write-Err "  - Stash & retry:    cd $MetabotHome; git stash; git pull --ff-only"
+        Write-Err "  - Reset to origin (DESTROYS local commits/edits):"
+        Write-Err "      cd $MetabotHome; git fetch origin; git reset --hard origin/main"
+        exit 1
+    }
     $NewHead = git rev-parse HEAD
 
     # Re-exec with updated install.ps1 if it changed
@@ -568,15 +581,26 @@ Write-Step "Phase 6: Installing skills and setting up workspace"
 $SkillsDir = Join-Path $env:USERPROFILE ".claude\skills"
 New-Item -ItemType Directory -Path $SkillsDir -Force | Out-Null
 
-# Install metaskill
-Write-Info "Installing metaskill skill..."
-$metaskillDir = Join-Path $SkillsDir "metaskill\flows"
-New-Item -ItemType Directory -Path $metaskillDir -Force | Out-Null
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\SKILL.md") (Join-Path $SkillsDir "metaskill\SKILL.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\team.md") (Join-Path $SkillsDir "metaskill\flows\team.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\agent.md") (Join-Path $SkillsDir "metaskill\flows\agent.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\skill.md") (Join-Path $SkillsDir "metaskill\flows\skill.md") -Force
-Write-Success "metaskill skill installed -> $(Join-Path $SkillsDir 'metaskill')"
+# Sanity check: the bundled skill tree must exist in the checked-out repo.
+# If it's missing, the user's checkout is stale (predates the skill bundling
+# commits) — fail with a clear message instead of cryptic Copy-Item errors.
+$SkillSentinel = Join-Path $MetabotHome "src\skills\metabot\SKILL.md"
+if (-not (Test-Path $SkillSentinel)) {
+    Write-Err "Bundled skill source not found at: $SkillSentinel"
+    Write-Err "Your $MetabotHome checkout appears to be stale or incomplete."
+    Write-Err "Try: cd $MetabotHome; git fetch origin; git reset --hard origin/main"
+    Write-Err "(WARNING: 'git reset --hard' discards uncommitted local changes.)"
+    exit 1
+}
+
+# Clean up legacy metaskill skill if present — no longer installed by default.
+# Users who still want the agent-team generator can copy it back from
+# $MetabotHome\src\skills\metaskill\ (the source files remain bundled in the repo).
+$LegacyMetaskillDir = Join-Path $SkillsDir "metaskill"
+if (Test-Path $LegacyMetaskillDir) {
+    Remove-Item $LegacyMetaskillDir -Recurse -Force
+    Write-Info "Removed legacy metaskill skill from $SkillsDir (now opt-in -- see src\skills\metaskill\)"
+}
 
 # Install metamemory skill
 Write-Info "Installing metamemory skill..."
@@ -641,7 +665,11 @@ if (-not $SkipConfig) {
 if ($DeployWorkDir) {
     $SkillsDest = Join-Path $DeployWorkDir ".claude\skills"
 
-    $deploySkills = @("metaskill", "metamemory", "metabot", "voice", "skill-hub")
+    # metaskill (agent-team generator) and metaschedule (persistent server-side
+    # scheduler) are no longer deployed by default -- copy them from
+    # $MetabotHome\src\skills\ if needed. CC native CronCreate / /loop already
+    # cover ad-hoc, session-scoped scheduling.
+    $deploySkills = @("metamemory", "metabot", "voice", "skill-hub")
     if ($HasFeishu) { $deploySkills += "feishu-doc" }
 
     foreach ($skill in $deploySkills) {

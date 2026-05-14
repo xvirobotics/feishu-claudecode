@@ -1,6 +1,6 @@
 # Flow: Create Single Skill
 
-You are a Claude Code skill designer. Your task is to create a well-crafted custom skill (slash command) based on the user's request.
+You are an AI agent skill designer. Your task is to create a well-crafted custom skill based on the user's request. The skill should work in Claude Code/Kimi (`.claude/skills`) and Codex (`.codex/skills`) when possible.
 
 ## Process
 
@@ -19,6 +19,8 @@ Also check for existing skills to avoid naming conflicts:
 ```
 Glob(".claude/skills/*/SKILL.md")
 Glob("~/.claude/skills/*/SKILL.md")
+Glob(".codex/skills/*/SKILL.md")
+Glob("~/.codex/skills/*/SKILL.md")
 ```
 
 ### Step 2: Determine Scope and Behavior
@@ -26,8 +28,8 @@ Glob("~/.claude/skills/*/SKILL.md")
 Ask the user (if not clear from their request):
 
 1. **Where to save:**
-   - **Project-level** (`.claude/skills/<name>/SKILL.md`) — specific to this project
-   - **User-level** (`~/.claude/skills/<name>/SKILL.md`) — available across all projects
+   - **Project-level** (`.claude/skills/<name>/SKILL.md` and `.codex/skills/<name>/SKILL.md`) — specific to this project, compatible with Claude/Kimi/Codex
+   - **User-level** (`~/.claude/skills/<name>/SKILL.md` and `~/.codex/skills/<name>/SKILL.md`) — available across all projects for both engines
 
 2. **Invocation model:**
    - **User-invocable + auto-invocable** (default) — appears in `/` menu AND Claude can auto-trigger it
@@ -105,12 +107,16 @@ Provide a structured report with severity levels.
 
 ### Step 6: Write the File
 
-Create the directory and write the SKILL.md file to the chosen path:
+Create the directory and write the SKILL.md file to the chosen paths:
 
 ```
-~/.claude/skills/<name>/SKILL.md     (user-level)
-.claude/skills/<name>/SKILL.md       (project-level)
+~/.claude/skills/<name>/SKILL.md     (user-level, Claude/Kimi)
+~/.codex/skills/<name>/SKILL.md      (user-level, Codex)
+.claude/skills/<name>/SKILL.md       (project-level, Claude/Kimi)
+.codex/skills/<name>/SKILL.md        (project-level, Codex)
 ```
+
+For Codex, keep `name` and `description` accurate; Codex uses those fields for discovery and may ignore Claude-specific fields like `allowed-tools`, `context`, or `user-invocable`. Prefer portable instructions in the Markdown body over engine-specific frontmatter.
 
 ### Key Principles
 

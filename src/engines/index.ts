@@ -58,4 +58,5 @@ export type {
   ExecutorOptions,
   ApiContext,
   DetectedTool,
+  TeamEvent,
 } from './claude/index.js';

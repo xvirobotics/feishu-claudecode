@@ -7,7 +7,12 @@ export type CardStatus =
   | 'running'
   | 'complete'
   | 'error'
-  | 'waiting_for_input';
+  | 'waiting_for_input'
+  // Server-side `flushSpontaneous` emits this when a between-turn burst
+  // (background task return / teammate ping / `/goal` evaluator) lands;
+  // styled blue with an "Agent activity" header to tell it apart from a
+  // regular completed reply. Mirror of the server type.
+  | 'agent_activity';
 
 export interface ToolCall {
   name: string;
@@ -28,6 +33,25 @@ export interface PendingQuestion {
   }>;
 }
 
+export interface TeamMember {
+  name: string;
+  status: 'working' | 'idle';
+  lastSubject?: string;
+}
+
+export interface TeamTask {
+  taskId: string;
+  subject: string;
+  status: 'in_progress' | 'completed';
+  teammate?: string;
+}
+
+export interface TeamState {
+  name?: string;
+  teammates: TeamMember[];
+  tasks: TeamTask[];
+}
+
 export interface CardState {
   status: CardStatus;
   userPrompt: string;
@@ -37,6 +61,10 @@ export interface CardState {
   durationMs?: number;
   errorMessage?: string;
   pendingQuestion?: PendingQuestion;
+  /** Active /goal condition for this session, if any. */
+  goalCondition?: string;
+  /** Snapshot of the active Agent Team (teammates + tasks), if any. */
+  teamState?: TeamState;
 }
 
 export interface BotInfo {

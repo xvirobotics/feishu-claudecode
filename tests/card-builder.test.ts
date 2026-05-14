@@ -16,7 +16,7 @@ describe('buildCard', () => {
     expect(json.elements.some((e: any) => e.tag === 'markdown' && /thinking/i.test(e.content))).toBe(true);
   });
 
-  it('builds running card with tool calls', () => {
+  it('builds running card with a single-line tool indicator (no per-tool list)', () => {
     const state: CardState = {
       status: 'running',
       userPrompt: 'fix bug',
@@ -28,10 +28,33 @@ describe('buildCard', () => {
     };
     const json = JSON.parse(buildCard(state));
     expect(json.header.template).toBe('blue');
-    const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('Read'));
+    // Should show one summary line referencing the latest (running) tool +
+    // the total tool count, NOT a per-tool list. The earlier completed tool
+    // ("Read") must NOT appear — only the current "Edit" plus the count.
+    const md = json.elements.find(
+      (e: any) => e.tag === 'markdown' && /\*\*Edit\*\* · 2 tools/.test(e.content),
+    );
     expect(md).toBeDefined();
-    expect(md.content).toContain('✅');
     expect(md.content).toContain('⏳');
+    expect(md.content).not.toContain('Read');
+    expect(md.content).not.toContain('✅');
+  });
+
+  it('omits the tool indicator entirely once the turn is complete', () => {
+    const state: CardState = {
+      status: 'complete',
+      userPrompt: 'fix bug',
+      responseText: 'Done.',
+      toolCalls: [
+        { name: 'Read', detail: '`src/index.ts`', status: 'done' },
+        { name: 'Edit', detail: '`src/index.ts`', status: 'done' },
+      ],
+    };
+    const json = JSON.parse(buildCard(state));
+    const toolEl = json.elements.find(
+      (e: any) => e.tag === 'markdown' && (e.content.includes('Read') || e.content.includes('Edit') || /\d+ tools?/.test(e.content)),
+    );
+    expect(toolEl).toBeUndefined();
   });
 
   it('builds complete card with stats', () => {
@@ -48,6 +71,33 @@ describe('buildCard', () => {
     const note = json.elements.find((e: any) => e.tag === 'note');
     expect(note).toBeDefined();
     expect(note.elements[0].content).toContain('5.0s');
+  });
+
+  // Cards from flushSpontaneous (between-turn agent activity) are sent with
+  // the `agent_activity` status so users can see at a glance that the card
+  // isn't a normal user-turn reply. Blue header, distinct title — the body
+  // no longer carries the long italic "Agent activity between turns (…)"
+  // caption that v1 had.
+  it('builds an agent_activity card with a blue header and an "Agent activity" title', () => {
+    const state: CardState = {
+      status: 'agent_activity',
+      userPrompt: '(agent activity)',
+      responseText: 'Pushed commit abc1234.',
+      toolCalls: [],
+    };
+    const json = JSON.parse(buildCard(state));
+    expect(json.header.template).toBe('blue');
+    expect(json.header.title.content).toContain('Agent activity');
+    // The body must NOT include the legacy italic caption.
+    const captionEl = json.elements.find(
+      (e: any) => e.tag === 'markdown' && /Agent activity between turns/.test(e.content),
+    );
+    expect(captionEl).toBeUndefined();
+    // The actual conclusion text must be present.
+    const bodyEl = json.elements.find(
+      (e: any) => e.tag === 'markdown' && e.content.includes('Pushed commit abc1234'),
+    );
+    expect(bodyEl).toBeDefined();
   });
 
   it('builds error card with error message', () => {
@@ -89,21 +139,18 @@ describe('buildCard', () => {
     expect(qEl).toBeDefined();
     expect(qEl.content).toContain('Production');
     expect(qEl.content).toContain('Staging');
-    // update_multi must be set so Feishu accepts card updates after an action click
+    // update_multi stays true even though we don't ship action buttons —
+    // belt-and-braces in case Feishu ever decides to redeliver clicks.
     expect(json.config.update_multi).toBe(true);
-    // Interactive buttons: one action element with one button per option
+    // Buttons were removed: v2 mobile silently drops `tag: action` blocks,
+    // and v1 buttons trigger code 200340 on click. Question cards default
+    // to typed answers — numbered options inline + a prompt to reply.
     const actionEl = json.elements.find((e: any) => e.tag === 'action');
-    expect(actionEl).toBeDefined();
-    expect(actionEl.actions).toHaveLength(2);
-    expect(actionEl.actions[0].tag).toBe('button');
-    expect(actionEl.actions[0].text.content).toContain('Production');
-    expect(actionEl.actions[0].value).toEqual({
-      action: 'answer_question',
-      toolUseId: 'q1',
-      questionIndex: 0,
-      optionIndex: 0,
-    });
-    expect(actionEl.actions[1].value.optionIndex).toBe(1);
+    expect(actionEl).toBeUndefined();
+    const promptEl = json.elements.find(
+      (e: any) => e.tag === 'markdown' && typeof e.content === 'string' && e.content.includes('请回复数字'),
+    );
+    expect(promptEl).toBeDefined();
   });
 
   it('truncates long content', () => {
@@ -150,6 +197,46 @@ describe('buildCard', () => {
     const json = JSON.parse(buildCard(state));
     const bg = json.elements.find((e: any) => e.tag === 'markdown' && /Background/.test(e.content));
     expect(bg).toBeUndefined();
+  });
+
+  // Regression — keep parity with card-builder-v2: both builders must render
+  // these or /goal and Agent Teams become invisible to users.
+  it('renders 🎯 Goal badge when goalCondition is set (regression)', () => {
+    const state: CardState = {
+      status:        'running',
+      userPrompt:    't',
+      responseText:  '',
+      toolCalls:     [],
+      goalCondition: 'Ship the PR by Friday',
+    };
+    const json = JSON.parse(buildCard(state));
+    const goal = json.elements.find(
+      (e: any) => e.tag === 'markdown' && typeof e.content === 'string' && e.content.includes('🎯'),
+    );
+    expect(goal).toBeDefined();
+    expect(goal.content).toContain('Ship the PR by Friday');
+  });
+
+  it('renders 🧑‍🤝‍🧑 Team panel when teamState has members or tasks (regression)', () => {
+    const state: CardState = {
+      status:       'running',
+      userPrompt:   't',
+      responseText: '',
+      toolCalls:    [],
+      teamState: {
+        name:      'feishu-ux-review',
+        teammates: [{ name: 'ux-researcher', status: 'working', lastSubject: 'audit' }],
+        tasks:     [{ taskId: 't1', subject: 'UX audit', status: 'in_progress', teammate: 'ux-researcher' }],
+      },
+    };
+    const json = JSON.parse(buildCard(state));
+    const team = json.elements.find(
+      (e: any) => e.tag === 'markdown' && typeof e.content === 'string' && /Teammates/.test(e.content),
+    );
+    expect(team).toBeDefined();
+    expect(team.content).toContain('feishu-ux-review');
+    expect(team.content).toContain('ux-researcher');
+    expect(team.content).toContain('UX audit');
   });
 });
 

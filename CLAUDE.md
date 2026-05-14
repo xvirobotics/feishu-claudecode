@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode since there's no terminal for interactive approval.
+MetaBot — A bridge service that connects IM bots (Feishu/Lark) to the Claude Code Agent SDK. Users chat with Claude Code from Feishu (including mobile), with real-time streaming updates via interactive cards. Runs Claude in `bypassPermissions` mode (or `auto` mode when running as root) since there's no terminal for interactive approval.
 
 ## Commands
 
@@ -196,6 +196,58 @@ When `BOTS_CONFIG` is set, `FEISHU_APP_ID` / `FEISHU_APP_SECRET` env vars are ig
 
 Sessions are isolated per `chatId` with no collision between bots since each bot has its own Feishu app and receives only its own messages.
 
+### Persistent Claude Process per Chat (Stage 4 — opt-in)
+
+By default MetaBot spawns a fresh Claude Code subprocess for every user turn and tears it down at the end. This is fine for synchronous chat, but it kills any subagent / Agent Teams teammate / `/background` task / `/goal` multi-turn loop that was still in flight — none of those features can survive between user messages.
+
+**`PersistentClaudeExecutor`** flips this around: one long-lived `query()` call per `chatId`, fed by a never-finished input queue. Teammates spawned in turn 1 are still addressable in turn 17 four hours later. The Stop hook for `/goal` actually starts the next turn. `/background` daemons keep running.
+
+**Architecture** (see `src/engines/claude/persistent-executor.ts` + `src/engines/claude/executor-registry.ts`):
+- One executor per `chatId`, pooled in `ExecutorRegistry`
+- LRU eviction past `maxConcurrent` (default 20 per bot)
+- Idle eviction after `idleTimeoutMs` of silence (default 30 min)
+- Crash recovery: if the SDK stream errors, auto-restart with `resume: <lastSessionId>` (capped at 3 attempts per 5-min window)
+- Per-turn `Query.interrupt()` for cleanly aborting the current turn without killing the process
+- Spontaneous-message routing: teammate / goal / background pings between turns are coalesced (30s window) and posted as fresh "background activity" Feishu cards
+
+**Enable globally** (env, all bots):
+```bash
+METABOT_PERSISTENT_EXECUTOR=true
+METABOT_PERSISTENT_EXECUTOR_IDLE_MS=1800000      # 30 min (optional)
+METABOT_PERSISTENT_EXECUTOR_MAX_CONCURRENT=20    # per bot (optional)
+```
+
+**Enable per-bot** in `bots.json` (overrides the env flag):
+```json
+{
+  "name": "research-bot",
+  "persistentExecutor": {
+    "enabled": true,
+    "idleTimeoutMs": 3600000,
+    "maxConcurrent": 10
+  }
+}
+```
+
+**Observability**: `GET /api/executors` returns a snapshot:
+```json
+{
+  "persistentExecutorEnabled": true,
+  "count": 2,
+  "executors": [
+    { "botName": "metabot", "platform": "feishu", "chatId": "oc_…",
+      "state": "ready", "sessionId": "ba84…", "hasActiveTurn": false,
+      "lastActivityAt": 1747059712000, "idleSec": 84 }
+  ]
+}
+```
+
+**Limitations** (current state):
+- Only the Claude engine — Kimi/Codex still use the legacy spawn path
+- Only `executeQuery` and `executeApiTask` route through the registry; voice mode (`/api/voice`) still uses the legacy path
+- Memory: each persistent process holds 150-300 MB RSS while alive; tune `maxConcurrent` accordingly
+- `/reset` evicts the executor (intentional — clears teammates with the conversation); `/stop` only aborts the current turn
+
 ### MetaMemory Integration
 
 Knowledge persistence is handled by an external **MetaMemory server** (FastAPI + SQLite). The server stores documents as Markdown in a folder tree with full-text search (FTS5).
@@ -344,9 +396,9 @@ This is the step-by-step procedure to configure a Feishu bot for this bridge ser
 
 ### "Error: Claude Code process exited with code 1"
 
-The bot starts but replies with this error when you message it. This means the Agent SDK's subprocess (`claude`) failed to launch properly.
+The bot starts but replies with this error when you message it. This means the Agent SDK's subprocess (`claude`) failed to launch properly. There are two causes:
 
-**Cause**: Claude CLI is not authenticated. The SDK spawns `claude` as a child process — if it has no valid credentials, it exits immediately with code 1.
+**Cause A: Claude CLI is not authenticated.** The SDK spawns `claude` as a child process — if it has no valid credentials, it exits immediately with code 1.
 
 **Fix** (run in a **separate terminal**, not inside Claude Code):
 
@@ -364,6 +416,8 @@ Then restart the service:
 pkill -f "tsx src/index.ts"
 cd /path/to/metabot && npm run dev
 ```
+
+**Cause B: Running as root/sudo.** Claude Code blocks `--dangerously-skip-permissions` under root privileges. Check `pm2 logs metabot` for: `--dangerously-skip-permissions cannot be used with root/sudo privileges`. MetaBot automatically switches to `permissionMode: auto` when it detects root — ensure you're on a version that includes this fix.
 
 ### Service won't connect to Feishu
 
