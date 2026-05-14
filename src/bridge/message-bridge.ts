@@ -28,6 +28,20 @@ import type { SessionRegistry } from '../session/session-registry.js';
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
+
+/**
+ * Default for the persistent-executor pool when no per-bot `persistentExecutor.enabled`
+ * is set. Default: ON (since 2026-05-13). Opt out with
+ * `METABOT_PERSISTENT_EXECUTOR=false` (or `=0`) in the env.
+ *
+ * Pure / side-effect-free / unit-testable — used by both
+ * `MessageBridge.isPersistentExecutorEnabled` and the `/api/executors`
+ * route, so the default flip can't drift between the two.
+ */
+export function resolvePersistentExecutorEnvDefault(envVal: string | undefined): boolean {
+  if (envVal === 'false' || envVal === '0') return false;
+  return true;
+}
 const MAX_QUEUE_SIZE = 5; // max queued messages per chat
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour idle → abort
 /**
@@ -46,23 +60,19 @@ const DEFAULT_IMAGE_TEXT = '请分析这张图片';
 const DEFAULT_FILE_TEXT = '请分析这个文件';
 
 /**
- * Header text shown at the top of a between-turns "agent activity" card.
- * Intentionally avoids the previous "long-running task" phrasing — that
- * read to users as "still running" when in fact the card is emitted at
- * the END of a burst (snippet buffer flushed after 30 s of quiet).
- */
-export const SPONTANEOUS_CARD_HEADER =
-  'Agent activity between turns (background task return, teammate ping, or `/goal` evaluator):';
-
-/**
  * Extract a one-line summary from an SDK stream message for the spontaneous
  * activity card. Returns null if the message has nothing user-readable.
  *
- * Intentionally only handles `assistant` messages — `result` messages would
- * always duplicate the last assistant text block (SDK's `result.result` is a
- * verbatim echo), so including them caused the same content to show up twice
- * in the card with two different prefixes. Don't add a `result` branch back
- * without first verifying the SDK no longer echoes.
+ * Intentionally only handles `assistant` *text* blocks — same UX bet we made
+ * for the main card in PR #268: the user only cares about the agent's
+ * conclusion, not the per-tool play-by-play. `🔧 <ToolName>` lines used to
+ * be included for tool_use blocks but that's the exact intermediate noise
+ * we just hid from the live card; surfacing it on the spontaneous card
+ * would just re-introduce the same complaint between turns.
+ *
+ * Result-type messages are also ignored — SDK's `result.result` is a
+ * verbatim echo of the last assistant text block, so including them caused
+ * the same content to show up twice in the card.
  */
 export function extractSpontaneousSnippet(msg: unknown): string | null {
   const m = msg as { type?: string; message?: { content?: Array<{ type?: string; text?: string; name?: string }> } };
@@ -71,20 +81,36 @@ export function extractSpontaneousSnippet(msg: unknown): string | null {
     if (blk.type === 'text' && blk.text) {
       const trimmed = String(blk.text).trim();
       if (trimmed) return trimmed.slice(0, 400);
-    } else if (blk.type === 'tool_use' && blk.name) {
-      return `🔧 ${blk.name}`;
     }
+    // tool_use blocks intentionally fall through — see docstring above.
   }
   return null;
 }
 
-/** Build the markdown body of a spontaneous activity card from collected snippets. */
+/**
+ * Build the markdown body of a spontaneous activity card from collected
+ * snippets. Shows ONLY the latest snippet (the agent's conclusion of the
+ * burst); if multiple snippets were coalesced, a small footer notes the
+ * count so users know there was more activity if they want to dig into
+ * logs. Mirrors the "show only the final result, hide the play-by-play"
+ * pattern from PR #268's main-card tool indicator.
+ *
+ * No header line in the body — earlier versions prepended an italic
+ * "Agent activity between turns (…)" caption, but users found it long
+ * and visually noisy. The card itself is rendered with the
+ * `agent_activity` status (blue header, "Agent activity" title), which
+ * is enough to tell it apart from a regular "complete" reply card.
+ * Don't re-add a body header without verifying the card-header signal
+ * is no longer sufficient.
+ */
 export function formatSpontaneousCardBody(snippets: string[]): string {
-  return [
-    `_${SPONTANEOUS_CARD_HEADER}_`,
-    '',
-    ...snippets.map((s, i) => `**${i + 1}.** ${s}`),
-  ].join('\n');
+  if (snippets.length === 0) return '';
+  const lines: string[] = [snippets[snippets.length - 1]];
+  if (snippets.length > 1) {
+    lines.push('');
+    lines.push(`_(${snippets.length} events coalesced; showing latest)_`);
+  }
+  return lines.join('\n');
 }
 
 interface PendingBatch {
@@ -102,6 +128,14 @@ interface RunningTask {
   /** Accumulated answers keyed by question header (for multi-question calls) */
   collectedAnswers: Record<string, string>;
   cardMessageId: string;
+  /**
+   * Dedicated card for the currently-displayed AskUserQuestion, sent
+   * SEPARATELY from {@link cardMessageId}. On Feishu this is a Schema 1.0
+   * card because v2 mobile drops button blocks; the main streaming card
+   * stays v2 throughout (Feishu refuses to patch v2 → v1). Cleared after
+   * the question is answered.
+   */
+  questionCardMessageId?: string;
   questionTimeoutId?: ReturnType<typeof setTimeout>;
   processor: StreamProcessor;
   rateLimiter: RateLimiter;
@@ -190,6 +224,36 @@ export class MessageBridge {
     teamState: TeamState;
     snippets: string[];
     timer: ReturnType<typeof setTimeout>;
+  }>();
+  /**
+   * In-flight continuation cards — main-line agent bursts triggered by an
+   * SDK `<task-notification>` injection (background bash returns etc.).
+   * Tracked separately from {@link runningTasks} so user messages can
+   * still queue / be processed normally while a continuation is rendering.
+   */
+  private continuationTasks = new Map<string, {
+    abortController: AbortController;
+    cardMessageId: string;
+    turnId: string;
+  }>();
+  /**
+   * AskUserQuestion calls that fired between turns (no activeTurn in the
+   * executor at the time of the PreToolUse hook). The bridge displays them
+   * as standalone question cards and routes the user's next typed reply
+   * back to {@link PersistentClaudeExecutor.resolveQuestion}.
+   *
+   * Without this, the question text would only appear inside the coalesced
+   * "Agent activity" body and the user's reply would be treated as a fresh
+   * user turn — which then blocks for 6 minutes on the still-hanging hook.
+   *
+   * Single in-flight slot per chatId. If a second between-turn question
+   * fires while one is still pending, the later one wins — the older
+   * resolver hangs until its 6-minute timeout (rare in practice).
+   */
+  private pendingBetweenTurnQuestions = new Map<string, {
+    toolUseId: string;
+    questions: PendingQuestion['questions'];
+    cardMessageId: string;
   }>();
   /** Callback for activity lifecycle events (task started/completed/failed). */
   onActivityEvent?: (event: ActivityEventData) => void;
@@ -335,6 +399,21 @@ export class MessageBridge {
     const task = this.runningTasks.get(chatId);
     if (!task) return;
     if (task.questionTimeoutId) clearTimeout(task.questionTimeoutId);
+    // Finalize any in-flight question card so the user doesn't see buttons
+    // that go nowhere after the task is gone.
+    if (task.questionCardMessageId) {
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
+      void upd(task.questionCardMessageId, {
+        status: 'error',
+        userPrompt: 'Question',
+        responseText: '_Task stopped before answer received_',
+        toolCalls: [],
+        errorMessage: 'Task was stopped',
+      });
+      task.questionCardMessageId = undefined;
+    }
     task.executionHandle.finish();
     task.abortController.abort();
     // Don't delete from runningTasks here — the finally block in executeQuery will
@@ -345,24 +424,30 @@ export class MessageBridge {
   /**
    * Whether the persistent-executor code path is enabled for this bot.
    *
-   * Per-bot config wins over env, so individual bots can opt in/out
-   * independently:
-   *   1. config.persistentExecutor.enabled === true  → on
-   *   2. config.persistentExecutor.enabled === false → off
-   *   3. otherwise: METABOT_PERSISTENT_EXECUTOR=true env → on
-   *   4. otherwise: off
-   *
-   * When enabled, each chatId is backed by a long-lived Claude process
+   * Default: ON. Each chatId is backed by a long-lived Claude process
    * (managed by {@link ExecutorRegistry}) instead of spawning a fresh
-   * process per turn. Benefit: Agent Teams teammates, /goal multi-turn
-   * auto-drive, and /background tasks all survive between user messages.
+   * process per turn. This is required for Agent Teams teammates,
+   * `/goal` multi-turn auto-drive, and `/background` tasks to survive
+   * across user messages — features that the user-facing card UI now
+   * advertises, so turning the persistent executor off silently breaks
+   * what users expect.
+   *
+   * Per-bot config wins over env, so individual bots can opt out without
+   * affecting siblings:
+   *   1. config.persistentExecutor.enabled === false → off
+   *   2. config.persistentExecutor.enabled === true  → on
+   *   3. otherwise: METABOT_PERSISTENT_EXECUTOR=false (or '0') env → off
+   *   4. otherwise: on (the default)
+   *
+   * Was opt-in originally (until 2026-05-13) while we burned through
+   * the team-review P0 blockers; both shipped, telemetry is clean, no
+   * reason to keep new users in the worse default any longer.
    */
   private isPersistentExecutorEnabled(): boolean {
     const cfg = this.config.persistentExecutor;
     if (cfg?.enabled === true) return true;
     if (cfg?.enabled === false) return false;
-    return process.env.METABOT_PERSISTENT_EXECUTOR === 'true'
-        || process.env.METABOT_PERSISTENT_EXECUTOR === '1';
+    return resolvePersistentExecutorEnvDefault(process.env.METABOT_PERSISTENT_EXECUTOR);
   }
 
   /** Lazy-init the registry for the persistent-executor code path. */
@@ -399,6 +484,27 @@ export class MessageBridge {
           clearTimeout(buf.timer);
           void this.flushSpontaneous(chatId);
         }
+        // Abort any in-flight continuation card — its stream is bound to the
+        // executor we're tearing down and will never deliver another message.
+        // The handleContinuationTurn loop will finalize the card to an error
+        // state via its abort-aware fallback.
+        const cont = this.continuationTasks.get(chatId);
+        if (cont) {
+          cont.abortController.abort();
+        }
+        // Between-turn question whose resolver is now dead — flush the
+        // question card to an error state and drop the bookkeeping so the
+        // user's next message isn't intercepted as the answer.
+        const q = this.pendingBetweenTurnQuestions.get(chatId);
+        if (q) {
+          this.pendingBetweenTurnQuestions.delete(chatId);
+          void this.finalizeBetweenTurnQuestionCard(q.cardMessageId, {
+            status: 'error',
+            userPrompt: 'Question',
+            responseText: '_Question canceled — agent session ended._',
+            toolCalls: [],
+          });
+        }
       });
       this.logger.info(
         {
@@ -414,9 +520,16 @@ export class MessageBridge {
   }
 
   /**
-   * Attach a 'spontaneous' handler to the chat's persistent executor. Called
-   * when a new executor is added to the pool. Idempotent — guarded by
+   * Attach event handlers to the chat's persistent executor. Called when a
+   * new executor is added to the pool. Idempotent — guarded by
    * spontaneousSubscribed.
+   *
+   * Wires two channels for between-turn agent output:
+   *   - `spontaneous` — teammate / `/goal` / status pings; coalesced into the
+   *     "Agent activity between turns" card every 30 s.
+   *   - `continuation-turn` — SDK-initiated continuation turn (background
+   *     task settled, agent now replying in main-line). Rendered as a fresh
+   *     streaming card just like a user-prompted turn.
    */
   private attachSpontaneousHandler(chatId: string): void {
     if (this.spontaneousSubscribed.has(chatId)) return;
@@ -426,7 +539,193 @@ export class MessageBridge {
     exec.on('spontaneous', (msg) => {
       this.handleSpontaneousMessage(chatId, msg);
     });
-    this.logger.debug({ chatId }, 'MessageBridge: attached spontaneous handler');
+    exec.on('continuation-turn', (handle) => {
+      // Fire-and-forget — handleContinuationTurn manages its own lifecycle
+      // (card + stream loop + finalize). Errors are logged inside.
+      void this.handleContinuationTurn(chatId, handle as ExecutionHandle);
+    });
+    exec.on('between-turn-question', (payload: {
+      toolUseId: string;
+      questions: PendingQuestion['questions'];
+    }) => {
+      void this.handleBetweenTurnQuestion(chatId, payload);
+    });
+    this.logger.debug({ chatId }, 'MessageBridge: attached executor subscriptions');
+  }
+
+  /**
+   * Surface a between-turn AskUserQuestion as its own card on the chat.
+   * Called from the `between-turn-question` executor event. The user's
+   * next typed reply for this chatId is intercepted in
+   * {@link handleMessage} and routed back via the executor's
+   * {@link PersistentClaudeExecutor.resolveQuestion}.
+   *
+   * Single in-flight slot per chatId — if one is already pending, the
+   * older one is abandoned (its resolver will hang to the SDK's 6-min
+   * timeout, then return empty answers). The older card is marked
+   * "superseded" so the user sees what happened.
+   */
+  private async handleBetweenTurnQuestion(
+    chatId: string,
+    payload: { toolUseId: string; questions: PendingQuestion['questions'] },
+  ): Promise<void> {
+    if (!payload.questions || payload.questions.length === 0) {
+      this.logger.warn({ chatId, toolUseId: payload.toolUseId }, 'between-turn question with no parsed questions; skipping card');
+      return;
+    }
+    const existing = this.pendingBetweenTurnQuestions.get(chatId);
+    if (existing) {
+      this.logger.warn(
+        { chatId, prevToolUseId: existing.toolUseId, newToolUseId: payload.toolUseId },
+        'MessageBridge: between-turn question superseded by newer one',
+      );
+      void this.finalizeBetweenTurnQuestionCard(existing.cardMessageId, {
+        status: 'error',
+        userPrompt: 'Question',
+        responseText: '_Superseded by a newer question._',
+        toolCalls: [],
+      });
+      this.pendingBetweenTurnQuestions.delete(chatId);
+    }
+
+    // Show only the first question on the card (matches runOneTurn — the
+    // bridge surfaces one sub-question at a time, advancing the card on
+    // each typed reply). Multi-question case is logged below; the existing
+    // bridge code path doesn't support advancing between-turn sub-questions
+    // yet, so we route only the first answer and short-circuit the rest.
+    if (payload.questions.length > 1) {
+      this.logger.warn(
+        { chatId, toolUseId: payload.toolUseId, total: payload.questions.length },
+        'between-turn AskUserQuestion has multiple sub-questions; only the first will be displayed and routed',
+      );
+    }
+    const displayQuestion: PendingQuestion = {
+      toolUseId: payload.toolUseId,
+      questions: [payload.questions[0]],
+    };
+
+    const card: CardState = {
+      status: 'waiting_for_input',
+      userPrompt: '(between-turn question)',
+      responseText: '',
+      toolCalls: [],
+      pendingQuestion: displayQuestion,
+    };
+
+    const send = this.sender.sendQuestionCard
+      ? this.sender.sendQuestionCard.bind(this.sender)
+      : this.sender.sendCard.bind(this.sender);
+    let cardMessageId: string | undefined;
+    try {
+      cardMessageId = await send(chatId, card);
+    } catch (err) {
+      this.logger.error({ err, chatId, toolUseId: payload.toolUseId }, 'MessageBridge: failed to send between-turn question card');
+      return;
+    }
+    if (!cardMessageId) {
+      this.logger.warn({ chatId, toolUseId: payload.toolUseId }, 'MessageBridge: between-turn question card returned no messageId');
+      return;
+    }
+
+    this.pendingBetweenTurnQuestions.set(chatId, {
+      toolUseId: payload.toolUseId,
+      questions: payload.questions,
+      cardMessageId,
+    });
+    this.logger.info(
+      { chatId, toolUseId: payload.toolUseId, cardMessageId },
+      'MessageBridge: between-turn question card opened',
+    );
+  }
+
+  /**
+   * Update the dedicated question card after the user answers (or after the
+   * executor is torn down). Uses updateQuestionCard if the sender supports
+   * it, else falls back to updateCard.
+   */
+  private async finalizeBetweenTurnQuestionCard(
+    cardMessageId: string,
+    state: CardState,
+  ): Promise<void> {
+    try {
+      const update = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
+      await update(cardMessageId, state);
+    } catch (err) {
+      this.logger.warn({ err, cardMessageId }, 'MessageBridge: failed to update between-turn question card');
+    }
+  }
+
+  /**
+   * Treat the user's typed reply as the answer to a pending between-turn
+   * question. Routes through {@link PersistentClaudeExecutor.resolveQuestion}
+   * so the AskUserQuestion PreToolUse hook unblocks and the SDK proceeds.
+   * Returns true if the message was consumed as an answer (caller should
+   * NOT continue to executeQuery).
+   */
+  private async tryHandleBetweenTurnQuestionReply(msg: IncomingMessage): Promise<boolean> {
+    const { chatId, text, imageKey } = msg;
+    const pending = this.pendingBetweenTurnQuestions.get(chatId);
+    if (!pending) return false;
+
+    // Image-only reply isn't a valid answer; nudge the user.
+    if (imageKey && !text.trim()) {
+      await this.sender.sendText(chatId, '请用文字回复问题卡片中的选项编号或自定义答案。');
+      return true;
+    }
+
+    const trimmed = text.trim();
+    const firstQ = pending.questions[0];
+    let answerText: string;
+    const num = parseInt(trimmed, 10);
+    if (Number.isFinite(num) && num >= 1 && num <= firstQ.options.length) {
+      answerText = firstQ.options[num - 1].label;
+    } else {
+      answerText = trimmed;
+    }
+
+    const answers: Record<string, string> = { [firstQ.header]: answerText };
+    // For multi-sub-question between-turn calls (rare; logged on arrival),
+    // synthesize empty answers for the rest so the hook still resolves.
+    for (let i = 1; i < pending.questions.length; i++) {
+      answers[pending.questions[i].header] = '';
+    }
+
+    const executor = this.persistentRegistry?.peek(chatId);
+    if (!executor) {
+      this.logger.warn(
+        { chatId, toolUseId: pending.toolUseId },
+        'MessageBridge: between-turn answer arrived but executor is gone; dropping',
+      );
+      this.pendingBetweenTurnQuestions.delete(chatId);
+      await this.finalizeBetweenTurnQuestionCard(pending.cardMessageId, {
+        status: 'error',
+        userPrompt: 'Question',
+        responseText: '_Question canceled — agent session ended._',
+        toolCalls: [],
+      });
+      return true;
+    }
+
+    this.pendingBetweenTurnQuestions.delete(chatId);
+    try {
+      executor.resolveQuestion(pending.toolUseId, answers);
+    } catch (err) {
+      this.logger.error({ err, chatId, toolUseId: pending.toolUseId }, 'MessageBridge: resolveQuestion threw');
+    }
+    this.logger.info(
+      { chatId, toolUseId: pending.toolUseId, answer: answerText },
+      'MessageBridge: resolved between-turn question',
+    );
+
+    await this.finalizeBetweenTurnQuestionCard(pending.cardMessageId, {
+      status: 'complete',
+      userPrompt: 'Question',
+      responseText: `> **Reply:** ${answerText}`,
+      toolCalls: [],
+    });
+    return true;
   }
 
   /**
@@ -467,13 +766,12 @@ export class MessageBridge {
    * "agent activity" Feishu card. No-op if buffer is empty or there's
    * an active user turn (we'd rather merge into the live card than spam).
    *
-   * Card title intentionally avoids the previous "long-running task"
-   * wording — users read that as "agent is still running long-running
-   * work", but the card is in fact emitted at the END of a between-turn
-   * burst (e.g. after a `run_in_background` Bash command's task-notification
-   * triggered the agent to summarize a result). Calling it "agent activity"
-   * + green status lets the user read it as "the agent did this and is now
-   * quiet" — which is the correct signal.
+   * Uses the `agent_activity` status, which renders a blue header with
+   * an "Agent activity" title — that's the entire visual signal that
+   * this is a between-turn burst, not a normal "complete" reply.
+   * Earlier versions used `status: 'complete'` (green) plus an italic
+   * body caption, but users found the caption ugly and the green color
+   * indistinguishable from a regular turn.
    */
   private async flushSpontaneous(chatId: string): Promise<void> {
     const buf = this.spontaneousBuffers.get(chatId);
@@ -488,20 +786,202 @@ export class MessageBridge {
       return;
     }
 
+    // Nothing user-meaningful to surface — buffer might exist because a
+    // teammate ping landed but extractSpontaneousSnippet filtered all of
+    // its blocks (e.g. tool-only burst). Silently skip the card.
+    if (buf.snippets.length === 0) {
+      this.logger.debug({ chatId }, 'MessageBridge: drop spontaneous (no text snippets)');
+      return;
+    }
+
     const responseText = formatSpontaneousCardBody(buf.snippets);
 
     const card: CardState = {
-      status: 'complete',
+      status: 'agent_activity',
       userPrompt: '(agent activity)',
       responseText,
       toolCalls: [],
-      teamState: buf.snippets.length > 0 ? buf.teamState : undefined,
+      teamState: buf.teamState,
     };
     try {
       await this.sender.sendCard(chatId, card);
       this.logger.info({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: sent spontaneous card');
     } catch (err) {
       this.logger.warn({ err, chatId }, 'MessageBridge: failed to send spontaneous card');
+    }
+  }
+
+  /**
+   * Render an SDK-initiated continuation turn as a fresh streaming card —
+   * the same blue → green lifecycle a user-prompted turn produces, NOT the
+   * coalesced "agent activity" card.
+   *
+   * Trigger: a `run_in_background` Bash command (or other deferred tool)
+   * settled, causing the SDK to inject a `<task-notification>` user message;
+   * the persistent executor's consumeLoop classified that burst as
+   * `continuation` and emitted this handle. Semantically the burst is the
+   * main agent continuing its work, so it should look like a normal reply.
+   *
+   * Lifecycle:
+   *   - send initial thinking card
+   *   - stream the handle, updating the card on each delta via RateLimiter
+   *   - finalize via sendFinalCard once a `result` arrives (or the executor
+   *     is torn down — abort flips the card to error)
+   *
+   * Concurrency:
+   *   - tracked in {@link continuationTasks} (NOT {@link runningTasks}), so
+   *     a user message arriving mid-continuation still queues / runs via
+   *     the normal executeQuery path — the two render side-by-side as
+   *     separate cards.
+   *   - at most one continuation card per chatId at a time; if one is
+   *     already in flight, the second arrival is logged and dropped (the
+   *     SDK opens one continuation turn per task-notification burst, so
+   *     overlap is unusual but possible if two background tasks settle
+   *     simultaneously — we accept dropping the second card's chrome since
+   *     the active card's stream still receives that burst's messages).
+   */
+  private async handleContinuationTurn(chatId: string, handle: ExecutionHandle): Promise<void> {
+    if (this.continuationTasks.has(chatId)) {
+      // Rare but possible — log and drain silently so the SDK turn still
+      // terminates. The visible signal is already on the in-flight card.
+      this.logger.warn({ chatId }, 'MessageBridge: continuation turn already in flight — draining new handle');
+      try {
+        for await (const _msg of handle.stream) {
+          // drop
+        }
+      } catch (err) {
+        this.logger.debug({ err, chatId }, 'MessageBridge: drained extra continuation handle');
+      }
+      return;
+    }
+
+    const displayPrompt = '(agent continuation: background task return)';
+    const processor = new StreamProcessor(displayPrompt);
+    const rateLimiter = new RateLimiter(1500);
+    const abortController = new AbortController();
+    const session = this.sessionManager.getSession(chatId);
+    const activeGoal = session.activeGoal;
+
+    const initialState: CardState = {
+      status: 'thinking',
+      userPrompt: displayPrompt,
+      responseText: '',
+      toolCalls: [],
+      goalCondition: activeGoal,
+    };
+
+    const messageId = await this.sender.sendCard(chatId, initialState);
+    if (!messageId) {
+      this.logger.warn({ chatId }, 'MessageBridge: failed to send continuation initial card');
+      // Drain stream so the SDK turn still completes cleanly
+      try { for await (const _msg of handle.stream) { /* drop */ } } catch { /* ignore */ }
+      try { handle.finish(); } catch { /* ignore */ }
+      return;
+    }
+
+    this.continuationTasks.set(chatId, {
+      abortController,
+      cardMessageId: messageId,
+      turnId: (handle as unknown as { turnId?: string }).turnId ?? 'continuation',
+    });
+    this.logger.info({ chatId, messageId }, 'MessageBridge: continuation card opened');
+
+    let lastState: CardState = initialState;
+    const outputsDir = this.outputsManager.prepareDir(chatId);
+    // Set of pending AskUserQuestion toolUseIds we've already surfaced on
+    // this stream — prevents re-sending the question card on every delta
+    // while the same question is still waiting for an answer.
+    const surfacedQuestionIds = new Set<string>();
+
+    try {
+      for await (const message of handle.stream) {
+        if (abortController.signal.aborted) break;
+        const state = processor.processMessage(message);
+        if (activeGoal) state.goalCondition = activeGoal;
+        lastState = state;
+
+        // AskUserQuestion during a continuation turn: route through the
+        // same standalone-question-card path used between turns. The
+        // continuation stream stays open (the SDK hook is awaiting
+        // resolveQuestion) — we just surface the question on its own card
+        // and replace the in-card response with a pointer note. When the
+        // user replies, handleMessage routes the answer via
+        // tryHandleBetweenTurnQuestionReply → executor.resolveQuestion,
+        // which unblocks the hook and the continuation stream continues.
+        if (state.status === 'waiting_for_input' && state.pendingQuestion) {
+          const q = state.pendingQuestion;
+          if (!surfacedQuestionIds.has(q.toolUseId)) {
+            surfacedQuestionIds.add(q.toolUseId);
+            await rateLimiter.flush();
+            // Main card pointer note, mirroring runOneTurn's runtime hint.
+            const hint = '_Waiting for your answer to the question card below…_';
+            const hintedState: CardState = {
+              ...state,
+              pendingQuestion: undefined,
+              responseText: state.responseText
+                ? state.responseText + '\n\n' + hint
+                : hint,
+            };
+            try {
+              await this.sender.updateCard(messageId, hintedState);
+            } catch (err) {
+              this.logger.warn({ err, chatId }, 'MessageBridge: continuation hint update failed');
+            }
+            // Surface the question on its own card via the shared between-
+            // turn pipeline. Re-uses pendingBetweenTurnQuestions bookkeeping
+            // so handleMessage's reply-interception path Just Works.
+            await this.handleBetweenTurnQuestion(chatId, {
+              toolUseId: q.toolUseId,
+              questions: q.questions,
+            });
+          }
+          continue;
+        }
+
+        if (state.status === 'complete' || state.status === 'error') break;
+        rateLimiter.schedule(() => {
+          if (!abortController.signal.aborted) {
+            this.sender.updateCard(messageId, state);
+          }
+        });
+      }
+      await rateLimiter.cancelAndWait();
+
+      if (lastState.status !== 'complete' && lastState.status !== 'error') {
+        if (abortController.signal.aborted) {
+          lastState = { ...lastState, status: 'error', errorMessage: 'Continuation interrupted (executor released)' };
+        } else if (lastState.responseText) {
+          lastState = { ...lastState, status: 'complete' };
+        } else {
+          lastState = { ...lastState, status: 'error', errorMessage: 'Continuation ended unexpectedly' };
+        }
+      }
+
+      await this.sendFinalCard(messageId, lastState, chatId);
+      // Intentionally NO sendCompletionNotice here. Continuation turns are
+      // between-turn agent activity the user didn't initiate — the card
+      // itself (blue → green lifecycle, complete with timestamps in the
+      // footer) is enough signal. A separate "✅ Done" push for every
+      // background-task return would be noise; the user only opted into
+      // pushes for the work they explicitly asked for.
+      // Output files still get sent — agent may have produced artifacts
+      // in the bash background task whose summary triggered this.
+      await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
+    } catch (err: any) {
+      this.logger.error({ err, chatId }, 'MessageBridge: continuation stream errored');
+      const errorState: CardState = {
+        ...lastState,
+        status: 'error',
+        errorMessage: err?.message || 'Continuation failed',
+      };
+      try { await rateLimiter.cancelAndWait(); } catch { /* ignore */ }
+      try { await this.sendFinalCard(messageId, errorState, chatId); } catch { /* ignore */ }
+    } finally {
+      try { handle.finish(); } catch { /* ignore */ }
+      if (this.continuationTasks.get(chatId)?.cardMessageId === messageId) {
+        this.continuationTasks.delete(chatId);
+      }
+      try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
   }
 
@@ -787,6 +1267,18 @@ export class MessageBridge {
       return;
     }
 
+    // Between-turn AskUserQuestion reply — must run BEFORE the
+    // running-task / queue branches below, because no `runningTasks` entry
+    // exists for between-turn questions (they fire from the persistent
+    // executor outside of any user-initiated turn). If we let the message
+    // fall through, it would spawn a fresh turn that immediately blocks on
+    // the still-hanging hook for 6 minutes. See:
+    // [[bug_feishu_v2_mobile_action_buttons]] history and
+    // PersistentClaudeExecutor.askUserQuestionHook.
+    if (await this.tryHandleBetweenTurnQuestionReply(msg)) {
+      return;
+    }
+
     // Check if there's a pending question waiting for an answer
     const task = this.runningTasks.get(chatId);
     if (task && task.pendingQuestion) {
@@ -895,6 +1387,29 @@ export class MessageBridge {
       'User answered question',
     );
 
+    // Helper: render the dedicated question card. The question card lives
+    // independent of the main streaming card (Feishu v1 vs v2 schemas can't
+    // patch each other), so all answer-stage rendering goes through this
+    // path, not updateCard. Stays minimal: just header + question + buttons.
+    //
+    // Bind `this.sender` on both the question-card path AND the fallback,
+    // otherwise calling the plucked method later loses its `this` and the
+    // inner `this.sender.sendCard(...)` blows up with "Cannot read
+    // properties of undefined (reading 'sender')".
+    const updateQ = async (qState: CardState): Promise<void> => {
+      if (!task.questionCardMessageId) return;
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
+      await upd(task.questionCardMessageId, qState);
+    };
+    const sendQ = async (qState: CardState): Promise<string | undefined> => {
+      const fn = this.sender.sendQuestionCard
+        ? this.sender.sendQuestionCard.bind(this.sender)
+        : this.sender.sendCard.bind(this.sender);
+      return fn(chatId, qState);
+    };
+
     // Check if more questions remain in this AskUserQuestion call
     if (task.currentQuestionIndex + 1 < pending.questions.length) {
       task.currentQuestionIndex++;
@@ -906,20 +1421,18 @@ export class MessageBridge {
         this.autoAnswerRemainingQuestions(task);
       }, QUESTION_TIMEOUT_MS);
 
-      // Update card to show next question
-      const currentState = task.processor.getCurrentState();
+      // Update the dedicated question card to the next sub-question
       const nextQ = pending.questions[task.currentQuestionIndex];
       const displayQuestion: PendingQuestion = {
         toolUseId: pending.toolUseId,
         questions: [nextQ],
       };
       const progress = `(${task.currentQuestionIndex + 1}/${pending.questions.length})`;
-      await this.sender.updateCard(task.cardMessageId, {
-        ...currentState,
+      await updateQ({
         status: 'waiting_for_input',
-        responseText: currentState.responseText
-          ? currentState.responseText + `\n\n> **Reply ${progress}:** ${answerText}`
-          : `> **Reply:** ${answerText}`,
+        userPrompt: `Question ${progress}`,
+        responseText: `> **Reply:** ${answerText}`,
+        toolCalls: [],
         pendingQuestion: displayQuestion,
       });
       return;
@@ -940,19 +1453,31 @@ export class MessageBridge {
     task.collectedAnswers = {};
     task.processor.clearPendingQuestion();
 
+    // Finalize the dedicated question card — strip buttons, show what was picked.
+    const answerSummary = Object.values(collectedAnswers).length > 0
+      ? Object.values(collectedAnswers).join(', ')
+      : answerText;
+    await updateQ({
+      status: 'complete',
+      userPrompt: 'Question',
+      responseText: `> **Reply:** ${answerSummary}`,
+      toolCalls: [],
+    });
+    task.questionCardMessageId = undefined;
+
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
 
     this.logger.info({ chatId, answers: collectedAnswers, toolUseId: pending.toolUseId }, 'Resolved AskUserQuestion hook with collected answers');
 
-    // Check if there are more queued AskUserQuestion calls
+    // Check if there are more queued AskUserQuestion calls (back-to-back
+    // AskUserQuestion tool_uses in one assistant turn). Each call gets its
+    // own fresh question card.
     const nextPending = task.processor.getPendingQuestion();
     if (nextPending) {
       task.pendingQuestion = nextPending;
       task.currentQuestionIndex = 0;
       task.collectedAnswers = {};
 
-      // Show next question call
-      const currentState = task.processor.getCurrentState();
       const displayQuestion: PendingQuestion = {
         toolUseId: nextPending.toolUseId,
         questions: [nextPending.questions[0]],
@@ -962,21 +1487,18 @@ export class MessageBridge {
         this.autoAnswerRemainingQuestions(task);
       }, QUESTION_TIMEOUT_MS);
 
-      await this.sender.updateCard(task.cardMessageId, {
-        ...currentState,
+      const newQId = await sendQ({
         status: 'waiting_for_input',
-        responseText: currentState.responseText
-          ? currentState.responseText + `\n\n> **Reply:** ${answerText}\n\n_Next question${progress}..._`
-          : `> **Reply:** ${answerText}\n\n_Next question${progress}..._`,
+        userPrompt: progress ? `Question${progress}` : 'Question',
+        responseText: '',
+        toolCalls: [],
         pendingQuestion: displayQuestion,
       });
+      if (newQId) task.questionCardMessageId = newQId;
       return;
     }
 
-    // No more questions — resume normal execution
-    const answerSummary = Object.values(task.collectedAnswers).length > 0
-      ? Object.values(task.collectedAnswers).join(', ')
-      : answerText;
+    // No more questions — bump the main streaming card so it visibly resumes.
     const currentState = task.processor.getCurrentState();
     await this.sender.updateCard(task.cardMessageId, {
       ...currentState,
@@ -1007,6 +1529,22 @@ export class MessageBridge {
     task.currentQuestionIndex = 0;
     task.collectedAnswers = {};
     task.processor.clearPendingQuestion();
+
+    // Finalize the dedicated question card to "(timed out)" — fire-and-forget,
+    // resolveQuestion below doesn't depend on this completing.
+    if (task.questionCardMessageId) {
+      const upd = this.sender.updateQuestionCard
+        ? this.sender.updateQuestionCard.bind(this.sender)
+        : this.sender.updateCard.bind(this.sender);
+      void upd(task.questionCardMessageId, {
+        status: 'error',
+        userPrompt: 'Question',
+        responseText: '_用户未及时回复，已自动跳过_',
+        toolCalls: [],
+        errorMessage: 'Timed out waiting for answer',
+      });
+      task.questionCardMessageId = undefined;
+    }
 
     task.executionHandle.resolveQuestion(pending.toolUseId, collectedAnswers);
   }
@@ -1274,17 +1812,23 @@ export class MessageBridge {
 
         // Check if we hit a waiting_for_input state
         if (state.status === 'waiting_for_input' && state.pendingQuestion) {
-          // Only initialize tracking when we see a NEW question call
-          if (!runningTask.pendingQuestion || runningTask.pendingQuestion.toolUseId !== state.pendingQuestion.toolUseId) {
+          // Only initialize tracking when we see a NEW question call (different toolUseId).
+          // Multi-question calls (same toolUseId, advance currentQuestionIndex) reuse the
+          // already-sent question card via updateQuestionCard below.
+          const isNewQuestionCall =
+            !runningTask.pendingQuestion ||
+            runningTask.pendingQuestion.toolUseId !== state.pendingQuestion.toolUseId;
+          if (isNewQuestionCall) {
             runningTask.pendingQuestion = state.pendingQuestion;
             runningTask.currentQuestionIndex = 0;
             runningTask.collectedAnswers = {};
+            runningTask.questionCardMessageId = undefined; // a fresh question card will be sent
           }
 
           await rateLimiter.flush();
 
-          // Show only the current question (not all at once)
-          const pending = runningTask.pendingQuestion;
+          // Non-null after the isNewQuestionCall branch assigned it (or it was already set)
+          const pending = runningTask.pendingQuestion!;
           const currentQ = pending.questions[runningTask.currentQuestionIndex];
           const displayQuestion: PendingQuestion = {
             toolUseId: pending.toolUseId,
@@ -1293,14 +1837,59 @@ export class MessageBridge {
           const progress = pending.questions.length > 1
             ? ` (${runningTask.currentQuestionIndex + 1}/${pending.questions.length})`
             : '';
+
+          // 1) Update the MAIN streaming card without the pendingQuestion field,
+          //    so it stays clean v2 (Feishu refuses to patch v2 ↔ v1, and v2
+          //    mobile silently drops the button block anyway). Show only a
+          //    pointer note in the response so the user knows where to look.
+          const mainCardHint = progress
+            ? `_Waiting for your answer to the question card${progress} below…_`
+            : '_Waiting for your answer to the question card below…_';
           await this.sender.updateCard(messageId, {
             ...state,
-            pendingQuestion: displayQuestion,
-            // Append progress indicator to response if multi-question
-            responseText: progress
-              ? (state.responseText || '') + (state.responseText ? '\n\n' : '') + `_Question${progress}_`
-              : state.responseText,
+            pendingQuestion: undefined,
+            responseText: state.responseText
+              ? state.responseText + '\n\n' + mainCardHint
+              : mainCardHint,
           });
+
+          // 2) Send / update a DEDICATED question card (v1 on Feishu) — this is
+          //    where the option buttons live. See memory:
+          //    bug-feishu-v2-mobile-action-buttons.
+          const questionCardState: CardState = {
+            status: 'waiting_for_input',
+            userPrompt: progress ? `Question${progress}` : 'Question',
+            responseText: '',
+            toolCalls: [],
+            pendingQuestion: displayQuestion,
+          };
+          if (runningTask.questionCardMessageId && this.sender.updateQuestionCard) {
+            await this.sender.updateQuestionCard(runningTask.questionCardMessageId, questionCardState);
+          } else {
+            // Bind explicitly — `this.sender.sendQuestionCard ?? ...bind(...)`
+            // would pluck the method off without `this`, and calling it
+            // later throws "Cannot read properties of undefined (reading
+            // 'sender')" inside the Feishu adapter.
+            const sendQ = this.sender.sendQuestionCard
+              ? this.sender.sendQuestionCard.bind(this.sender)
+              : this.sender.sendCard.bind(this.sender);
+            const qMsgId = await sendQ(chatId, questionCardState);
+            if (qMsgId) {
+              runningTask.questionCardMessageId = qMsgId;
+            } else {
+              // Sender refused. Fall back to the legacy in-card render so the
+              // user still sees the question (even if mobile renders without
+              // buttons — text fallback "type the number" still works).
+              this.logger.warn({ chatId }, 'sendQuestionCard returned no messageId; falling back to inline render');
+              await this.sender.updateCard(messageId, {
+                ...state,
+                pendingQuestion: displayQuestion,
+                responseText: progress
+                  ? (state.responseText || '') + (state.responseText ? '\n\n' : '') + `_Question${progress}_`
+                  : state.responseText,
+              });
+            }
+          }
 
           // Set/reset timeout for auto-answer
           if (runningTask.questionTimeoutId) {
@@ -2021,41 +2610,33 @@ export class MessageBridge {
     }
   }
 
+  /**
+   * Send a separate text message after the card update so the user gets a
+   * mobile push notification when a long task finishes. Card edits don't
+   * trigger Feishu push, but text messages do.
+   *
+   * Body is intentionally a single emoji + word (`✅ Done` / `❌ Failed`)
+   * — duration, cost, model, and context-usage all live in the card's grey
+   * footer already, so repeating them here just made the push banner
+   * harder to read at a glance. Don't re-add stats without first
+   * confirming the card footer is unreachable on the surface this push
+   * lands on.
+   *
+   * Skipped for:
+   *   - durations under 10s (the user is almost certainly still looking
+   *     at the screen and doesn't need a push for those)
+   *   - senders that route the final response as its own message
+   *     already (WeChat — `skipCompletionNotice`)
+   *   - continuation turns (between-turn agent activity); see the
+   *     handleContinuationTurn call site for the rationale.
+   */
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
-    // Some senders (WeChat) already send the final response as a standalone message, so skip
     if (this.sender.skipCompletionNotice) return;
-    // Only notify for tasks that took a while — quick tasks don't need it
     if (durationMs < 10_000) return;
 
     const statusEmoji = state.status === 'complete' ? '✅' : '❌';
-    const durationStr = durationMs >= 60_000
-      ? `${(durationMs / 60_000).toFixed(1)}min`
-      : `${(durationMs / 1000).toFixed(0)}s`;
-    const costStr = state.sessionCostUsd ? ` · $${state.sessionCostUsd.toFixed(2)}` : (state.costUsd ? ` · $${state.costUsd.toFixed(2)}` : '');
-    const statusWord = state.status === 'complete' ? 'Done' : 'Failed';
-
-    // Model display name: strip "claude-" prefix for brevity (e.g. "opus-4-7")
-    const modelStr = state.model
-      ? ` · ${state.model.replace(/^claude-/, '')}`
-      : '';
-
-    // Context usage: show totalTokens / contextWindow as percentage
-    let usageStr = '';
-    if (state.totalTokens && state.contextWindow) {
-      const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
-      const tokensK = state.totalTokens >= 1000
-        ? `${(state.totalTokens / 1000).toFixed(1)}k`
-        : `${state.totalTokens}`;
-      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      usageStr = ` · ${tokensK}/${ctxK} (${pct}%)`;
-    } else if (state.totalTokens) {
-      const tokensK = state.totalTokens >= 1000
-        ? `${(state.totalTokens / 1000).toFixed(1)}k`
-        : `${state.totalTokens}`;
-      usageStr = ` · ${tokensK} tokens`;
-    }
-
-    const message = `${statusEmoji} ${statusWord} (${durationStr}${costStr}${modelStr}${usageStr})`;
+    const statusWord  = state.status === 'complete' ? 'Done' : 'Failed';
+    const message     = `${statusEmoji} ${statusWord}`;
 
     try {
       await this.sender.sendText(chatId, message);
@@ -2078,6 +2659,13 @@ export class MessageBridge {
       this.logger.info({ chatId }, 'Aborted running task during shutdown');
     }
     this.runningTasks.clear();
+    // Abort any in-flight continuation cards too — their executors are
+    // about to be torn down by shutdownAll below.
+    for (const [chatId, cont] of this.continuationTasks) {
+      cont.abortController.abort();
+      this.logger.info({ chatId }, 'Aborted continuation task during shutdown');
+    }
+    this.continuationTasks.clear();
     this.sessionManager.destroy();
     // Tear down persistent executors (Stage 2). Fire-and-forget so destroy()
     // stays sync — registry.shutdownAll waits for clean SDK process exit

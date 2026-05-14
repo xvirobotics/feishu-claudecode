@@ -11,11 +11,12 @@ import { shouldBypassProxy } from '../utils/http.js';
 const MAX_MESSAGE_LENGTH = 4096;
 
 const STATUS_EMOJI: Record<CardStatus, string> = {
-  thinking: '\u{1F535}',      // 🔵
-  running: '\u{1F535}',       // 🔵
-  complete: '\u{1F7E2}',      // 🟢
-  error: '\u{1F534}',         // 🔴
+  thinking: '\u{1F535}',          // 🔵
+  running: '\u{1F535}',           // 🔵
+  complete: '\u{1F7E2}',          // 🟢
+  error: '\u{1F534}',             // 🔴
   waiting_for_input: '\u{1F7E1}', // 🟡
+  agent_activity: '\u{1F535}',    // 🔵 — between-turn burst, see message-bridge.flushSpontaneous
 };
 
 const STATUS_LABEL: Record<CardStatus, string> = {
@@ -24,6 +25,7 @@ const STATUS_LABEL: Record<CardStatus, string> = {
   complete: 'Complete',
   error: 'Error',
   waiting_for_input: 'Waiting for Input',
+  agent_activity: 'Agent activity',
 };
 
 /**
@@ -39,12 +41,20 @@ function renderCardHtml(state: CardState): string {
   parts.push(`${emoji} <b>${escapeHtml(label)}</b>`);
   parts.push('');
 
-  // Tool calls
-  if (state.toolCalls.length > 0) {
-    for (const t of state.toolCalls) {
-      const icon = t.status === 'running' ? '\u{23F3}' : '\u{2705}'; // ⏳ / ✅
-      parts.push(`${icon} <b>${escapeHtml(t.name)}</b> ${escapeHtml(t.detail)}`);
-    }
+  // Tool calls indicator — single line, hidden on complete/error.
+  // Users only care about the final answer; the running tool list was just
+  // noise. We keep ONE line while in flight so a hung run still looks alive,
+  // and drop the section entirely once the turn finishes. Matches the
+  // Feishu card-builder treatment.
+  if (
+    state.toolCalls.length > 0 &&
+    state.status !== 'complete' &&
+    state.status !== 'error'
+  ) {
+    const last = state.toolCalls[state.toolCalls.length - 1];
+    const icon = last.status === 'running' ? '\u{23F3}' : '\u{2705}'; // ⏳ / ✅
+    const total = state.toolCalls.length;
+    parts.push(`${icon} <b>${escapeHtml(last.name)}</b> · ${total} tool${total > 1 ? 's' : ''}`);
     parts.push('---');
   }
 

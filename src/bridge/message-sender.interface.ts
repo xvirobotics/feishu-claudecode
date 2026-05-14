@@ -11,6 +11,29 @@ export interface IMessageSender {
   /** Update an existing streaming card/message with new CardState. Returns false on failure. */
   updateCard(messageId: string, state: CardState): Promise<boolean>;
 
+  /**
+   * Send a dedicated interactive question card for an AskUserQuestion call.
+   * The state's `pendingQuestion` field carries the options/buttons.
+   *
+   * Why a separate method (not just sendCard with pendingQuestion):
+   *   - On Feishu, Card Schema 2.0 has a mobile-App render bug — `tag: action`
+   *     button blocks are silently dropped on iOS/Android, so AskUserQuestion
+   *     options become invisible. The Feishu adapter forces Schema 1.0 for
+   *     question cards (v1 buttons are verified working on mobile).
+   *   - On Telegram (and future platforms), this is the natural hook for
+   *     inline-keyboard rendering — also conceptually distinct from a
+   *     streaming "thinking" card.
+   *
+   * Optional: platforms without a special path may omit; bridge falls back
+   * to sendCard / updateCard.
+   *
+   * See memory: bug-feishu-v2-mobile-action-buttons.
+   */
+  sendQuestionCard?(chatId: string, state: CardState): Promise<string | undefined>;
+
+  /** Update an existing question card with new CardState (e.g., mark answered). */
+  updateQuestionCard?(messageId: string, state: CardState): Promise<boolean>;
+
   /** Send a simple notice message (for command responses: /help, /reset, /stop, etc.). */
   sendTextNotice(chatId: string, title: string, content: string, color?: string): Promise<void>;
 

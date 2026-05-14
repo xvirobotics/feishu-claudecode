@@ -67,7 +67,7 @@ MetaBot 不是只绑定一家 — 三大顶级 AI 编码 Agent 都内置原生�
 { "name": "vegeta", "engine": "codex", "codex": { "model": "gpt-5.4-codex" } }
 ```
 
-Codex 支持通过本机 `codex exec --json` CLI 接入，并使用 `codex exec resume` 续接聊天会话。启动 MetaBot 前，请先执行 `codex login` 或配置好 Codex API key/profile。MetaBot 会把 `/metaskill ...` 等飞书 slash skill 调用转成 Codex 的 `$metaskill ...` 显式技能调用。
+Codex 支持通过本机 `codex exec --json` CLI 接入，并使用 `codex exec resume` 续接聊天会话。启动 MetaBot 前，请先执行 `codex login` 或配置好 Codex API key/profile。MetaBot 会把飞书侧的 `/<skill-name> ...` 调用统一转成 Codex 的 `$<skill-name> ...` 显式技能调用（例如安装了 `/metaschedule` 后，Codex 会收到 `$metaschedule ...`）。
 
 ### Codex 迁移：复用 `.claude` 配置
 
@@ -114,7 +114,7 @@ Claude/Kimi 和 Codex 的发现路径不同。MetaBot 安装、更新和 Skill H
 | **代码能力** | 完整 Agent SDK（Read/Write/Edit/Bash/MCP） | 完整 | 无 |
 | **多 Agent** | Agent 总线 + 任务委派 + 运行时创建 | 单会话 | 有，但封闭生态 |
 | **共享记忆** | MetaMemory 全文搜索 + 自动同步飞书知识库 | 无 | 无 |
-| **定时任务** | Cron 调度，跨重启持久化 | 无 | 有 |
+| **定时任务** | CC 原生 `CronCreate` / `/loop` 即开即用，可选 `/metaschedule` 跨重启持久化 | 仅原生 `CronCreate` / `/loop` | 有 |
 | **自主运行** | bypassPermissions / yoloMode，全自动 | 需要人工确认 | 受限于 workflow |
 | **开源** | MIT，完全可控 | CLI 开源 | 闭源 SaaS |
 
@@ -128,9 +128,9 @@ Claude/Kimi 和 Codex 的发现路径不同。MetaBot 安装、更新和 Skill H
                                             └─→ Codex CLI（codex exec --json 子进程）
                               ↕
                     MetaMemory（共享知识库）
-                    MetaSkill（Agent 工厂，产出 CLAUDE.md + AGENTS.md）
-                    定时调度器（Cron 任务）
+                    定时调度（CC 原生 CronCreate / /loop；可选 /metaschedule 持久化）
                     Agent 总线（跨 Bot 通信，引擎无关）
+                    Agent 工厂（可选 /metaskill，按需安装）
 ```
 
 引擎层已抽象 —— Kimi 事件流和 Codex JSONL 都被翻译成 Claude 形状的 `SDKMessage`，流式卡片、工具调用追踪、MetaMemory/调度/Agent 总线在三种引擎下表现一致。
@@ -149,7 +149,7 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 |------|------|------|
 | **受监督** | IM Bridge | 实时流式卡片展示每一步工具调用。人类看到 Agent 做的一切 |
 | **自我进化** | MetaMemory | 共享知识库。Agent 写入学到的东西，其他 Agent 检索引用 |
-| **Agent 组织** | MetaSkill + 调度器 + Agent 总线 | 一个命令生成完整 Agent 团队。Agent 互相委派任务、创建新 Agent |
+| **Agent 组织** | Agent 总线 + CC 原生调度（可选 MetaSkill / MetaSchedule） | Agent 互相委派任务、按需创建新 Agent；用 CC 内置 `CronCreate` / `/loop` 即可定时；要跨重启可装可选 `/metaschedule` |
 
 ## Web UI
 
@@ -175,11 +175,14 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 | 组件 | 一句话说明 |
 |------|-----------|
 | **三引擎内核** | 每个 Bot 独立选 Claude Code / Kimi Code / Codex CLI — 完整工具链（Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP），自主模式运行 |
-| **MetaSkill** | Agent 工厂。`/metaskill` 一键生成可迁移的 Agent 团队（`CLAUDE.md` / `AGENTS.md` + skills） |
+| **常驻会话与目标循环** | 每个会话一个常驻 Claude 进程 — `/goal` 让 Agent 在多轮之间持续自驱直到目标达成；团队成员和后台任务跨轮存活 |
+| **Agent 团队（运行时）** | 主导 Agent 并行派遣专家队友，互相路由任务、汇总结果 —— 全部在一个飞书会话中完成 |
+| **CC 原生调度** | 直接用 Claude Code 内置的 `CronCreate` / `/loop` —— 即开即用，会话内最简单 |
 | **MetaMemory** | 内嵌 SQLite 知识库，全文搜索，Web UI，变更自动同步到飞书知识库 |
 | **IM Bridge** | 飞书、Telegram、微信（含手机端）对话任意 Agent，流式卡片 + 工具调用追踪 |
 | **Agent 总线** | Agent 通过 `mb talk` 互相对话，运行时创建/删除 Bot |
-| **定时调度器** | Cron 周期任务 + 一次性延迟任务，跨重启持久化，忙时自动重试 |
+| **MetaSchedule（可选）** | 跨重启的服务端定时调度器，Cron + 一次性延迟，HTTP API + `mb schedule` CLI。默认不装，按需 `cp src/skills/metaschedule/SKILL.md` 启用 |
+| **MetaSkill（可选）** | Agent 工厂。`/metaskill` 一键生成可迁移的 Agent 团队。默认不装，按需 `cp src/skills/metaskill/` 启用 |
 | **飞书 Lark CLI** | 200+ 命令覆盖文档、消息、日历、任务等 11 大业务域，19 个 AI Agent Skills |
 | **Skill Hub** | 跨实例技能共享注册中心。`mb skills` 发布、发现、安装技能，FTS5 全文搜索 |
 | **Peers 联邦** | 跨实例 Bot 发现和任务路由，`mb talk alice/backend-bot` 自动路由 |
@@ -223,22 +226,45 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 搜索一下 MetaMemory 里有没有关于 API 设计规范的文档。
 ```
 
-### MetaSkill — Agent 工厂
+### 定时任务（Claude Code 原生）
+
+直接用 CC 内置的 `CronCreate` 和 `/loop`，会话内即开即用：
 
 ```
-/metaskill 给这个 React Native 项目创建一个 agent 团队 ——
-我需要一个前端专家、一个后端 API 专家、一个 code reviewer。
-```
-
-### 定时任务
-
-```
-设一个每天早上9点的定时任务：搜索 Hacker News 和 TechCrunch 的 AI 新闻，
+设个每天早上9点的定时任务：搜索 Hacker News 和 TechCrunch 的 AI 新闻，
 总结 Top 5，保存到 MetaMemory。
 ```
 
 ```
-设一个每周一早上8点的任务：review 上周的 git commit，生成进度报告。
+/loop 每隔 5 分钟检查一下 PR #123 的 CI 状态，跑完为止
+```
+
+> 想跨重启活下来、其他 Bot 也能看到/取消？装可选的 `/metaschedule` skill
+> （`cp src/skills/metaschedule/SKILL.md ~/.claude/skills/metaschedule/`），
+> 就能用 `mb schedule cron` / HTTP API 提交到 MetaBot 服务端调度器。
+
+### Agent 团队 — 运行时协作
+
+```
+你来当主导工程师。并行派出一个前端专家和一个后端专家：
+前端负责 React UI 改造，后端加上新的 /api/reports 接口，
+你负责 review 两边的 PR，全部通过后再合并。
+```
+
+### 目标循环
+
+```
+/goal PR #123 的 CI 全绿、部署成功。
+每 10 分钟检查一次，搞定后告诉我。
+```
+
+### MetaSkill — Agent 工厂（可选）
+
+`/metaskill` 默认不装。先启用：`cp -r src/skills/metaskill ~/.claude/skills/`，然后：
+
+```
+/metaskill 给这个 React Native 项目创建一个 agent 团队 ——
+我需要一个前端专家、一个后端 API 专家、一个 code reviewer。
 ```
 
 ### Agent-to-Agent 协作
@@ -260,7 +286,8 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 ```
 
 ```
-/metaskill 创建一个 "daily-ops" agent，每天早上8点自动运行：
+（先 cp src/skills/metaskill 到 ~/.claude/skills/ 以启用 /metaskill）
+/metaskill 创建一个 "daily-ops" agent，让它每天早上8点跑：
 检查服务健康状态、review 昨晚的错误日志、发一份运维摘要。
 ```
 
@@ -396,15 +423,16 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `/reset` | 清除会话 |
 | `/stop` | 中止当前任务 |
 | `/status` | 查看会话状态（含当前模型） |
+| `/goal <条件>` | 设置目标，Agent 跨多轮持续推进直到达成。`/goal clear` 停止 |
 | `/model` | 查看当前模型；`/model list` 查看可用模型；`/model <name>` 切换；`/model reset` 恢复默认 |
 | `/memory list` | 浏览知识库目录 |
 | `/memory search 关键词` | 搜索知识库 |
 | `/sync` | 同步 MetaMemory 到飞书知识库 |
-| `/metaskill ...` | 生成 Agent 团队、Agent 或 Skill |
+| `/metaskill ...` | 生成 Agent 团队、Agent 或 Skill（可选 skill，默认不装） |
 | `/help` | 帮助 |
 
 > **模型切换**：每个会话可独立设置模型。在模型名后加 `[1m]` 可启用 1M 上下文窗口（仅 Opus 4.7/4.6、Sonnet 4.6 支持），例如 `/model claude-opus-4-7[1m]`。OAuth/Pro-Max 登录用户 SDK 会丢弃 beta flag，`[1m]` 后缀是唯一可靠的 1M 开启方式。
-> **Codex Skill 调用**：飞书里仍然可以发 `/metaskill ...`。当当前会话是 Codex 引擎时，MetaBot 会自动转换为 Codex 识别的 `$metaskill ...`。
+> **Codex Skill 调用**：飞书里发的 `/<skill> ...` 在 Codex 会话下会被 MetaBot 自动改写成 `$<skill> ...`，例如 `$metaschedule ...`。
 
 <details>
 <summary><strong>API 参考</strong></summary>
@@ -453,9 +481,12 @@ mm folders                          # 文件夹树
 # Agent 总线
 mb bots                             # 列出所有 Bot
 mb talk <bot> <chatId> <prompt>     # 与 Bot 对话
-mb schedule list                    # 列出定时任务
-mb schedule cron <bot> <chatId> '<cron>' <prompt>  # 创建周期性任务
 mb stats                            # 费用和使用统计
+
+# 定时任务 — 推荐 CC 原生：直接在 Claude Code 里用 CronCreate / /loop。
+# 跨重启的服务端调度（mb schedule list / cron / cancel / pause / resume）
+# 由可选 /metaschedule skill 提供，按需安装：
+#   cp src/skills/metaschedule/SKILL.md ~/.claude/skills/metaschedule/
 
 # 飞书 Lark CLI（飞书 Bot 专属）
 lark-cli docs +fetch --doc <飞书链接>

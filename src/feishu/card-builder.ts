@@ -15,6 +15,10 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
   complete: { color: 'green', title: 'Complete', icon: '🟢' },
   error: { color: 'red', title: 'Error', icon: '🔴' },
   waiting_for_input: { color: 'yellow', title: 'Waiting for Input', icon: '🟡' },
+  // Blue with a distinct title so users can tell a between-turn burst card
+  // apart from both a live "running" turn and a finished "complete" reply
+  // without reading body text. See message-bridge.flushSpontaneous.
+  agent_activity: { color: 'blue', title: 'Agent activity', icon: '🔵' },
 };
 
 const BG_ICON: Record<'running' | 'completed' | 'failed' | 'stopped', string> = {
@@ -92,15 +96,21 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
-  // Tool calls section
-  if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
-      const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
+  // Tool calls indicator — single line, no per-tool list. See the v2 builder
+  // for the rationale (users only care about the final answer; the running
+  // tool list was noise). One line while in flight so a hung run is visibly
+  // hung; section disappears entirely on complete/error.
+  if (
+    state.toolCalls.length > 0 &&
+    state.status !== 'complete' &&
+    state.status !== 'error'
+  ) {
+    const last  = state.toolCalls[state.toolCalls.length - 1];
+    const icon  = last.status === 'running' ? '⏳' : '✅';
+    const total = state.toolCalls.length;
     elements.push({
       tag: 'markdown',
-      content: toolLines.join('\n'),
+      content: `${icon} **${last.name}** · ${total} tool${total > 1 ? 's' : ''}`,
     });
     elements.push({ tag: 'hr' });
   }
@@ -134,11 +144,20 @@ export function buildCard(state: CardState): string {
     });
   }
 
-  // Pending question section — interactive buttons + text-fallback hint
+  // Pending question section — text-only: numbered options + prominent
+  // "type the number" instruction. Buttons used to live here, but:
+  //   - Card Schema 2.0 mobile silently drops `tag: action` button blocks
+  //     (bug-feishu-v2-mobile-action-buttons), so buttons go invisible.
+  //   - Card Schema 1.0 buttons DO render on mobile, but clicks return
+  //     Feishu code 200340 (the click event never reaches us, suspected
+  //     v1 callbacks no longer route through `WSClient` persistent
+  //     connection in the v2 era — would require setting up an HTTP
+  //     webhook URL in the Feishu Open Platform app config).
+  // Decision: drop buttons entirely, default to typed answers. The text
+  // path is reliable on every Feishu surface (desktop / mobile / web).
   if (state.pendingQuestion) {
     elements.push({ tag: 'hr' });
-    state.pendingQuestion.questions.forEach((q, qi) => {
-      // Question prompt
+    state.pendingQuestion.questions.forEach((q) => {
       const descLines = q.options.map(
         (opt, i) => `**${i + 1}.** ${opt.label} — _${opt.description}_`,
       );
@@ -146,26 +165,10 @@ export function buildCard(state: CardState): string {
         tag: 'markdown',
         content: [`**[${q.header}] ${q.question}**`, '', ...descLines].join('\n'),
       });
-      // Interactive buttons: one per option + an explicit "Other" button
-      const actions = q.options.map((opt, oi) => ({
-        tag: 'button',
-        text: { tag: 'plain_text', content: `${oi + 1}. ${opt.label}` },
-        type: 'primary',
-        value: {
-          action: 'answer_question',
-          toolUseId: state.pendingQuestion!.toolUseId,
-          questionIndex: qi,
-          optionIndex: oi,
-        },
-      }));
-      elements.push({
-        tag: 'action',
-        actions,
-      });
     });
     elements.push({
       tag: 'markdown',
-      content: '_点击按钮选择，或直接输入自定义答案_',
+      content: '**👇 请回复数字（1/2/…）或直接输入文字答案**',
     });
   }
 

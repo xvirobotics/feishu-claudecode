@@ -103,7 +103,36 @@ describe('buildCardV2', () => {
     expect(team).toBeUndefined();
   });
 
-  it('renders tool calls section', () => {
+  // Cards from flushSpontaneous (between-turn agent activity) get the
+  // `agent_activity` status. Header must be blue with the "Agent activity"
+  // title, and the body must NOT include the legacy "Agent activity
+  // between turns (background task return, …)" italic caption — that's
+  // exactly the line users called out as ugly. The card-status signal IS
+  // the indicator now.
+  it('builds an agent_activity card with a blue header, "Agent activity" title, and no italic caption', () => {
+    const state: CardState = {
+      status:       'agent_activity',
+      userPrompt:   '(agent activity)',
+      responseText: 'Pushed commit abc1234.',
+      toolCalls:    [],
+    };
+    const json = JSON.parse(buildCardV2(state));
+    expect(json.header.template).toBe('blue');
+    expect(json.header.title.content).toContain('Agent activity');
+    const elements = findElements(json);
+    const captionEl = elements.find(
+      (e) => e.tag === 'markdown' && typeof e.content === 'string'
+        && /Agent activity between turns/.test(e.content),
+    );
+    expect(captionEl).toBeUndefined();
+    const bodyEl = elements.find(
+      (e) => e.tag === 'markdown' && typeof e.content === 'string'
+        && e.content.includes('Pushed commit abc1234'),
+    );
+    expect(bodyEl).toBeDefined();
+  });
+
+  it('renders the running tool indicator as a single line (latest tool + count)', () => {
     const state: CardState = {
       status:       'running',
       userPrompt:   'fix bug',
@@ -114,12 +143,33 @@ describe('buildCardV2', () => {
       ],
     };
     const elements = findElements(JSON.parse(buildCardV2(state)));
+    // Exactly the current/last tool + total count — earlier tool ("Read")
+    // must not appear; the section is meant to stay one line.
     const tools = elements.find(
-      (e) => e.tag === 'markdown' && typeof e.content === 'string' && e.content.includes('Read'),
+      (e) => e.tag === 'markdown' && typeof e.content === 'string' && /\*\*Edit\*\* · 2 tools/.test(e.content),
     );
     expect(tools).toBeDefined();
-    expect(tools.content).toContain('✅');
     expect(tools.content).toContain('⏳');
+    expect(tools.content).not.toContain('Read');
+    expect(tools.content).not.toContain('✅');
+  });
+
+  it('omits the tool indicator on complete (only response + footer remain)', () => {
+    const state: CardState = {
+      status:       'complete',
+      userPrompt:   'fix bug',
+      responseText: 'Done.',
+      toolCalls: [
+        { name: 'Read', detail: '`src/index.ts`', status: 'done' },
+        { name: 'Edit', detail: '`src/index.ts`', status: 'done' },
+      ],
+    };
+    const elements = findElements(JSON.parse(buildCardV2(state)));
+    const toolEl = elements.find(
+      (e) => e.tag === 'markdown' && typeof e.content === 'string'
+        && (e.content.includes('Read') || e.content.includes('Edit') || /\d+ tools?/.test(e.content)),
+    );
+    expect(toolEl).toBeUndefined();
   });
 
   it('renders background events with status icon + last event', () => {
@@ -142,7 +192,14 @@ describe('buildCardV2', () => {
     expect(bg.content).toContain('check (20) running');
   });
 
-  it('renders pendingQuestion as buttons with v2 callback behaviors', () => {
+  it('renders pendingQuestion as text-only (no buttons) with a typed-reply prompt', () => {
+    // Buttons used to live here, but both schemas have unfixable mobile
+    // click issues — v2 mobile silently drops `tag: action` blocks, and
+    // v1 buttons trigger Feishu code 200340 on click. Question cards
+    // default to typed answers; the numbered options + reply prompt are
+    // the entire affordance. Don't reintroduce `tag: action` here without
+    // first confirming the underlying mobile-render / v1-callback issues
+    // are resolved Feishu-side.
     const state: CardState = {
       status:       'waiting_for_input',
       userPrompt:   'deploy',
@@ -164,18 +221,21 @@ describe('buildCardV2', () => {
     const json     = JSON.parse(buildCardV2(state));
     const elements = findElements(json);
     expect(json.header.template).toBe('yellow');
-    const action = elements.find((e) => e.tag === 'action');
-    expect(action).toBeDefined();
-    expect(action.actions).toHaveLength(2);
-    // v2 must use behaviors[].value, not top-level value (which is silently dropped)
-    expect(action.actions[0].behaviors).toBeDefined();
-    expect(action.actions[0].behaviors[0].type).toBe('callback');
-    expect(action.actions[0].behaviors[0].value).toEqual({
-      action:        'answer_question',
-      toolUseId:     'q1',
-      questionIndex: 0,
-      optionIndex:   0,
-    });
+    // No action / button blocks
+    expect(elements.find((e) => e.tag === 'action')).toBeUndefined();
+    const allMarkdown = elements
+      .filter((e) => e.tag === 'markdown')
+      .map((e) => e.content)
+      .join('\n');
+    // Numbered options still rendered as text
+    expect(allMarkdown).toContain('**1.** Production');
+    expect(allMarkdown).toContain('**2.** Staging');
+    // Clear prompt for typed reply
+    expect(allMarkdown).toContain('请回复数字');
+    // The callback identifier should NOT appear anywhere — would imply
+    // we accidentally re-shipped buttons.
+    const cardStr = JSON.stringify(json);
+    expect(cardStr).not.toContain('answer_question');
   });
 
   it('shows stats footer with cost/duration/model on complete', () => {

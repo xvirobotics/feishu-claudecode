@@ -25,6 +25,29 @@ export class FeishuSenderAdapter implements IMessageSender {
     return this.sender.updateCard(messageId, USE_V2 ? buildCardV2(state) : buildCard(state));
   }
 
+  /**
+   * AskUserQuestion card — always Schema 1.0, regardless of CARD_SCHEMA_V2.
+   *
+   * Why: Feishu mobile App silently drops `tag: action` button blocks under
+   * Schema 2.0, so v2 question cards show up with NO buttons on iOS/Android.
+   * v1 button rendering is verified working on mobile (PR #199 tested it).
+   *
+   * Why a SEPARATE card rather than switching the main streaming card's
+   * schema mid-life: Feishu rejects `updateCard` with a different schema
+   * than the original create ("ErrCode 200830: schemaV2 card can not change
+   * schemaV1"). So the main streaming card stays v2 throughout, and the
+   * question gets its own dedicated v1 card sent alongside.
+   *
+   * See memory: bug-feishu-v2-mobile-action-buttons.
+   */
+  async sendQuestionCard(chatId: string, state: CardState): Promise<string | undefined> {
+    return this.sender.sendCard(chatId, buildCard(state));
+  }
+
+  async updateQuestionCard(messageId: string, state: CardState): Promise<boolean> {
+    return this.sender.updateCard(messageId, buildCard(state));
+  }
+
   async sendTextNotice(chatId: string, title: string, content: string, color: string = 'blue'): Promise<void> {
     await this.sender.sendCard(chatId, USE_V2 ? buildTextCardV2(title, content, color) : buildTextCard(title, content, color));
   }

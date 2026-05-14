@@ -584,7 +584,7 @@ New-Item -ItemType Directory -Path $SkillsDir -Force | Out-Null
 # Sanity check: the bundled skill tree must exist in the checked-out repo.
 # If it's missing, the user's checkout is stale (predates the skill bundling
 # commits) — fail with a clear message instead of cryptic Copy-Item errors.
-$SkillSentinel = Join-Path $MetabotHome "src\skills\metaskill\SKILL.md"
+$SkillSentinel = Join-Path $MetabotHome "src\skills\metabot\SKILL.md"
 if (-not (Test-Path $SkillSentinel)) {
     Write-Err "Bundled skill source not found at: $SkillSentinel"
     Write-Err "Your $MetabotHome checkout appears to be stale or incomplete."
@@ -593,15 +593,14 @@ if (-not (Test-Path $SkillSentinel)) {
     exit 1
 }
 
-# Install metaskill
-Write-Info "Installing metaskill skill..."
-$metaskillDir = Join-Path $SkillsDir "metaskill\flows"
-New-Item -ItemType Directory -Path $metaskillDir -Force | Out-Null
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\SKILL.md") (Join-Path $SkillsDir "metaskill\SKILL.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\team.md") (Join-Path $SkillsDir "metaskill\flows\team.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\agent.md") (Join-Path $SkillsDir "metaskill\flows\agent.md") -Force
-Copy-Item (Join-Path $MetabotHome "src\skills\metaskill\flows\skill.md") (Join-Path $SkillsDir "metaskill\flows\skill.md") -Force
-Write-Success "metaskill skill installed -> $(Join-Path $SkillsDir 'metaskill')"
+# Clean up legacy metaskill skill if present — no longer installed by default.
+# Users who still want the agent-team generator can copy it back from
+# $MetabotHome\src\skills\metaskill\ (the source files remain bundled in the repo).
+$LegacyMetaskillDir = Join-Path $SkillsDir "metaskill"
+if (Test-Path $LegacyMetaskillDir) {
+    Remove-Item $LegacyMetaskillDir -Recurse -Force
+    Write-Info "Removed legacy metaskill skill from $SkillsDir (now opt-in -- see src\skills\metaskill\)"
+}
 
 # Install metamemory skill
 Write-Info "Installing metamemory skill..."
@@ -666,7 +665,11 @@ if (-not $SkipConfig) {
 if ($DeployWorkDir) {
     $SkillsDest = Join-Path $DeployWorkDir ".claude\skills"
 
-    $deploySkills = @("metaskill", "metamemory", "metabot", "voice", "skill-hub")
+    # metaskill (agent-team generator) and metaschedule (persistent server-side
+    # scheduler) are no longer deployed by default -- copy them from
+    # $MetabotHome\src\skills\ if needed. CC native CronCreate / /loop already
+    # cover ad-hoc, session-scoped scheduling.
+    $deploySkills = @("metamemory", "metabot", "voice", "skill-hub")
     if ($HasFeishu) { $deploySkills += "feishu-doc" }
 
     foreach ($skill in $deploySkills) {
