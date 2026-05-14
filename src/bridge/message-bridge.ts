@@ -674,7 +674,6 @@ export class MessageBridge {
     this.logger.info({ chatId, messageId }, 'MessageBridge: continuation card opened');
 
     let lastState: CardState = initialState;
-    const startTime = Date.now();
     const outputsDir = this.outputsManager.prepareDir(chatId);
 
     try {
@@ -703,10 +702,14 @@ export class MessageBridge {
       }
 
       await this.sendFinalCard(messageId, lastState, chatId);
-      const durationMs = Date.now() - startTime;
-      await this.sendCompletionNotice(chatId, lastState, durationMs);
-      // Output files for continuation turns too — agent may have produced
-      // artifacts in the bash background task whose summary triggered this.
+      // Intentionally NO sendCompletionNotice here. Continuation turns are
+      // between-turn agent activity the user didn't initiate — the card
+      // itself (blue → green lifecycle, complete with timestamps in the
+      // footer) is enough signal. A separate "✅ Done" push for every
+      // background-task return would be noise; the user only opted into
+      // pushes for the work they explicitly asked for.
+      // Output files still get sent — agent may have produced artifacts
+      // in the bash background task whose summary triggered this.
       await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
     } catch (err: any) {
       this.logger.error({ err, chatId }, 'MessageBridge: continuation stream errored');
@@ -2339,41 +2342,33 @@ export class MessageBridge {
     }
   }
 
+  /**
+   * Send a separate text message after the card update so the user gets a
+   * mobile push notification when a long task finishes. Card edits don't
+   * trigger Feishu push, but text messages do.
+   *
+   * Body is intentionally a single emoji + word (`✅ Done` / `❌ Failed`)
+   * — duration, cost, model, and context-usage all live in the card's grey
+   * footer already, so repeating them here just made the push banner
+   * harder to read at a glance. Don't re-add stats without first
+   * confirming the card footer is unreachable on the surface this push
+   * lands on.
+   *
+   * Skipped for:
+   *   - durations under 10s (the user is almost certainly still looking
+   *     at the screen and doesn't need a push for those)
+   *   - senders that route the final response as its own message
+   *     already (WeChat — `skipCompletionNotice`)
+   *   - continuation turns (between-turn agent activity); see the
+   *     handleContinuationTurn call site for the rationale.
+   */
   private async sendCompletionNotice(chatId: string, state: CardState, durationMs: number): Promise<void> {
-    // Some senders (WeChat) already send the final response as a standalone message, so skip
     if (this.sender.skipCompletionNotice) return;
-    // Only notify for tasks that took a while — quick tasks don't need it
     if (durationMs < 10_000) return;
 
     const statusEmoji = state.status === 'complete' ? '✅' : '❌';
-    const durationStr = durationMs >= 60_000
-      ? `${(durationMs / 60_000).toFixed(1)}min`
-      : `${(durationMs / 1000).toFixed(0)}s`;
-    const costStr = state.sessionCostUsd ? ` · $${state.sessionCostUsd.toFixed(2)}` : (state.costUsd ? ` · $${state.costUsd.toFixed(2)}` : '');
-    const statusWord = state.status === 'complete' ? 'Done' : 'Failed';
-
-    // Model display name: strip "claude-" prefix for brevity (e.g. "opus-4-7")
-    const modelStr = state.model
-      ? ` · ${state.model.replace(/^claude-/, '')}`
-      : '';
-
-    // Context usage: show totalTokens / contextWindow as percentage
-    let usageStr = '';
-    if (state.totalTokens && state.contextWindow) {
-      const pct = Math.round((state.totalTokens / state.contextWindow) * 100);
-      const tokensK = state.totalTokens >= 1000
-        ? `${(state.totalTokens / 1000).toFixed(1)}k`
-        : `${state.totalTokens}`;
-      const ctxK = `${Math.round(state.contextWindow / 1000)}k`;
-      usageStr = ` · ${tokensK}/${ctxK} (${pct}%)`;
-    } else if (state.totalTokens) {
-      const tokensK = state.totalTokens >= 1000
-        ? `${(state.totalTokens / 1000).toFixed(1)}k`
-        : `${state.totalTokens}`;
-      usageStr = ` · ${tokensK} tokens`;
-    }
-
-    const message = `${statusEmoji} ${statusWord} (${durationStr}${costStr}${modelStr}${usageStr})`;
+    const statusWord  = state.status === 'complete' ? 'Done' : 'Failed';
+    const message     = `${statusEmoji} ${statusWord}`;
 
     try {
       await this.sender.sendText(chatId, message);
