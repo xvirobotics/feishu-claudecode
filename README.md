@@ -34,7 +34,17 @@
 
 > 支持 **Claude Code**、**Kimi Code** 和 **Codex CLI** 三大引擎 — 订阅 / API Key 任你选，每个 Bot 可独立选引擎。
 
-![MetaBot Demo](resources/metabot-demo.gif)
+<div align="center">
+<table>
+<tr>
+  <td width="25%"><img src="resources/demo-1.png" alt="召唤 Agent Team" /></td>
+  <td width="25%"><img src="resources/demo-2.png" alt="下达任务" /></td>
+  <td width="25%"><img src="resources/demo-3.png" alt="Agent 之间持续工作" /></td>
+  <td width="25%"><img src="resources/demo-4.png" alt="PR 已合并" /></td>
+</tr>
+</table>
+<sub>飞书移动端 · 召唤团队 · 下达任务 · 实时跟进 · PR 合并</sub>
+</div>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
