@@ -77,7 +77,7 @@ function hasCredentialsFile(): boolean {
  * - Merges process.env so child inherits system PATH, TEMP, etc.
  * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
  */
-function createSpawnFn(botName: string, explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+function createSpawnFn(botName: string, explicitApiKey?: string, extraEnv?: Record<string, string>): (options: SpawnOptions) => SpawnedProcess {
   // Force-use-env mode: pass ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY /
   // ANTHROPIC_BASE_URL through to the Claude Code subprocess instead of
   // filtering them out. Triggered by either:
@@ -126,6 +126,13 @@ function createSpawnFn(botName: string, explicitApiKey?: string): (options: Spaw
     // Inject bot identity so mb CLI and curl calls carry caller info
     env.METABOT_CALLER = botName;
 
+    // Inject extra env vars (e.g. METABOT_USER_ID for user identity propagation)
+    if (extraEnv) {
+      for (const [k, v] of Object.entries(extraEnv)) {
+        env[k] = v;
+      }
+    }
+
     // Default-enable Claude Code Agent Teams. Without a real terminal there's
     // no tmux/iTerm2, so teammates must run in-process (controlled via the
     // `teammateMode` setting passed in queryOptions). Users can disable by
@@ -159,6 +166,8 @@ function createSpawnFn(botName: string, explicitApiKey?: string): (options: Spaw
 export interface ApiContext {
   botName: string;
   chatId: string;
+  /** Original Feishu user open_id — propagated to subagents via METABOT_USER_ID env var. */
+  userId?: string;
   /** Group chat member names — enables inter-bot communication prompt. */
   groupMembers?: string[];
   /** Group ID — used to build grouptalk chatIds for inter-bot communication. */
@@ -285,7 +294,10 @@ export class ClaudeExecutor {
       // Custom spawn filters CLAUDE* env vars, injects METABOT_CALLER for
       // identity propagation, and injects ANTHROPIC_API_KEY when configured.
       // The SDK (>= 0.2.140) supplies the correct command in spawn options.
-      spawnClaudeCodeProcess: createSpawnFn(this.config.name, this.config.claude.apiKey),
+      spawnClaudeCodeProcess: createSpawnFn(this.config.name, this.config.claude.apiKey, (() => {
+        const uid = apiContext?.userId || apiContext?.caller?.userId;
+        return uid ? { METABOT_USER_ID: uid } : undefined;
+      })()),
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
       // MetaBot has no terminal — split-pane (tmux/iTerm2) teammate display
       // doesn't apply. Force in-process so teammates run inside the same
@@ -313,9 +325,11 @@ export class ClaudeExecutor {
       const ownIdentity = ownAppId
         ? `\nYour identity: bot "${apiContext.botName}" (feishu appId=${ownAppId}). METABOT_CALLER env var is already set to "${apiContext.botName}". To delegate to other bots, ALWAYS use \`mb talk\` (NEVER curl). The \`mb\` CLI auto-includes your caller identity from METABOT_CALLER. Using curl directly bypasses access control — the target bot will deny your request because it cannot identify you.`
         : '';
+      const effectiveUserId = apiContext.userId || apiContext.caller?.userId;
+      const userIdNote = effectiveUserId ? ` userId=${effectiveUserId} (METABOT_USER_ID env var is set — mb talk will auto-propagate to subagents)` : '';
       const callerNote = apiContext.caller
-        ? `\nCaller identity: ${apiContext.caller.name || 'unknown'}${apiContext.caller.platform ? ` (${apiContext.caller.platform})` : ''}${apiContext.caller.appId ? ` appId=${apiContext.caller.appId}` : ''}${apiContext.caller.peerName ? ` via peer "${apiContext.caller.peerName}"` : ''}`
-        : '';
+        ? `\nCaller identity: ${apiContext.caller.name || 'unknown'}${apiContext.caller.platform ? ` (${apiContext.caller.platform})` : ''}${apiContext.caller.appId ? ` appId=${apiContext.caller.appId}` : ''}${apiContext.caller.peerName ? ` via peer "${apiContext.caller.peerName}"` : ''}${userIdNote}`
+        : (effectiveUserId ? `\nOriginal user: ${effectiveUserId} (METABOT_USER_ID env var is set)` : '');
       appendSections.push(
         `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".${ownIdentity}${callerNote}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
       );

@@ -67,7 +67,7 @@ function hasCredentialsFile(): boolean {
   }
 }
 
-function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+function createSpawnFn(botName?: string, explicitApiKey?: string, extraEnv?: Record<string, string>): (options: SpawnOptions) => SpawnedProcess {
   // Mirror executor.ts: when env-based Anthropic auth is in use (proxy /
   // gateway via ANTHROPIC_BASE_URL + ANTHROPIC_AUTH_TOKEN), bypass the
   // credentials.json filter so ANTHROPIC_AUTH_TOKEN reaches the subprocess.
@@ -92,6 +92,12 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
       env[key] = value;
     }
     if (explicitApiKey) env.ANTHROPIC_API_KEY = explicitApiKey;
+    if (botName) env.METABOT_CALLER = botName;
+    if (extraEnv) {
+      for (const [k, v] of Object.entries(extraEnv)) {
+        env[k] = v;
+      }
+    }
     if (env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === undefined) {
       env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
     }
@@ -307,7 +313,14 @@ export class PersistentClaudeExecutor extends EventEmitter {
       cwd: this.options.cwd,
       includePartialMessages: true,
       settingSources: ['user', 'project'],
-      spawnClaudeCodeProcess: createSpawnFn(this.options.apiKey),
+      spawnClaudeCodeProcess: createSpawnFn(
+        this.options.apiContext?.botName,
+        this.options.apiKey,
+        (() => {
+          const uid = this.options.apiContext?.userId || this.options.apiContext?.caller?.userId;
+          return uid ? { METABOT_USER_ID: uid } : undefined;
+        })(),
+      ),
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
       settings: { teammateMode: 'in-process' },
       agentProgressSummaries: true,
@@ -330,8 +343,17 @@ export class PersistentClaudeExecutor extends EventEmitter {
     }
     if (this.options.apiContext) {
       const ctx = this.options.apiContext;
+      const ownAppId = (this.options as any).feishuAppId as string | undefined;
+      const ownIdentity = ownAppId
+        ? `\nYour identity: bot "${ctx.botName}" (feishu appId=${ownAppId}). METABOT_CALLER env var is already set to "${ctx.botName}". To delegate to other bots, ALWAYS use \`mb talk\` (NEVER curl).`
+        : `\nYour identity: bot "${ctx.botName}". METABOT_CALLER env var is already set to "${ctx.botName}". To delegate to other bots, ALWAYS use \`mb talk\` (NEVER curl).`;
+      const effectiveUserId = ctx.userId || ctx.caller?.userId;
+      const userIdNote = effectiveUserId ? ` userId=${effectiveUserId} (METABOT_USER_ID env var is set)` : '';
+      const callerNote = ctx.caller
+        ? `\nCaller identity: ${ctx.caller.name || 'unknown'}${ctx.caller.platform ? ` (${ctx.caller.platform})` : ''}${ctx.caller.appId ? ` appId=${ctx.caller.appId}` : ''}${ctx.caller.peerName ? ` via peer "${ctx.caller.peerName}"` : ''}${userIdNote}`
+        : (effectiveUserId ? `\nOriginal user: ${effectiveUserId} (METABOT_USER_ID env var is set)` : '');
       appendSections.push(
-        `## MetaBot API\nYou are running as bot "${ctx.botName}" in chat "${ctx.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
+        `## MetaBot API\nYou are running as bot "${ctx.botName}" in chat "${ctx.chatId}".${ownIdentity}${callerNote}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
       );
       if (ctx.groupMembers && ctx.groupMembers.length > 0) {
         const others = ctx.groupMembers.filter((m) => m !== ctx.botName);
