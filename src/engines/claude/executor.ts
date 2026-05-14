@@ -365,9 +365,20 @@ export class ClaudeExecutor {
       queryOptions.resume = sessionId;
     }
 
-    // Beta flags are ignored by the SDK on OAuth/Pro-Max auth. For 1M context,
-    // use the model-name suffix `[1m]` (e.g. `claude-opus-4-7[1m]`) instead.
-    queryOptions.betas = ['context-1m-2025-08-07'];
+    // 1M context window is opt-in via the `[1m]` model-name suffix
+    // (`claude-opus-4-7[1m]`). The suffix is the canonical signal — the SDK
+    // parses it directly on both OAuth and API-key auth paths.
+    //
+    // We *also* set the matching `betas` flag when the suffix is present,
+    // belt-and-braces: harmless when the SDK already inferred it, and a
+    // safety net if a future SDK rev only honors the explicit beta header
+    // for some auth modes. Without the suffix, leave `betas` unset —
+    // setting it unconditionally on API-key auth had the side-effect of
+    // forcing every model (e.g. plain `opus-4-7`) into 1M context at 2×
+    // the price, which the user never asked for.
+    if (this.config.claude.model?.includes('[1m]')) {
+      queryOptions.betas = ['context-1m-2025-08-07'];
+    }
 
     return queryOptions;
   }
