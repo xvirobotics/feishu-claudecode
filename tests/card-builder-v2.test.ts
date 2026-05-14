@@ -273,6 +273,50 @@ describe('buildCardV2', () => {
     );
     expect(md).toBeDefined();
   });
+
+  // Regression: Feishu mobile was rendering `**品类**` as literal asterisks
+  // inside table cells because `data_type: 'text'` does not parse markdown.
+  // Cells / headers MUST be emitted with `data_type: 'lark_md'` so Feishu
+  // renders inline markdown (bold, links, etc.). If this test fails, the
+  // mobile table-bold bug is back.
+  it('renders markdown tables with lark_md cells so **bold** and links render', () => {
+    const tableMd = [
+      '| **品类** | **门店层级** | **到货时间** |',
+      '|----------|--------------|--------------|',
+      '| **上装38%** / 下装32% | A类55% / B类30% | 3月全量上架 |',
+      '| 鞋45% | 自营266/加盟18 | [详情](https://example.com) |',
+    ].join('\n');
+    const state: CardState = {
+      status:       'complete',
+      userPrompt:   'show table',
+      responseText: tableMd,
+      toolCalls:    [],
+    };
+    const json     = JSON.parse(buildCardV2(state));
+    const elements = findElements(json);
+    const table    = elements.find((e: any) => e.tag === 'table') as any;
+    expect(table).toBeDefined();
+
+    // Every column must be lark_md so Feishu parses inline markdown in cells.
+    expect(Array.isArray(table.columns)).toBe(true);
+    expect(table.columns.length).toBe(3);
+    for (const col of table.columns) {
+      expect(col.data_type).toBe('lark_md');
+    }
+
+    // Header `display_name` must keep the `**` markup intact — Feishu does
+    // the rendering. If we stripped them we'd lose the bold styling.
+    expect(table.columns[0].display_name).toBe('**品类**');
+    expect(table.columns[1].display_name).toBe('**门店层级**');
+    expect(table.columns[2].display_name).toBe('**到货时间**');
+
+    // Body cells: the raw `**…**` and `[label](url)` syntax must pass
+    // through to Feishu unchanged.
+    expect(table.rows.length).toBe(2);
+    expect(table.rows[0].col0).toContain('**上装38%**');
+    expect(table.rows[0].col0).toContain('下装32%');
+    expect(table.rows[1].col2).toContain('[详情](https://example.com)');
+  });
 });
 
 describe('buildHelpCardV2', () => {
