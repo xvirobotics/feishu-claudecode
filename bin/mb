@@ -378,9 +378,11 @@ print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
     SKILLS_DIR="$HOME/.claude/skills"
     CODEX_SKILLS_DIR="$HOME/.codex/skills"
     mkdir -p "$SKILLS_DIR" "$CODEX_SKILLS_DIR"
-    for skill in metaskill metamemory metabot voice phone-call skill-hub; do
+    # metaskill / metaschedule are opt-in (not in the default list); CC native
+    # CronCreate / /loop cover ad-hoc scheduling, and the agent-team generator
+    # is not used by every install. Source still ships in src/skills/*.
+    for skill in metamemory metabot voice phone-call skill-hub; do
       case "$skill" in
-        metaskill)   src="$METABOT_SRC/src/skills/metaskill" ;;
         metamemory)  src="$METABOT_SRC/src/memory/skill" ;;
         metabot)     src="$METABOT_SRC/src/skills/metabot" ;;
         voice)       src="$METABOT_SRC/src/skills/voice" ;;
@@ -404,6 +406,15 @@ print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
     if [[ -d "$CODEX_SKILLS_DIR/feishu-doc" ]]; then
       rm -rf "$CODEX_SKILLS_DIR/feishu-doc"
     fi
+    # Clean up legacy metaskill — now opt-in. Users who want the agent-team
+    # generator can copy it back from $METABOT_SRC/src/skills/metaskill/.
+    if [[ -d "$SKILLS_DIR/metaskill" ]] && [[ "${KEEP_METASKILL:-}" != "1" ]]; then
+      rm -rf "$SKILLS_DIR/metaskill"
+      echo "    Removed legacy: metaskill (opt-in — set KEEP_METASKILL=1 to keep)"
+    fi
+    if [[ -d "$CODEX_SKILLS_DIR/metaskill" ]] && [[ "${KEEP_METASKILL:-}" != "1" ]]; then
+      rm -rf "$CODEX_SKILLS_DIR/metaskill"
+    fi
 
     # Check if lark-cli skills were previously installed (opt-in via install.sh)
     has_lark_skills=false
@@ -422,7 +433,17 @@ print(json.dumps({'botName': sys.argv[1], 'source': sys.argv[2]}))
         ws_skills_dir="$work_dir/.claude/skills"
         ws_codex_skills_dir="$work_dir/.codex/skills"
         mkdir -p "$ws_skills_dir" "$ws_codex_skills_dir"
-        for skill in metaskill metamemory metabot voice phone-call skill-hub; do
+        for skill in metamemory metabot voice phone-call skill-hub; do
+          if [[ -d "$SKILLS_DIR/$skill" ]]; then
+            for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
+              mkdir -p "$dst_root/$skill"
+              cp -r "$SKILLS_DIR/$skill/." "$dst_root/$skill/"
+            done
+          fi
+        done
+        # Mirror opt-in skills (metaskill / metaschedule) to the workspace if
+        # the user has them installed in ~/.claude/skills/.
+        for skill in metaskill metaschedule; do
           if [[ -d "$SKILLS_DIR/$skill" ]]; then
             for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
               mkdir -p "$dst_root/$skill"

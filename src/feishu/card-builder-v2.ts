@@ -25,6 +25,10 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
   complete:           { color: 'green',  title: 'Complete',          icon: '🟢' },
   error:              { color: 'red',    title: 'Error',             icon: '🔴' },
   waiting_for_input:  { color: 'yellow', title: 'Waiting for Input', icon: '🟡' },
+  // Blue with a distinct title so users can tell a between-turn burst card
+  // apart from both a live "running" turn and a finished "complete" reply
+  // without reading body text. See message-bridge.flushSpontaneous.
+  agent_activity:     { color: 'blue',   title: 'Agent activity',    icon: '🔵' },
 };
 
 const BG_ICON: Record<'running' | 'completed' | 'failed' | 'stopped', string> = {
@@ -165,15 +169,25 @@ export function buildCardV2(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
-  // Tool calls section
-  if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
-      const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
+  // Tool calls indicator — single line, no per-tool list.
+  // Users repeatedly told us the running tool list is noise; they only care
+  // about the final answer. We still show ONE line while the turn is in
+  // flight so a hung run is visibly hung instead of looking like a frozen
+  // card, but we hide the section completely once the turn is complete/
+  // errored. Web UI keeps its own collapsible per-tool view (see
+  // web/src/components/chat/AssistantMessage.tsx); this only affects the
+  // Feishu surface.
+  if (
+    state.toolCalls.length > 0 &&
+    state.status !== 'complete' &&
+    state.status !== 'error'
+  ) {
+    const last  = state.toolCalls[state.toolCalls.length - 1];
+    const icon  = last.status === 'running' ? '⏳' : '✅';
+    const total = state.toolCalls.length;
     elements.push({
       tag:     'markdown',
-      content: toolLines.join('\n'),
+      content: `${icon} **${last.name}** · ${total} tool${total > 1 ? 's' : ''}`,
     });
     elements.push({ tag: 'hr' });
   }
@@ -204,10 +218,18 @@ export function buildCardV2(state: CardState): string {
     });
   }
 
-  // Pending question section — interactive buttons + text-fallback hint
+  // Pending question section — text-only. Buttons used to live here but
+  // both schemas have unfixable click problems on mobile:
+  //   - v2: `tag: action` block silently dropped from mobile render
+  //     (bug-feishu-v2-mobile-action-buttons).
+  //   - v1: buttons render, but clicks return Feishu code 200340 (likely
+  //     v1 callbacks no longer route through WSClient in v2 era —
+  //     would need an HTTP webhook configured in the app's open platform).
+  // Decision: drop buttons, default to typed answers (numbered or free
+  // text). The typed path works on every Feishu surface.
   if (state.pendingQuestion) {
     elements.push({ tag: 'hr' });
-    state.pendingQuestion.questions.forEach((q, qi) => {
+    state.pendingQuestion.questions.forEach((q) => {
       const descLines = q.options.map(
         (opt, i) => `**${i + 1}.** ${opt.label} — _${opt.description}_`,
       );
@@ -215,30 +237,10 @@ export function buildCardV2(state: CardState): string {
         tag:     'markdown',
         content: [`**[${q.header}] ${q.question}**`, '', ...descLines].join('\n'),
       });
-      const actions = q.options.map((opt, oi) => ({
-        tag:  'button',
-        text: { tag: 'plain_text', content: `${oi + 1}. ${opt.label}` },
-        type: 'primary',
-        // Card Schema 2.0 requires button callbacks via `behaviors`. The v1
-        // top-level `value` field is silently dropped under schema 2.0, so the
-        // click never reaches the `card.action.trigger` handler.
-        behaviors: [
-          {
-            type:  'callback',
-            value: {
-              action:        'answer_question',
-              toolUseId:     state.pendingQuestion!.toolUseId,
-              questionIndex: qi,
-              optionIndex:   oi,
-            },
-          },
-        ],
-      }));
-      elements.push({ tag: 'action', actions });
     });
     elements.push({
       tag:     'markdown',
-      content: '_点击按钮选择，或直接输入自定义答案_',
+      content: '**👇 请回复数字（1/2/…）或直接输入文字答案**',
     });
   }
 

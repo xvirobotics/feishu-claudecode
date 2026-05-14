@@ -43,9 +43,17 @@ describe('skills installer', () => {
 
       installSkillsToWorkDir(workDir, logger);
 
-      expect(readFileSync(join(workDir, '.claude/skills/metaskill/SKILL.md'), 'utf-8')).toContain('metaskill');
-      expect(readFileSync(join(workDir, '.codex/skills/metaskill/SKILL.md'), 'utf-8')).toContain('metaskill');
+      // `metabot` is in the default COMMON_SKILLS list, so its bundled SKILL.md
+      // must land in both Claude and Codex project directories.
+      expect(readFileSync(join(workDir, '.claude/skills/metabot/SKILL.md'), 'utf-8')).toContain('metabot');
+      expect(readFileSync(join(workDir, '.codex/skills/metabot/SKILL.md'), 'utf-8')).toContain('metabot');
       expect(readFileSync(join(workDir, 'AGENTS.md'), 'utf-8')).toContain('MetaBot Workspace');
+
+      // `metaskill` and `metaschedule` are opt-in: not deployed unless the
+      // user has placed them in ~/.claude/skills/. Confirm they did not slip
+      // into the default install.
+      expect(() => readFileSync(join(workDir, '.claude/skills/metaskill/SKILL.md'), 'utf-8')).toThrow();
+      expect(() => readFileSync(join(workDir, '.claude/skills/metaschedule/SKILL.md'), 'utf-8')).toThrow();
     } finally {
       if (priorHome === undefined) delete process.env.HOME;
       else process.env.HOME = priorHome;

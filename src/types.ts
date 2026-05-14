@@ -1,6 +1,18 @@
 // Shared types used across IM platforms (Feishu, Telegram, etc.)
 
-export type CardStatus = 'thinking' | 'running' | 'complete' | 'error' | 'waiting_for_input';
+export type CardStatus =
+  | 'thinking'
+  | 'running'
+  | 'complete'
+  | 'error'
+  | 'waiting_for_input'
+  /**
+   * Card was emitted by `flushSpontaneous` at the end of a between-turn
+   * burst (background task return / teammate ping / `/goal` evaluator).
+   * Rendered in blue with an "Agent activity" title so users can tell
+   * it apart from a normal user-prompted turn without reading body text.
+   */
+  | 'agent_activity';
 
 export interface ToolCall {
   name: string;

@@ -7,7 +7,12 @@ export type CardStatus =
   | 'running'
   | 'complete'
   | 'error'
-  | 'waiting_for_input';
+  | 'waiting_for_input'
+  // Server-side `flushSpontaneous` emits this when a between-turn burst
+  // (background task return / teammate ping / `/goal` evaluator) lands;
+  // styled blue with an "Agent activity" header to tell it apart from a
+  // regular completed reply. Mirror of the server type.
+  | 'agent_activity';
 
 export interface ToolCall {
   name: string;
