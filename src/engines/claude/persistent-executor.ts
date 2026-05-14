@@ -255,6 +255,47 @@ export function classifyBurstSource(raw: unknown): BurstSource {
   return 'spontaneous';
 }
 
+/**
+ * Parse the `tool_input` payload of an AskUserQuestion PreToolUse hook into
+ * the bridge's PendingQuestion['questions'] shape. Mirrors stream-processor's
+ * `extractPendingQuestion` (kept separate so the persistent executor doesn't
+ * have to import from stream-processor).
+ *
+ * Exported for unit tests; not part of the public executor API.
+ */
+export function parseAskUserQuestionInput(input: unknown): Array<{
+  question: string;
+  header: string;
+  options: Array<{ label: string; description: string }>;
+  multiSelect: boolean;
+}> {
+  if (!input || typeof input !== 'object') return [];
+  const inp = input as Record<string, unknown>;
+  const questions = inp.questions;
+  if (!Array.isArray(questions)) return [];
+  return questions.map((q: any) => ({
+    question: String(q?.question || ''),
+    header: String(q?.header || ''),
+    options: Array.isArray(q?.options)
+      ? q.options.map((o: any) => ({
+          label: String(o?.label || ''),
+          description: String(o?.description || ''),
+        }))
+      : [],
+    multiSelect: Boolean(q?.multiSelect),
+  }));
+}
+
+/**
+ * Payload of the `between-turn-question` event. Structurally identical to
+ * {@link PendingQuestion} (src/types.ts); a separate name avoids a coupling
+ * import from the bridge types.
+ */
+export interface BetweenTurnQuestionEvent {
+  toolUseId: string;
+  questions: ReturnType<typeof parseAskUserQuestionInput>;
+}
+
 export class PersistentClaudeExecutor extends EventEmitter {
   private state: ExecutorState = 'starting';
   private inputQueue: AsyncQueue<SDKUserMessage>;
@@ -660,6 +701,18 @@ export class PersistentClaudeExecutor extends EventEmitter {
     // marks AskUserQuestion as requiresUserInteraction; in bypassPermissions
     // mode we intercept, pause until the bridge supplies the user's answers,
     // then return them as updatedInput so the SDK auto-allows.
+    //
+    // Between-turn fire: if the hook trips while no activeTurn is in flight
+    // (teammate / `/goal` / continuation-burst follow-up), we additionally
+    // emit `between-turn-question` so the bridge can mount a dedicated
+    // question card on the chat. Without this side-channel the question text
+    // only lands in the coalesced "Agent activity" card body and the user's
+    // typed reply gets treated as a fresh user turn (which then blocks for
+    // 6 minutes on this still-hanging hook). The resolver registration path
+    // below is unchanged — the bridge calls resolveQuestion() to feed answers
+    // back through the same `updatedInput` mechanism. The emitted event
+    // shape matches PendingQuestion (src/types.ts) so the bridge can use it
+    // verbatim in CardState.
     const askUserQuestionHook = async (
       input: { hook_event_name: string; tool_name: string; tool_input: unknown; tool_use_id: string },
       _toolUseId: string | undefined,
@@ -669,6 +722,15 @@ export class PersistentClaudeExecutor extends EventEmitter {
       const id = input.tool_use_id;
       const answers = await new Promise<Record<string, string>>((resolve) => {
         this.pendingQuestionResolvers.set(id, resolve);
+        // Surface the question to the bridge if we're between turns (no
+        // listener owns the live stream — the agent_activity coalesce card
+        // would otherwise eat the question silently). Done AFTER setting
+        // the resolver so a fast bridge reply can't race past it.
+        if (!this.activeTurn) {
+          const parsed = parseAskUserQuestionInput(toolInput);
+          log.info({ toolUseId: id, questionCount: parsed.length }, 'PersistentExecutor: between-turn AskUserQuestion');
+          this.emit('between-turn-question', { toolUseId: id, questions: parsed });
+        }
         const timeout = setTimeout(() => {
           if (this.pendingQuestionResolvers.delete(id)) {
             log.warn({ toolUseId: id }, 'AskUserQuestion hook timed out (6 min) — empty answers');
