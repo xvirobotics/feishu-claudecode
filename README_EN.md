@@ -34,7 +34,17 @@
 
 > **Claude Code**, **Kimi Code**, and **Codex CLI** — three first-class engines. Subscription or API key, your choice. Each bot picks its own engine.
 
-![MetaBot Demo](resources/metabot-demo.gif)
+<div align="center">
+<table>
+<tr>
+  <td width="25%"><img src="resources/demo-1.png" alt="Spawn an agent team" /></td>
+  <td width="25%"><img src="resources/demo-2.png" alt="Dispatch a task" /></td>
+  <td width="25%"><img src="resources/demo-3.png" alt="Agents working between turns" /></td>
+  <td width="25%"><img src="resources/demo-4.png" alt="PR merged" /></td>
+</tr>
+</table>
+<sub>Feishu mobile · Spawn a team · Dispatch a task · Watch progress · PR merged</sub>
+</div>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
