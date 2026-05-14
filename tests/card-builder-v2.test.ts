@@ -103,7 +103,7 @@ describe('buildCardV2', () => {
     expect(team).toBeUndefined();
   });
 
-  it('renders tool calls section', () => {
+  it('renders the running tool indicator as a single line (latest tool + count)', () => {
     const state: CardState = {
       status:       'running',
       userPrompt:   'fix bug',
@@ -114,12 +114,33 @@ describe('buildCardV2', () => {
       ],
     };
     const elements = findElements(JSON.parse(buildCardV2(state)));
+    // Exactly the current/last tool + total count — earlier tool ("Read")
+    // must not appear; the section is meant to stay one line.
     const tools = elements.find(
-      (e) => e.tag === 'markdown' && typeof e.content === 'string' && e.content.includes('Read'),
+      (e) => e.tag === 'markdown' && typeof e.content === 'string' && /\*\*Edit\*\* · 2 tools/.test(e.content),
     );
     expect(tools).toBeDefined();
-    expect(tools.content).toContain('✅');
     expect(tools.content).toContain('⏳');
+    expect(tools.content).not.toContain('Read');
+    expect(tools.content).not.toContain('✅');
+  });
+
+  it('omits the tool indicator on complete (only response + footer remain)', () => {
+    const state: CardState = {
+      status:       'complete',
+      userPrompt:   'fix bug',
+      responseText: 'Done.',
+      toolCalls: [
+        { name: 'Read', detail: '`src/index.ts`', status: 'done' },
+        { name: 'Edit', detail: '`src/index.ts`', status: 'done' },
+      ],
+    };
+    const elements = findElements(JSON.parse(buildCardV2(state)));
+    const toolEl = elements.find(
+      (e) => e.tag === 'markdown' && typeof e.content === 'string'
+        && (e.content.includes('Read') || e.content.includes('Edit') || /\d+ tools?/.test(e.content)),
+    );
+    expect(toolEl).toBeUndefined();
   });
 
   it('renders background events with status icon + last event', () => {

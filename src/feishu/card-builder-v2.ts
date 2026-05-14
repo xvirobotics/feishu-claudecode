@@ -165,15 +165,25 @@ export function buildCardV2(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
-  // Tool calls section
-  if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
-      const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
+  // Tool calls indicator — single line, no per-tool list.
+  // Users repeatedly told us the running tool list is noise; they only care
+  // about the final answer. We still show ONE line while the turn is in
+  // flight so a hung run is visibly hung instead of looking like a frozen
+  // card, but we hide the section completely once the turn is complete/
+  // errored. Web UI keeps its own collapsible per-tool view (see
+  // web/src/components/chat/AssistantMessage.tsx); this only affects the
+  // Feishu surface.
+  if (
+    state.toolCalls.length > 0 &&
+    state.status !== 'complete' &&
+    state.status !== 'error'
+  ) {
+    const last  = state.toolCalls[state.toolCalls.length - 1];
+    const icon  = last.status === 'running' ? '⏳' : '✅';
+    const total = state.toolCalls.length;
     elements.push({
       tag:     'markdown',
-      content: toolLines.join('\n'),
+      content: `${icon} **${last.name}** · ${total} tool${total > 1 ? 's' : ''}`,
     });
     elements.push({ tag: 'hr' });
   }

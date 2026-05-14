@@ -92,15 +92,21 @@ export function buildCard(state: CardState): string {
     elements.push({ tag: 'hr' });
   }
 
-  // Tool calls section
-  if (state.toolCalls.length > 0) {
-    const toolLines = state.toolCalls.map((t) => {
-      const icon = t.status === 'running' ? '⏳' : '✅';
-      return `${icon} **${t.name}** ${t.detail}`;
-    });
+  // Tool calls indicator — single line, no per-tool list. See the v2 builder
+  // for the rationale (users only care about the final answer; the running
+  // tool list was noise). One line while in flight so a hung run is visibly
+  // hung; section disappears entirely on complete/error.
+  if (
+    state.toolCalls.length > 0 &&
+    state.status !== 'complete' &&
+    state.status !== 'error'
+  ) {
+    const last  = state.toolCalls[state.toolCalls.length - 1];
+    const icon  = last.status === 'running' ? '⏳' : '✅';
+    const total = state.toolCalls.length;
     elements.push({
       tag: 'markdown',
-      content: toolLines.join('\n'),
+      content: `${icon} **${last.name}** · ${total} tool${total > 1 ? 's' : ''}`,
     });
     elements.push({ tag: 'hr' });
   }

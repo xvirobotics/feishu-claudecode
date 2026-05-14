@@ -16,7 +16,7 @@ describe('buildCard', () => {
     expect(json.elements.some((e: any) => e.tag === 'markdown' && /thinking/i.test(e.content))).toBe(true);
   });
 
-  it('builds running card with tool calls', () => {
+  it('builds running card with a single-line tool indicator (no per-tool list)', () => {
     const state: CardState = {
       status: 'running',
       userPrompt: 'fix bug',
@@ -28,10 +28,33 @@ describe('buildCard', () => {
     };
     const json = JSON.parse(buildCard(state));
     expect(json.header.template).toBe('blue');
-    const md = json.elements.find((e: any) => e.tag === 'markdown' && e.content.includes('Read'));
+    // Should show one summary line referencing the latest (running) tool +
+    // the total tool count, NOT a per-tool list. The earlier completed tool
+    // ("Read") must NOT appear — only the current "Edit" plus the count.
+    const md = json.elements.find(
+      (e: any) => e.tag === 'markdown' && /\*\*Edit\*\* · 2 tools/.test(e.content),
+    );
     expect(md).toBeDefined();
-    expect(md.content).toContain('✅');
     expect(md.content).toContain('⏳');
+    expect(md.content).not.toContain('Read');
+    expect(md.content).not.toContain('✅');
+  });
+
+  it('omits the tool indicator entirely once the turn is complete', () => {
+    const state: CardState = {
+      status: 'complete',
+      userPrompt: 'fix bug',
+      responseText: 'Done.',
+      toolCalls: [
+        { name: 'Read', detail: '`src/index.ts`', status: 'done' },
+        { name: 'Edit', detail: '`src/index.ts`', status: 'done' },
+      ],
+    };
+    const json = JSON.parse(buildCard(state));
+    const toolEl = json.elements.find(
+      (e: any) => e.tag === 'markdown' && (e.content.includes('Read') || e.content.includes('Edit') || /\d+ tools?/.test(e.content)),
+    );
+    expect(toolEl).toBeUndefined();
   });
 
   it('builds complete card with stats', () => {
