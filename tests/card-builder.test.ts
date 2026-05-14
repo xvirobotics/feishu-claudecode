@@ -73,6 +73,33 @@ describe('buildCard', () => {
     expect(note.elements[0].content).toContain('5.0s');
   });
 
+  // Cards from flushSpontaneous (between-turn agent activity) are sent with
+  // the `agent_activity` status so users can see at a glance that the card
+  // isn't a normal user-turn reply. Blue header, distinct title — the body
+  // no longer carries the long italic "Agent activity between turns (…)"
+  // caption that v1 had.
+  it('builds an agent_activity card with a blue header and an "Agent activity" title', () => {
+    const state: CardState = {
+      status: 'agent_activity',
+      userPrompt: '(agent activity)',
+      responseText: 'Pushed commit abc1234.',
+      toolCalls: [],
+    };
+    const json = JSON.parse(buildCard(state));
+    expect(json.header.template).toBe('blue');
+    expect(json.header.title.content).toContain('Agent activity');
+    // The body must NOT include the legacy italic caption.
+    const captionEl = json.elements.find(
+      (e: any) => e.tag === 'markdown' && /Agent activity between turns/.test(e.content),
+    );
+    expect(captionEl).toBeUndefined();
+    // The actual conclusion text must be present.
+    const bodyEl = json.elements.find(
+      (e: any) => e.tag === 'markdown' && e.content.includes('Pushed commit abc1234'),
+    );
+    expect(bodyEl).toBeDefined();
+  });
+
   it('builds error card with error message', () => {
     const state: CardState = {
       status: 'error',

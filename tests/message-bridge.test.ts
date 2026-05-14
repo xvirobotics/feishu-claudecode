@@ -5,7 +5,6 @@ import {
   extractSpontaneousSnippet,
   formatSpontaneousCardBody,
   resolvePersistentExecutorEnvDefault,
-  SPONTANEOUS_CARD_HEADER,
 } from '../src/bridge/message-bridge.js';
 import { classifyBurstSource } from '../src/engines/claude/persistent-executor.js';
 
@@ -164,12 +163,14 @@ describe('formatSpontaneousCardBody', () => {
   // i.e. surface only the final result, not the play-by-play. If the user
   // wants the intermediate steps, they can read pm2 logs or the web UI's
   // expandable tool view.
-  it('renders only the latest snippet when a single snippet is present', () => {
+  //
+  // The body never carries a header caption anymore — the card itself is
+  // sent with the `agent_activity` status, which renders a blue
+  // "Agent activity" title at the top. Don't re-add a body header without
+  // confirming the card-status signal is no longer sufficient.
+  it('renders only the latest snippet, with no italic header caption, for a single snippet', () => {
     const body = formatSpontaneousCardBody(['Weather is sunny']);
-    expect(body).toContain(SPONTANEOUS_CARD_HEADER);
-    expect(body).toContain('Weather is sunny');
-    // No numbered prefix — single snippet doesn't need one.
-    expect(body).not.toMatch(/\*\*1\.\*\*/);
+    expect(body).toBe('Weather is sunny');
   });
 
   it('renders only the latest snippet + a coalesced-count footer when N>1', () => {
@@ -178,31 +179,19 @@ describe('formatSpontaneousCardBody', () => {
       'Found 3 things to address.',
       'Pushed commit abc1234 to the branch.',
     ]);
-    expect(body).toContain(SPONTANEOUS_CARD_HEADER);
     expect(body).toContain('Pushed commit abc1234 to the branch.');
     expect(body).toMatch(/3 events coalesced/);
     // Earlier snippets must NOT appear in the body.
     expect(body).not.toContain('Looking at the PR comments');
     expect(body).not.toContain('Found 3 things to address');
-    // No numbered list prefixes either.
+    // No numbered list prefixes either, and no body-level "between turns" caption.
     expect(body).not.toMatch(/\*\*1\.\*\*/);
+    expect(body).not.toMatch(/between turns/i);
+    expect(body).not.toMatch(/long-running/i);
   });
 
-  // Regression for Bug A (misleading title): the header used to say
-  // "Background activity from your agent team / long-running task".
-  // Users read "long-running task" as "still running" — but the card is
-  // emitted at the END of a quiet burst, so the agent is in fact idle by
-  // the time it lands. Header now describes WHAT happened, not an ongoing
-  // task. Don't relax these substring checks without re-evaluating the
-  // user mental model.
-  it('header does not claim a long-running task is in progress (regression)', () => {
-    expect(SPONTANEOUS_CARD_HEADER).not.toMatch(/long-running/i);
-    expect(SPONTANEOUS_CARD_HEADER).toMatch(/between turns/i);
-  });
-
-  it('renders even with empty snippets array (header still present)', () => {
-    const body = formatSpontaneousCardBody([]);
-    expect(body).toContain(SPONTANEOUS_CARD_HEADER);
+  it('returns an empty string when the snippets array is empty', () => {
+    expect(formatSpontaneousCardBody([])).toBe('');
   });
 });
 

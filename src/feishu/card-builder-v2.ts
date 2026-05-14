@@ -25,6 +25,10 @@ const STATUS_CONFIG: Record<CardStatus, { color: string; title: string; icon: st
   complete:           { color: 'green',  title: 'Complete',          icon: '🟢' },
   error:              { color: 'red',    title: 'Error',             icon: '🔴' },
   waiting_for_input:  { color: 'yellow', title: 'Waiting for Input', icon: '🟡' },
+  // Blue with a distinct title so users can tell a between-turn burst card
+  // apart from both a live "running" turn and a finished "complete" reply
+  // without reading body text. See message-bridge.flushSpontaneous.
+  agent_activity:     { color: 'blue',   title: 'Agent activity',    icon: '🔵' },
 };
 
 const BG_ICON: Record<'running' | 'completed' | 'failed' | 'stopped', string> = {

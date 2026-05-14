@@ -11,11 +11,12 @@ import { shouldBypassProxy } from '../utils/http.js';
 const MAX_MESSAGE_LENGTH = 4096;
 
 const STATUS_EMOJI: Record<CardStatus, string> = {
-  thinking: '\u{1F535}',      // 🔵
-  running: '\u{1F535}',       // 🔵
-  complete: '\u{1F7E2}',      // 🟢
-  error: '\u{1F534}',         // 🔴
+  thinking: '\u{1F535}',          // 🔵
+  running: '\u{1F535}',           // 🔵
+  complete: '\u{1F7E2}',          // 🟢
+  error: '\u{1F534}',             // 🔴
   waiting_for_input: '\u{1F7E1}', // 🟡
+  agent_activity: '\u{1F535}',    // 🔵 — between-turn burst, see message-bridge.flushSpontaneous
 };
 
 const STATUS_LABEL: Record<CardStatus, string> = {
@@ -24,6 +25,7 @@ const STATUS_LABEL: Record<CardStatus, string> = {
   complete: 'Complete',
   error: 'Error',
   waiting_for_input: 'Waiting for Input',
+  agent_activity: 'Agent activity',
 };
 
 /**

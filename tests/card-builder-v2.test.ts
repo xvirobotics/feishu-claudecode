@@ -103,6 +103,35 @@ describe('buildCardV2', () => {
     expect(team).toBeUndefined();
   });
 
+  // Cards from flushSpontaneous (between-turn agent activity) get the
+  // `agent_activity` status. Header must be blue with the "Agent activity"
+  // title, and the body must NOT include the legacy "Agent activity
+  // between turns (background task return, …)" italic caption — that's
+  // exactly the line users called out as ugly. The card-status signal IS
+  // the indicator now.
+  it('builds an agent_activity card with a blue header, "Agent activity" title, and no italic caption', () => {
+    const state: CardState = {
+      status:       'agent_activity',
+      userPrompt:   '(agent activity)',
+      responseText: 'Pushed commit abc1234.',
+      toolCalls:    [],
+    };
+    const json = JSON.parse(buildCardV2(state));
+    expect(json.header.template).toBe('blue');
+    expect(json.header.title.content).toContain('Agent activity');
+    const elements = findElements(json);
+    const captionEl = elements.find(
+      (e) => e.tag === 'markdown' && typeof e.content === 'string'
+        && /Agent activity between turns/.test(e.content),
+    );
+    expect(captionEl).toBeUndefined();
+    const bodyEl = elements.find(
+      (e) => e.tag === 'markdown' && typeof e.content === 'string'
+        && e.content.includes('Pushed commit abc1234'),
+    );
+    expect(bodyEl).toBeDefined();
+  });
+
   it('renders the running tool indicator as a single line (latest tool + count)', () => {
     const state: CardState = {
       status:       'running',

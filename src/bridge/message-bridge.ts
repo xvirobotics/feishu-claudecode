@@ -60,15 +60,6 @@ const DEFAULT_IMAGE_TEXT = '请分析这张图片';
 const DEFAULT_FILE_TEXT = '请分析这个文件';
 
 /**
- * Header text shown at the top of a between-turns "agent activity" card.
- * Intentionally avoids the previous "long-running task" phrasing — that
- * read to users as "still running" when in fact the card is emitted at
- * the END of a burst (snippet buffer flushed after 30 s of quiet).
- */
-export const SPONTANEOUS_CARD_HEADER =
-  'Agent activity between turns (background task return, teammate ping, or `/goal` evaluator):';
-
-/**
  * Extract a one-line summary from an SDK stream message for the spontaneous
  * activity card. Returns null if the message has nothing user-readable.
  *
@@ -103,11 +94,18 @@ export function extractSpontaneousSnippet(msg: unknown): string | null {
  * count so users know there was more activity if they want to dig into
  * logs. Mirrors the "show only the final result, hide the play-by-play"
  * pattern from PR #268's main-card tool indicator.
+ *
+ * No header line in the body — earlier versions prepended an italic
+ * "Agent activity between turns (…)" caption, but users found it long
+ * and visually noisy. The card itself is rendered with the
+ * `agent_activity` status (blue header, "Agent activity" title), which
+ * is enough to tell it apart from a regular "complete" reply card.
+ * Don't re-add a body header without verifying the card-header signal
+ * is no longer sufficient.
  */
 export function formatSpontaneousCardBody(snippets: string[]): string {
-  const lines: string[] = [`_${SPONTANEOUS_CARD_HEADER}_`, ''];
-  if (snippets.length === 0) return lines.join('\n');
-  lines.push(snippets[snippets.length - 1]);
+  if (snippets.length === 0) return '';
+  const lines: string[] = [snippets[snippets.length - 1]];
   if (snippets.length > 1) {
     lines.push('');
     lines.push(`_(${snippets.length} events coalesced; showing latest)_`);
@@ -555,13 +553,12 @@ export class MessageBridge {
    * "agent activity" Feishu card. No-op if buffer is empty or there's
    * an active user turn (we'd rather merge into the live card than spam).
    *
-   * Card title intentionally avoids the previous "long-running task"
-   * wording — users read that as "agent is still running long-running
-   * work", but the card is in fact emitted at the END of a between-turn
-   * burst (e.g. after a `run_in_background` Bash command's task-notification
-   * triggered the agent to summarize a result). Calling it "agent activity"
-   * + green status lets the user read it as "the agent did this and is now
-   * quiet" — which is the correct signal.
+   * Uses the `agent_activity` status, which renders a blue header with
+   * an "Agent activity" title — that's the entire visual signal that
+   * this is a between-turn burst, not a normal "complete" reply.
+   * Earlier versions used `status: 'complete'` (green) plus an italic
+   * body caption, but users found the caption ugly and the green color
+   * indistinguishable from a regular turn.
    */
   private async flushSpontaneous(chatId: string): Promise<void> {
     const buf = this.spontaneousBuffers.get(chatId);
@@ -576,14 +573,22 @@ export class MessageBridge {
       return;
     }
 
+    // Nothing user-meaningful to surface — buffer might exist because a
+    // teammate ping landed but extractSpontaneousSnippet filtered all of
+    // its blocks (e.g. tool-only burst). Silently skip the card.
+    if (buf.snippets.length === 0) {
+      this.logger.debug({ chatId }, 'MessageBridge: drop spontaneous (no text snippets)');
+      return;
+    }
+
     const responseText = formatSpontaneousCardBody(buf.snippets);
 
     const card: CardState = {
-      status: 'complete',
+      status: 'agent_activity',
       userPrompt: '(agent activity)',
       responseText,
       toolCalls: [],
-      teamState: buf.snippets.length > 0 ? buf.teamState : undefined,
+      teamState: buf.teamState,
     };
     try {
       await this.sender.sendCard(chatId, card);
