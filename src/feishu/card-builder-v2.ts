@@ -64,10 +64,15 @@ function blockToElement(block: Block): unknown {
       };
 
     case 'table': {
+      // data_type 'lark_md' (Feishu 7.10+) so `**bold**`, links, and other
+      // inline markdown inside header/cell text actually render. With
+      // 'text' the `**` syntax leaks through as literal asterisks because
+      // text columns do not parse markdown — that's why mobile table
+      // headers were rendering `**品类**` verbatim.
       const columns = block.headers.map((h, i) => ({
         name:             `col${i}`,
         display_name:     h,
-        data_type:        'text',
+        data_type:        'lark_md',
         horizontal_align: block.align[i] ?? 'left',
         vertical_align:   'center',
         width:            'auto',
