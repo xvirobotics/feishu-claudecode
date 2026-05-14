@@ -175,6 +175,8 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 | 组件 | 一句话说明 |
 |------|-----------|
 | **三引擎内核** | 每个 Bot 独立选 Claude Code / Kimi Code / Codex CLI — 完整工具链（Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP），自主模式运行 |
+| **常驻会话与目标循环** | 每个会话一个常驻 Claude 进程 — `/goal` 让 Agent 在多轮之间持续自驱直到目标达成；团队成员和后台任务跨轮存活 |
+| **Agent 团队（运行时）** | 主导 Agent 并行派遣专家队友，互相路由任务、汇总结果 —— 全部在一个飞书会话中完成 |
 | **MetaSkill** | Agent 工厂。`/metaskill` 一键生成可迁移的 Agent 团队（`CLAUDE.md` / `AGENTS.md` + skills） |
 | **MetaMemory** | 内嵌 SQLite 知识库，全文搜索，Web UI，变更自动同步到飞书知识库 |
 | **IM Bridge** | 飞书、Telegram、微信（含手机端）对话任意 Agent，流式卡片 + 工具调用追踪 |
@@ -228,6 +230,21 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 ```
 /metaskill 给这个 React Native 项目创建一个 agent 团队 ——
 我需要一个前端专家、一个后端 API 专家、一个 code reviewer。
+```
+
+### Agent 团队 — 运行时协作
+
+```
+你来当主导工程师。并行派出一个前端专家和一个后端专家：
+前端负责 React UI 改造，后端加上新的 /api/reports 接口，
+你负责 review 两边的 PR，全部通过后再合并。
+```
+
+### 目标循环
+
+```
+/goal PR #123 的 CI 全绿、部署成功。
+每 10 分钟检查一次，搞定后告诉我。
 ```
 
 ### 定时任务
@@ -396,6 +413,7 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 | `/reset` | 清除会话 |
 | `/stop` | 中止当前任务 |
 | `/status` | 查看会话状态（含当前模型） |
+| `/goal <条件>` | 设置目标，Agent 跨多轮持续推进直到达成。`/goal clear` 停止 |
 | `/model` | 查看当前模型；`/model list` 查看可用模型；`/model <name>` 切换；`/model reset` 恢复默认 |
 | `/memory list` | 浏览知识库目录 |
 | `/memory search 关键词` | 搜索知识库 |

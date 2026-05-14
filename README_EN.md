@@ -171,6 +171,8 @@ Full-featured browser-based chat interface. Access at `https://your-server/web/`
 | Component | Description |
 |-----------|-------------|
 | **Triple Engine Kernel** | Each bot independently chooses Claude Code / Kimi Code / Codex CLI — full tool stack (Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP) in autonomous mode |
+| **Persistent Sessions & Goal Loops** | One Claude process per chat — `/goal` keeps the agent auto-driving across turns until a condition is met; teammates and background tasks survive between turns |
+| **Agent Teams** | A lead agent spawns specialist teammates in parallel, routes tasks between them, and aggregates results — all in one Feishu chat |
 | **MetaSkill** | Agent factory. `/metaskill` generates portable agent teams (`CLAUDE.md` / `AGENTS.md` + skills) |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search, Web UI, auto-syncs to Feishu Wiki |
 | **IM Bridge** | Chat with any agent from Feishu, Telegram, or WeChat (including mobile). Streaming cards + tool call tracking |
@@ -225,6 +227,21 @@ Search MetaMemory for our API design conventions.
 ```
 /metaskill Create an agent team for this React Native project —
 I need a frontend specialist, a backend API specialist, and a code reviewer.
+```
+
+### Agent Teams — Runtime
+
+```
+Act as a lead engineer. Spawn a frontend specialist and a backend specialist
+in parallel: the frontend handles the React UI changes, the backend adds the
+new /api/reports endpoint, and you review both PRs before merging.
+```
+
+### Goal Loops
+
+```
+/goal The CI for PR #123 is green and the deploy completes successfully.
+Check every 10 minutes and report back when done.
 ```
 
 ### Scheduling
@@ -397,6 +414,7 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `/reset` | Clear session |
 | `/stop` | Abort current task |
 | `/status` | Session info (includes current model) |
+| `/goal <condition>` | Set a goal the agent keeps pursuing across turns. `/goal clear` to stop |
 | `/model` | Show current engine/model; `/model list` — available engines/models; `/model claude`, `/model kimi`, or `/model codex` — switch engine; `/model <name>` — set model; `/model reset` — restore default |
 | `/memory list` | Browse knowledge tree |
 | `/memory search <query>` | Search knowledge base |

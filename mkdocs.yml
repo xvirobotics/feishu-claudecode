@@ -73,6 +73,8 @@ plugins:
               - 安全: concepts/security.md
             - 功能:
               - MetaSkill: features/metaskill.md
+              - 目标循环: features/goal-loops.md
+              - Agent 团队: features/agent-teams.md
               - MetaMemory: features/metamemory.md
               - Web UI: features/web-ui.md
               - Peers 联邦: features/peers.md
@@ -125,6 +127,8 @@ nav:
     - Security: concepts/security.md
   - Features:
     - MetaSkill: features/metaskill.md
+    - Goal Loops: features/goal-loops.md
+    - Agent Teams: features/agent-teams.md
     - MetaMemory: features/metamemory.md
     - Web UI: features/web-ui.md
     - Peers Federation: features/peers.md
