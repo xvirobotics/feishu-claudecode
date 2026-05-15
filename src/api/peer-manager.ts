@@ -13,6 +13,10 @@ export interface PeerSkillInfo {
   description: string;
   version: number;
   author: string;
+  ownerInstanceId?: string;
+  ownerInstanceName?: string;
+  visibility?: 'private' | 'published' | 'shared';
+  contentHash?: string;
   tags: string[];
   peerUrl: string;
   peerName: string;
@@ -156,6 +160,10 @@ export class PeerManager {
             description: s.description || '',
             version: s.version || 1,
             author: s.author || '',
+            ownerInstanceId: (s as any).ownerInstanceId || undefined,
+            ownerInstanceName: (s as any).ownerInstanceName || undefined,
+            visibility: (s as any).visibility || 'published',
+            contentHash: (s as any).contentHash || undefined,
             tags: s.tags || [],
             peerUrl: config.url,
             peerName: config.name,

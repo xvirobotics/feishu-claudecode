@@ -119,6 +119,8 @@ Install behavior:
 
 ## Phase 4: Federated Skill Hub
 
+Status: metadata foundation partially implemented.
+
 Make Skill Hub operate on namespaced artifact identity:
 
 ```text
@@ -129,12 +131,12 @@ team skill: team/lark-doc
 
 Add metadata:
 
-- owner instance id
-- owner instance name
+- owner instance id. Initial local publish support added.
+- owner instance name. Initial local publish support added.
 - source peer
-- content sha256
+- content sha256. Initial storage/list/search support added.
 - signature, once signing is enabled
-- visibility: private/published/shared
+- visibility: private/published/shared. Initial storage/list/search support added.
 
 Install behavior:
 
