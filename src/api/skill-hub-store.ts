@@ -14,6 +14,10 @@ export interface SkillRecord {
   description: string;
   version: number;
   author: string;
+  ownerInstanceId?: string;
+  ownerInstanceName?: string;
+  visibility: 'private' | 'published' | 'shared';
+  contentHash: string;
   tags: string[];
   userInvocable: boolean;
   context?: string;
@@ -30,6 +34,10 @@ export interface SkillSummary {
   description: string;
   version: number;
   author: string;
+  ownerInstanceId?: string;
+  ownerInstanceName?: string;
+  visibility: 'private' | 'published' | 'shared';
+  contentHash: string;
   tags: string[];
   publishedAt: string;
   updatedAt: string;
@@ -44,6 +52,9 @@ export interface SkillPublishInput {
   skillMd: string;
   referencesTar?: Buffer;
   author?: string;
+  ownerInstanceId?: string;
+  ownerInstanceName?: string;
+  visibility?: 'private' | 'published' | 'shared';
 }
 
 /**
@@ -69,6 +80,13 @@ function parseFrontmatter(content: string): Record<string, string> {
   return meta;
 }
 
+function computeContentHash(skillMd: string, referencesTar?: Buffer): string {
+  const hash = crypto.createHash('sha256');
+  hash.update(skillMd);
+  if (referencesTar) hash.update(referencesTar);
+  return hash.digest('hex');
+}
+
 export class SkillHubStore {
   private db: Database.Database;
   private logger: Logger;
@@ -91,6 +109,10 @@ export class SkillHubStore {
         description     TEXT NOT NULL DEFAULT '',
         version         INTEGER NOT NULL DEFAULT 1,
         author          TEXT NOT NULL DEFAULT '',
+        owner_instance_id   TEXT,
+        owner_instance_name TEXT,
+        visibility      TEXT NOT NULL DEFAULT 'published',
+        content_hash    TEXT NOT NULL DEFAULT '',
         tags            TEXT NOT NULL DEFAULT '[]',
         user_invocable  INTEGER NOT NULL DEFAULT 1,
         context         TEXT,
@@ -101,6 +123,21 @@ export class SkillHubStore {
         updated_at      TEXT NOT NULL
       );
     `);
+
+    const cols = this.db.prepare("PRAGMA table_info('skills')").all() as { name: string }[];
+    const hasColumn = (name: string) => cols.some((c) => c.name === name);
+    if (!hasColumn('owner_instance_id')) {
+      this.db.exec('ALTER TABLE skills ADD COLUMN owner_instance_id TEXT');
+    }
+    if (!hasColumn('owner_instance_name')) {
+      this.db.exec('ALTER TABLE skills ADD COLUMN owner_instance_name TEXT');
+    }
+    if (!hasColumn('visibility')) {
+      this.db.exec("ALTER TABLE skills ADD COLUMN visibility TEXT NOT NULL DEFAULT 'published'");
+    }
+    if (!hasColumn('content_hash')) {
+      this.db.exec("ALTER TABLE skills ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''");
+    }
 
     // Create FTS5 virtual table if not exists
     // Check if table already exists to avoid errors on restart
@@ -145,6 +182,8 @@ export class SkillHubStore {
     const userInvocable = meta['user-invocable'] !== 'false';
     const context = meta['context'] || undefined;
     const allowedTools = meta['allowed-tools'] || undefined;
+    const visibility = input.visibility || 'published';
+    const contentHash = computeContentHash(input.skillMd, input.referencesTar);
     const now = new Date().toISOString();
 
     // Check if skill already exists (upsert)
@@ -155,12 +194,15 @@ export class SkillHubStore {
     if (existing) {
       this.db.prepare(`
         UPDATE skills SET
-          description = ?, version = ?, author = ?, tags = ?,
+          description = ?, version = ?, author = ?, owner_instance_id = ?,
+          owner_instance_name = ?, visibility = ?, content_hash = ?, tags = ?,
           user_invocable = ?, context = ?, allowed_tools = ?,
           skill_md = ?, references_tar = ?, updated_at = ?
         WHERE name = ?
       `).run(
-        description, existing.version + 1, input.author || '', JSON.stringify(tags),
+        description, existing.version + 1, input.author || '',
+        input.ownerInstanceId || null, input.ownerInstanceName || null,
+        visibility, contentHash, JSON.stringify(tags),
         userInvocable ? 1 : 0, context || null, allowedTools || null,
         input.skillMd, input.referencesTar || null, now, name,
       );
@@ -171,12 +213,15 @@ export class SkillHubStore {
 
     const id = crypto.randomUUID();
     this.db.prepare(`
-      INSERT INTO skills (id, name, description, version, author, tags,
+      INSERT INTO skills (id, name, description, version, author,
+        owner_instance_id, owner_instance_name, visibility, content_hash, tags,
         user_invocable, context, allowed_tools, skill_md, references_tar,
         published_at, updated_at)
-      VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      id, name, description, input.author || '', JSON.stringify(tags),
+      id, name, description, input.author || '',
+      input.ownerInstanceId || null, input.ownerInstanceName || null,
+      visibility, contentHash, JSON.stringify(tags),
       userInvocable ? 1 : 0, context || null, allowedTools || null,
       input.skillMd, input.referencesTar || null, now, now,
     );
@@ -205,7 +250,10 @@ export class SkillHubStore {
   /** List all skills (summary only, no SKILL.md content). */
   list(): SkillSummary[] {
     const rows = this.db.prepare(
-      'SELECT id, name, description, version, author, tags, published_at, updated_at FROM skills ORDER BY updated_at DESC',
+      `SELECT id, name, description, version, author, owner_instance_id,
+              owner_instance_name, visibility, content_hash, tags,
+              published_at, updated_at
+       FROM skills ORDER BY updated_at DESC`,
     ).all() as any[];
     return rows.map((row) => ({
       id: row.id,
@@ -213,6 +261,10 @@ export class SkillHubStore {
       description: row.description,
       version: row.version,
       author: row.author,
+      ownerInstanceId: row.owner_instance_id || undefined,
+      ownerInstanceName: row.owner_instance_name || undefined,
+      visibility: row.visibility || 'published',
+      contentHash: row.content_hash || '',
       tags: JSON.parse(row.tags || '[]'),
       publishedAt: row.published_at,
       updatedAt: row.updated_at,
@@ -225,7 +277,9 @@ export class SkillHubStore {
     if (!escaped) return this.list().map((s) => ({ ...s, snippet: '' }));
 
     const rows = this.db.prepare(`
-      SELECT s.id, s.name, s.description, s.version, s.author, s.tags,
+      SELECT s.id, s.name, s.description, s.version, s.author,
+             s.owner_instance_id, s.owner_instance_name, s.visibility,
+             s.content_hash, s.tags,
              s.published_at, s.updated_at,
              snippet(skills_fts, 3, '<b>', '</b>', '...', 32) AS snippet
       FROM skills_fts f
@@ -240,6 +294,10 @@ export class SkillHubStore {
       description: row.description,
       version: row.version,
       author: row.author,
+      ownerInstanceId: row.owner_instance_id || undefined,
+      ownerInstanceName: row.owner_instance_name || undefined,
+      visibility: row.visibility || 'published',
+      contentHash: row.content_hash || '',
       tags: JSON.parse(row.tags || '[]'),
       publishedAt: row.published_at,
       updatedAt: row.updated_at,
@@ -264,6 +322,10 @@ export class SkillHubStore {
       description: row.description,
       version: row.version,
       author: row.author,
+      ownerInstanceId: row.owner_instance_id || undefined,
+      ownerInstanceName: row.owner_instance_name || undefined,
+      visibility: row.visibility || 'published',
+      contentHash: row.content_hash || '',
       tags: JSON.parse(row.tags || '[]'),
       userInvocable: row.user_invocable === 1,
       context: row.context || undefined,

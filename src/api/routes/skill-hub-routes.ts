@@ -12,7 +12,7 @@ export async function handleSkillHubRoutes(
   method: string,
   url: string,
 ): Promise<boolean> {
-  const { logger, registry, peerManager } = ctx;
+  const { logger, registry, peerManager, instance } = ctx;
   const store = ctx.skillHubStore;
 
   if (!url.startsWith('/api/skills')) return false;
@@ -81,7 +81,15 @@ export async function handleSkillHubRoutes(
       }
     }
 
-    const record = store.publish({ name: skillName, skillMd, referencesTar, author: botName });
+    const record = store.publish({
+      name: skillName,
+      skillMd,
+      referencesTar,
+      author: botName,
+      ownerInstanceId: instance.instanceId,
+      ownerInstanceName: instance.instanceName,
+      visibility: 'published',
+    });
     jsonResponse(res, 201, { name: record.name, version: record.version, published: true });
     return true;
   }
@@ -196,6 +204,9 @@ export async function handleSkillHubRoutes(
       skillMd,
       referencesTar,
       author: body.author as string,
+      ownerInstanceId: instance.instanceId,
+      ownerInstanceName: instance.instanceName,
+      visibility: (body.visibility as 'private' | 'published' | 'shared') || 'published',
     });
     jsonResponse(res, 201, { name: record.name, version: record.version, published: true });
     return true;
