@@ -1,4 +1,4 @@
-import type { MemoryStorage, DocumentCreateInput, DocumentUpdateInput, Role, Visibility } from './memory-storage.js';
+import type { MemoryStorage, DocumentCreateInput, DocumentUpdateInput, MemoryAccess, Visibility } from './memory-storage.js';
 import { memoryEvents } from './memory-events.js';
 
 interface RouteResult {
@@ -8,12 +8,12 @@ interface RouteResult {
 
 // --- Folder routes ---
 
-export function handleGetFolders(storage: MemoryStorage, role: Role): RouteResult {
+export function handleGetFolders(storage: MemoryStorage, role: MemoryAccess): RouteResult {
   const tree = storage.getFolderTree(role);
   return { status: 200, body: tree };
 }
 
-export function handleCreateFolder(storage: MemoryStorage, body: Record<string, unknown>, role: Role): RouteResult {
+export function handleCreateFolder(storage: MemoryStorage, body: Record<string, unknown>, role: MemoryAccess): RouteResult {
   const name = body.name as string | undefined;
   if (!name) {
     return { status: 400, body: { detail: 'name is required' } };
@@ -21,11 +21,11 @@ export function handleCreateFolder(storage: MemoryStorage, body: Record<string, 
   const parentId = (body.parent_id as string) || 'root';
   const visibility = (body.visibility as Visibility) || 'shared';
   // Only admin can create private folders
-  if (visibility === 'private' && role !== 'admin') {
+  if (visibility === 'private' && (typeof role !== 'string' || role !== 'admin')) {
     return { status: 403, body: { detail: 'Only admin can create private folders' } };
   }
   try {
-    const folder = storage.createFolder(name, parentId, visibility);
+    const folder = storage.createFolder(name, parentId, visibility, role);
     memoryEvents.emitChange({ type: 'folder_created', folderId: folder.id });
     return { status: 201, body: folder };
   } catch (err: any) {
@@ -33,8 +33,8 @@ export function handleCreateFolder(storage: MemoryStorage, body: Record<string, 
   }
 }
 
-export function handleUpdateFolder(storage: MemoryStorage, folderId: string, body: Record<string, unknown>, role: Role): RouteResult {
-  if (role !== 'admin') {
+export function handleUpdateFolder(storage: MemoryStorage, folderId: string, body: Record<string, unknown>, role: MemoryAccess): RouteResult {
+  if (typeof role !== 'string' || role !== 'admin') {
     return { status: 403, body: { detail: 'Only admin can update folder settings' } };
   }
   const data: { visibility?: Visibility } = {};
@@ -44,14 +44,14 @@ export function handleUpdateFolder(storage: MemoryStorage, folderId: string, bod
   return { status: 200, body: folder };
 }
 
-export function handleDeleteFolder(storage: MemoryStorage, folderId: string, role: Role): RouteResult {
-  if (role !== 'admin') {
+export function handleDeleteFolder(storage: MemoryStorage, folderId: string, role: MemoryAccess): RouteResult {
+  if (typeof role !== 'string' || role !== 'admin') {
     if (!storage.isFolderAccessible(folderId, role)) {
       return { status: 403, body: { detail: 'Access denied' } };
     }
   }
   try {
-    storage.deleteFolder(folderId);
+    storage.deleteFolder(folderId, role);
     memoryEvents.emitChange({ type: 'folder_deleted', folderId });
     return { status: 200, body: { ok: true } };
   } catch (err: any) {
@@ -70,7 +70,7 @@ export function handleDeleteFolder(storage: MemoryStorage, folderId: string, rol
 export function handleListDocuments(
   storage: MemoryStorage,
   query: URLSearchParams,
-  role: Role,
+  role: MemoryAccess,
 ): RouteResult {
   const folderId = query.get('folder_id') || undefined;
   const limit = Math.min(Math.max(parseInt(query.get('limit') || '50', 10) || 50, 1), 200);
@@ -79,7 +79,7 @@ export function handleListDocuments(
   return { status: 200, body: docs };
 }
 
-export function handleGetDocument(storage: MemoryStorage, docId: string, role: Role): RouteResult {
+export function handleGetDocument(storage: MemoryStorage, docId: string, role: MemoryAccess): RouteResult {
   const doc = storage.getDocument(docId, role);
   if (!doc) return { status: 404, body: { detail: 'Document not found' } };
   return { status: 200, body: doc };
@@ -88,7 +88,7 @@ export function handleGetDocument(storage: MemoryStorage, docId: string, role: R
 export function handleGetDocumentByPath(
   storage: MemoryStorage,
   query: URLSearchParams,
-  role: Role,
+  role: MemoryAccess,
 ): RouteResult {
   const docPath = query.get('path');
   if (!docPath) return { status: 400, body: { detail: 'path query parameter is required' } };
@@ -100,7 +100,7 @@ export function handleGetDocumentByPath(
 export function handleCreateDocument(
   storage: MemoryStorage,
   body: Record<string, unknown>,
-  role: Role,
+  role: MemoryAccess,
 ): RouteResult {
   const title = body.title as string | undefined;
   if (!title) {
@@ -131,7 +131,7 @@ export function handleUpdateDocument(
   storage: MemoryStorage,
   docId: string,
   body: Record<string, unknown>,
-  role: Role,
+  role: MemoryAccess,
 ): RouteResult {
   const data: DocumentUpdateInput = {};
   if (body.title !== undefined) data.title = body.title as string;
@@ -145,7 +145,7 @@ export function handleUpdateDocument(
   return { status: 200, body: doc };
 }
 
-export function handleDeleteDocument(storage: MemoryStorage, docId: string, role: Role): RouteResult {
+export function handleDeleteDocument(storage: MemoryStorage, docId: string, role: MemoryAccess): RouteResult {
   const deleted = storage.deleteDocument(docId, role);
   if (!deleted) return { status: 404, body: { detail: 'Document not found' } };
   memoryEvents.emitChange({ type: 'document_deleted', documentId: docId });
@@ -157,7 +157,7 @@ export function handleDeleteDocument(storage: MemoryStorage, docId: string, role
 export function handleSearch(
   storage: MemoryStorage,
   query: URLSearchParams,
-  role: Role,
+  role: MemoryAccess,
 ): RouteResult {
   const q = query.get('q');
   if (!q || q.trim().length === 0) {

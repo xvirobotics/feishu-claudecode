@@ -7,6 +7,20 @@ import type { Logger } from '../utils/logger.js';
 
 export type Role = 'admin' | 'reader';
 export type Visibility = 'shared' | 'private';
+export type NamespaceAccess = 'read' | 'write';
+
+export interface NamespaceGrant {
+  namespace: string;
+  access: NamespaceAccess;
+}
+
+export interface MemoryPrincipal {
+  role: Role;
+  instanceId?: string;
+  grants?: NamespaceGrant[];
+}
+
+export type MemoryAccess = Role | MemoryPrincipal;
 
 export interface Folder {
   id: string;
@@ -112,6 +126,44 @@ function parseTags(raw: unknown): string[] {
   return [];
 }
 
+function normalizeAccess(access: MemoryAccess = 'admin'): MemoryPrincipal {
+  return typeof access === 'string' ? { role: access } : access;
+}
+
+function normalizeNamespace(namespace: string): string {
+  const trimmed = namespace.trim();
+  if (!trimmed || trimmed === '/') return '/';
+  return `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
+}
+
+function isPathWithinNamespace(pathname: string, namespace: string): boolean {
+  const pathNorm = normalizeNamespace(pathname);
+  const nsNorm = normalizeNamespace(namespace);
+  return nsNorm === '/' || pathNorm === nsNorm || pathNorm.startsWith(`${nsNorm}/`);
+}
+
+function isAncestorOfNamespace(pathname: string, namespace: string): boolean {
+  const pathNorm = normalizeNamespace(pathname);
+  const nsNorm = normalizeNamespace(namespace);
+  return pathNorm === '/' || nsNorm.startsWith(`${pathNorm}/`);
+}
+
+function hasNamespaceGrant(access: MemoryPrincipal, pathname: string, grantAccess: NamespaceAccess): boolean {
+  const grants = access.grants || [];
+  return grants.some((grant) => {
+    if (grantAccess === 'write' && grant.access !== 'write') return false;
+    return isPathWithinNamespace(pathname, grant.namespace);
+  });
+}
+
+function canCreateNamespacePath(access: MemoryPrincipal, pathname: string): boolean {
+  const grants = access.grants || [];
+  return grants.some((grant) => grant.access === 'write' && (
+    isPathWithinNamespace(pathname, grant.namespace)
+    || isAncestorOfNamespace(pathname, grant.namespace)
+  ));
+}
+
 // --- Storage Class ---
 
 export class MemoryStorage {
@@ -205,8 +257,12 @@ export class MemoryStorage {
     return `${parentPath}/${name}`;
   }
 
-  createFolder(name: string, parentId = 'root', visibility: Visibility = 'shared'): Folder {
+  createFolder(name: string, parentId = 'root', visibility: Visibility = 'shared', access: MemoryAccess = 'admin'): Folder {
     const folderPath = this.computeFolderPath(parentId, name);
+    const principal = normalizeAccess(access);
+    if (!this.canWritePath(folderPath, principal) && !canCreateNamespacePath(principal, folderPath)) {
+      throw new Error('Access denied: cannot create folder outside writable namespace');
+    }
 
     // Check for existing folder with same path (idempotent)
     const existing = this.db.prepare('SELECT * FROM folders WHERE path = ?').get(folderPath) as Folder | undefined;
@@ -221,7 +277,8 @@ export class MemoryStorage {
     return { id, name, parent_id: parentId, path: folderPath, visibility, created_at: now, updated_at: now };
   }
 
-  getFolderTree(role: Role = 'admin'): FolderTreeNode {
+  getFolderTree(access: MemoryAccess = 'admin'): FolderTreeNode {
+    const principal = normalizeAccess(access);
     const folders = this.db.prepare('SELECT * FROM folders').all() as Folder[];
     const docCounts = this.db.prepare(
       'SELECT folder_id, COUNT(*) as count FROM documents GROUP BY folder_id',
@@ -232,8 +289,7 @@ export class MemoryStorage {
       countMap.set(row.folder_id, row.count);
     }
 
-    // Filter folders by role: readers can only see shared folders
-    const visibleFolders = role === 'admin' ? folders : folders.filter((f) => f.visibility !== 'private');
+    const visibleFolders = folders.filter((f) => this.canReadFolder(f, principal));
 
     // Build tree
     const nodeMap = new Map<string, FolderTreeNode>();
@@ -261,37 +317,59 @@ export class MemoryStorage {
     return root || { id: 'root', name: 'Root', path: '/', visibility: 'shared', children: [], document_count: 0 };
   }
 
-  deleteFolder(folderId: string): void {
+  deleteFolder(folderId: string, access: MemoryAccess = 'admin'): void {
     if (folderId === 'root') throw new Error('Cannot delete root folder');
-    const folder = this.db.prepare('SELECT id FROM folders WHERE id = ?').get(folderId);
+    const principal = normalizeAccess(access);
+    const folder = this.db.prepare('SELECT * FROM folders WHERE id = ?').get(folderId) as Folder | undefined;
     if (!folder) throw new Error(`Folder not found: ${folderId}`);
+    if (!this.canWritePath(folder.path, principal)) throw new Error('Access denied');
 
     // Delete documents in this folder first (cascade manually since SQLite FK cascade may not cover triggers)
     this.db.prepare('DELETE FROM documents WHERE folder_id = ?').run(folderId);
     // Delete child folders recursively
     const children = this.db.prepare('SELECT id FROM folders WHERE parent_id = ?').all(folderId) as { id: string }[];
     for (const child of children) {
-      this.deleteFolder(child.id);
+      this.deleteFolder(child.id, access);
     }
     this.db.prepare('DELETE FROM folders WHERE id = ?').run(folderId);
   }
 
-  /** Check if a folder is accessible by the given role. */
-  isFolderAccessible(folderId: string, role: Role): boolean {
-    if (role === 'admin') return true;
-    const folder = this.db.prepare('SELECT visibility FROM folders WHERE id = ?').get(folderId) as { visibility: string } | undefined;
+  private canReadFolder(folder: Folder | { visibility: string; path: string }, principal: MemoryPrincipal): boolean {
+    if (principal.role === 'admin') return true;
+    if (folder.visibility !== 'private') return true;
+    return hasNamespaceGrant(principal, folder.path, 'read') || hasNamespaceGrant(principal, folder.path, 'write');
+  }
+
+  private canWritePath(pathname: string, principal: MemoryPrincipal): boolean {
+    if (principal.role === 'admin') return true;
+    return hasNamespaceGrant(principal, pathname, 'write');
+  }
+
+  /** Check if a folder is readable by the given principal. */
+  isFolderAccessible(folderId: string, access: MemoryAccess): boolean {
+    const principal = normalizeAccess(access);
+    const folder = this.db.prepare('SELECT visibility, path FROM folders WHERE id = ?').get(folderId) as { visibility: string; path: string } | undefined;
     if (!folder) return false;
-    return folder.visibility !== 'private';
+    return this.canReadFolder(folder, principal);
+  }
+
+  /** Check if a folder can be written by the given principal. */
+  canWriteFolder(folderId: string, access: MemoryAccess): boolean {
+    const principal = normalizeAccess(access);
+    const folder = this.db.prepare('SELECT path FROM folders WHERE id = ?').get(folderId) as { path: string } | undefined;
+    if (!folder) return false;
+    return this.canWritePath(folder.path, principal);
   }
 
   /** Get set of folder IDs accessible by the given role. */
-  getAccessibleFolderIds(role: Role): Set<string> {
-    if (role === 'admin') {
+  getAccessibleFolderIds(access: MemoryAccess): Set<string> {
+    const principal = normalizeAccess(access);
+    if (principal.role === 'admin') {
       const rows = this.db.prepare('SELECT id FROM folders').all() as { id: string }[];
       return new Set(rows.map((r) => r.id));
     }
-    const rows = this.db.prepare("SELECT id FROM folders WHERE visibility != 'private'").all() as { id: string }[];
-    return new Set(rows.map((r) => r.id));
+    const rows = this.db.prepare('SELECT id, visibility, path FROM folders').all() as Folder[];
+    return new Set(rows.filter((r) => this.canReadFolder(r, principal)).map((r) => r.id));
   }
 
   /** Update folder visibility (admin only). */
@@ -313,12 +391,13 @@ export class MemoryStorage {
     return `${folderPath}/${slugify(title)}`;
   }
 
-  createDocument(data: DocumentCreateInput, role: Role = 'admin'): Document {
+  createDocument(data: DocumentCreateInput, access: MemoryAccess = 'admin'): Document {
     const folderId = data.folder_id || 'root';
-    if (!this.isFolderAccessible(folderId, role)) {
-      throw new Error('Access denied: cannot create document in private folder');
-    }
     const docPath = this.computeDocPath(folderId, data.title);
+    const principal = normalizeAccess(access);
+    if (!this.canWritePath(docPath, principal)) {
+      throw new Error('Access denied: cannot create document outside writable namespace');
+    }
     const now = nowISO();
     const id = generateId();
     const tags = JSON.stringify(data.tags || []);
@@ -340,48 +419,49 @@ export class MemoryStorage {
     };
   }
 
-  getDocument(docId: string, role: Role = 'admin'): Document | null {
+  getDocument(docId: string, access: MemoryAccess = 'admin'): Document | null {
     const row = this.db.prepare('SELECT * FROM documents WHERE id = ?').get(docId) as (Omit<Document, 'tags'> & { tags: string }) | undefined;
     if (!row) return null;
-    if (!this.isFolderAccessible(row.folder_id, role)) return null;
+    if (!this.isFolderAccessible(row.folder_id, access)) return null;
     return { ...row, tags: parseTags(row.tags) };
   }
 
-  getDocumentByPath(docPath: string, role: Role = 'admin'): Document | null {
+  getDocumentByPath(docPath: string, access: MemoryAccess = 'admin'): Document | null {
     const row = this.db.prepare('SELECT * FROM documents WHERE path = ?').get(docPath) as (Omit<Document, 'tags'> & { tags: string }) | undefined;
     if (!row) return null;
-    if (!this.isFolderAccessible(row.folder_id, role)) return null;
+    if (!this.isFolderAccessible(row.folder_id, access)) return null;
     return { ...row, tags: parseTags(row.tags) };
   }
 
-  listDocuments(folderId?: string, limit = 50, offset = 0, role: Role = 'admin'): DocumentSummary[] {
+  listDocuments(folderId?: string, limit = 50, offset = 0, access: MemoryAccess = 'admin'): DocumentSummary[] {
+    const principal = normalizeAccess(access);
     let rows: any[];
     if (folderId) {
       // Check access to the specific folder
-      if (!this.isFolderAccessible(folderId, role)) return [];
+      if (!this.isFolderAccessible(folderId, access)) return [];
       rows = this.db.prepare(
         'SELECT id, title, folder_id, path, tags, created_by, created_at, updated_at FROM documents WHERE folder_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?',
       ).all(folderId, limit, offset);
-    } else if (role === 'admin') {
+    } else if (principal.role === 'admin') {
       rows = this.db.prepare(
         'SELECT id, title, folder_id, path, tags, created_by, created_at, updated_at FROM documents ORDER BY updated_at DESC LIMIT ? OFFSET ?',
       ).all(limit, offset);
     } else {
-      // Reader: only documents in shared folders
       rows = this.db.prepare(
         `SELECT d.id, d.title, d.folder_id, d.path, d.tags, d.created_by, d.created_at, d.updated_at
          FROM documents d JOIN folders f ON d.folder_id = f.id
-         WHERE f.visibility != 'private'
          ORDER BY d.updated_at DESC LIMIT ? OFFSET ?`,
       ).all(limit, offset);
+      rows = rows.filter((row) => this.isFolderAccessible(row.folder_id, access));
     }
     return rows.map((r) => ({ ...r, tags: parseTags(r.tags) }));
   }
 
-  updateDocument(docId: string, data: DocumentUpdateInput, role: Role = 'admin'): Document | null {
+  updateDocument(docId: string, data: DocumentUpdateInput, access: MemoryAccess = 'admin'): Document | null {
     const existing = this.db.prepare('SELECT * FROM documents WHERE id = ?').get(docId) as (Omit<Document, 'tags'> & { tags: string }) | undefined;
     if (!existing) return null;
-    if (!this.isFolderAccessible(existing.folder_id, role)) return null;
+    const principal = normalizeAccess(access);
+    if (!this.canWritePath(existing.path, principal)) return null;
 
     const title = data.title ?? existing.title;
     const content = data.content ?? existing.content;
@@ -393,6 +473,7 @@ export class MemoryStorage {
     if (data.title !== undefined || data.folder_id !== undefined) {
       docPath = this.computeDocPath(folderId, title);
     }
+    if (!this.canWritePath(docPath, principal)) return null;
 
     const now = nowISO();
     this.db.prepare(
@@ -412,22 +493,21 @@ export class MemoryStorage {
     };
   }
 
-  deleteDocument(docId: string, role: Role = 'admin'): boolean {
-    if (role !== 'admin') {
-      // Check if document is in an accessible folder
-      const doc = this.db.prepare('SELECT folder_id FROM documents WHERE id = ?').get(docId) as { folder_id: string } | undefined;
-      if (!doc || !this.isFolderAccessible(doc.folder_id, role)) return false;
-    }
+  deleteDocument(docId: string, access: MemoryAccess = 'admin'): boolean {
+    const principal = normalizeAccess(access);
+    const doc = this.db.prepare('SELECT path FROM documents WHERE id = ?').get(docId) as { path: string } | undefined;
+    if (!doc || !this.canWritePath(doc.path, principal)) return false;
     const result = this.db.prepare('DELETE FROM documents WHERE id = ?').run(docId);
     return result.changes > 0;
   }
 
   // --- Search ---
 
-  searchDocuments(query: string, limit = 20, role: Role = 'admin'): SearchResult[] {
+  searchDocuments(query: string, limit = 20, access: MemoryAccess = 'admin'): SearchResult[] {
     const escaped = escapeFts5Query(query);
+    const principal = normalizeAccess(access);
     let rows: any[];
-    if (role === 'admin') {
+    if (principal.role === 'admin') {
       rows = this.db.prepare(`
         SELECT d.id, d.title, d.path, d.tags, d.created_by, d.updated_at,
                snippet(documents_fts, 1, '<mark>', '</mark>', '...', 32) as snippet
@@ -444,10 +524,14 @@ export class MemoryStorage {
         FROM documents_fts fts
         JOIN documents d ON d.id = fts.doc_id
         JOIN folders f ON d.folder_id = f.id
-        WHERE documents_fts MATCH ? AND f.visibility != 'private'
+        WHERE documents_fts MATCH ?
         ORDER BY rank
         LIMIT ?
       `).all(escaped, limit) as any[];
+      rows = rows.filter((row) => {
+        const folder = this.db.prepare('SELECT visibility, path FROM folders WHERE id = (SELECT folder_id FROM documents WHERE id = ?)').get(row.id) as { visibility: string; path: string } | undefined;
+        return !!folder && this.canReadFolder(folder, principal);
+      });
     }
 
     return rows.map((r) => ({

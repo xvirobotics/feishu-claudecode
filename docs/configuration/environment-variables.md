@@ -45,6 +45,7 @@ All configuration is via `.env` file or system environment variables. Copy `.env
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory auth (legacy) |
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access) |
 | `MEMORY_TOKEN` | — | Reader token (shared folders only) |
+| `MEMORY_INSTANCE_TOKEN` | — | Scoped instance token; can write `METABOT_MEMORY_NAMESPACE` and read shared content |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL (for CLI remote access) |
 | `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Default namespace for agent writes; namespace ACL enforcement is introduced incrementally |
 

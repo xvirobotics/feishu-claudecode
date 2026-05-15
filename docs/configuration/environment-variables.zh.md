@@ -45,6 +45,7 @@
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory 认证（旧版） |
 | `MEMORY_ADMIN_TOKEN` | — | 管理员 Token（完整访问） |
 | `MEMORY_TOKEN` | — | 读者 Token（仅 shared 文件夹） |
+| `MEMORY_INSTANCE_TOKEN` | — | 实例级 scoped token；可写 `METABOT_MEMORY_NAMESPACE`，可读 shared 内容 |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory 地址（CLI 远程访问） |
 | `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Agent 默认写入的 namespace；namespace ACL 会分阶段落地 |
 
