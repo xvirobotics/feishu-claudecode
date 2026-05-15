@@ -378,6 +378,7 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 | `MEMORY_PORT` | 8100 | MetaMemory 端口 |
 | `MEMORY_ADMIN_TOKEN` | — | 管理员 Token（完整访问） |
 | `MEMORY_TOKEN` | — | 读者 Token（仅共享文件夹） |
+| `MEMORY_INSTANCE_TOKEN` | — | 实例级 Token（可写自己的 namespace，可读共享内容） |
 | `METABOT_INSTANCE_ID` | 自动生成 | 当前 MetaBot 实例 ID，用于联邦发现和 memory namespace |
 | `METABOT_CLUSTER_URL` | — | 可选的内网 cluster/registry 引导地址 |
 | `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 当前实例默认 memory namespace |

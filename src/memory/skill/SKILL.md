@@ -7,6 +7,7 @@ description: Read and write shared memory documents. Use this when you need to s
 
 A shared memory server stores documents as organized Markdown files in a folder tree.
 Server URL: !`echo ${META_MEMORY_URL:-${MEMORY_SERVER_URL:-http://localhost:8100}}`
+Default namespace: !`echo ${METABOT_MEMORY_NAMESPACE:-/}`
 
 ### When to Use
 - User asks to "remember", "save", "note down" something
@@ -53,6 +54,7 @@ For stdin content, pipe markdown: `cat notes.md | mm create "Notes" --folder ID`
 - Write documents as structured Markdown with clear headings
 - Use descriptive titles and relevant tags
 - Organize into folders by project or topic
+- Prefer writing new instance-owned knowledge under `$METABOT_MEMORY_NAMESPACE` when it is set. Other instances' namespaces are intended to be read-only unless the user explicitly asks to publish or share.
 - Before creating, search first to avoid duplicates (`mm search <query>`)
 - Update existing docs rather than creating new ones when appropriate
 - Include created_by to track which agent wrote the document

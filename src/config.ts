@@ -136,6 +136,7 @@ export interface AppConfig {
     secret: string;
     adminToken?: string;
     readerToken?: string;
+    instanceToken?: string;
     namespace: string;
   };
   /** Peer MetaBot instances for cross-instance bot discovery and task delegation. */
@@ -551,6 +552,7 @@ export function loadAppConfig(): AppConfig {
   const memoryAdminToken = process.env.MEMORY_ADMIN_TOKEN || undefined;
   const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
   const instance = loadInstanceIdentity();
+  const memoryInstanceToken = process.env.MEMORY_INSTANCE_TOKEN || process.env.METABOT_MEMORY_TOKEN || undefined;
 
   process.env.METABOT_INSTANCE_ID = instance.instanceId;
   process.env.METABOT_INSTANCE_NAME = instance.instanceName;
@@ -601,6 +603,7 @@ export function loadAppConfig(): AppConfig {
       secret: memorySecret,
       adminToken: memoryAdminToken,
       readerToken: memoryReaderToken,
+      instanceToken: memoryInstanceToken,
       namespace: instance.memoryNamespace,
     },
     peers,

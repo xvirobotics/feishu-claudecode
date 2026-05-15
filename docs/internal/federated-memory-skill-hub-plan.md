@@ -75,6 +75,8 @@ The manifest is intentionally low-risk and contains no secrets. It advertises:
 
 ## Phase 2: Namespace ACL for MetaMemory
 
+Status: partially implemented after Phase 1.
+
 Add scoped memory tokens tied to instance identity:
 
 ```text
@@ -92,8 +94,8 @@ Policy:
 
 Required changes:
 
-- Extend memory auth from role-only (`admin`/`reader`) to principal + grants.
-- Add namespace-aware checks in folder/document create/update/delete.
+- Extend memory auth from role-only (`admin`/`reader`) to principal + grants. Initial support added with `MEMORY_INSTANCE_TOKEN`.
+- Add namespace-aware checks in folder/document create/update/delete. Initial write checks are in place for instance namespaces.
 - Make the metamemory skill default writes to `METABOT_MEMORY_NAMESPACE`.
 - Add migration guidance for existing root-level documents.
 
