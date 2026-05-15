@@ -12,11 +12,12 @@ Peers enables a **federated architecture** where multiple MetaBot instances disc
 
 ## How It Works
 
-1. **Discovery** — Each instance periodically polls its peers' `GET /api/bots` endpoint (every 30 seconds)
-2. **Caching** — Bot lists are cached locally for fast lookups
-3. **Routing** — When a bot name isn't found locally, the request is forwarded to the peer that has it
-4. **Anti-loop** — Forwarded requests carry `X-MetaBot-Origin` header to prevent circular delegation
-5. **Anti-transitive** — Bots that are themselves from a peer are filtered out (no transitive forwarding)
+1. **Identity** — Each instance has a stable identity in `~/.metabot/identity.json`
+2. **Discovery** — Each instance periodically polls its peers' `GET /api/bots` and `GET /api/skills` endpoints (every 30 seconds)
+3. **Caching** — Bot and skill lists are cached locally for fast lookups
+4. **Routing** — When a bot name isn't found locally, the request is forwarded to the peer that has it
+5. **Anti-loop** — Forwarded requests carry `X-MetaBot-Origin` header to prevent circular delegation
+6. **Anti-transitive** — Bots and skills that are themselves from a peer are filtered out (no transitive forwarding)
 
 ## Configuration
 
@@ -67,6 +68,28 @@ For peers on remote servers, prefer HTTPS URLs fronted by Caddy or another TLS r
 !!! tip "You don't need bots.json"
     If you're running a single bot, just add `METABOT_PEERS` to your `.env` — no `bots.json` needed. The `bots.json` peers field is only a convenience for multi-bot setups.
 
+### Cluster Bootstrap
+
+For an internal LAN, point every instance at one stable MetaBot/cluster URL:
+
+```bash
+METABOT_CLUSTER_ID=xvirobotics-lan
+METABOT_CLUSTER_URL=http://metabot.internal:9100
+METABOT_CLUSTER_SECRET=optional-token
+```
+
+During the current bootstrap phase, `METABOT_CLUSTER_URL` is automatically added as a peer when `METABOT_DISCOVERY_MODE` is not `off`. This keeps setup low-friction while preserving the existing explicit `METABOT_PEERS` path for advanced deployments.
+
+## Instance Manifest
+
+Each instance exposes a low-risk manifest for federation:
+
+```bash
+curl http://localhost:9100/api/manifest
+```
+
+The manifest includes instance ID/name, public key, capability flags, endpoint paths, memory namespace, and local/peer bot and skill counts. It intentionally does not include secrets.
+
 ## Qualified Names
 
 Use `peerName/botName` syntax for precise routing:
@@ -84,7 +107,9 @@ mb talk alice/backend-bot chatId "fix the bug"
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/peers` | List peers and their health status |
+| `GET` | `/api/manifest` | Instance identity and capability manifest |
 | `GET` | `/api/bots` | List all bots (local + peer) |
+| `GET` | `/api/skills` | List all skills (local + peer) |
 | `POST` | `/api/talk` | Talk to a bot (auto-routes to peers) |
 
 ## CLI
@@ -92,6 +117,7 @@ mb talk alice/backend-bot chatId "fix the bug"
 ```bash
 mb peers                            # list peers and status
 mb bots                             # list all bots (includes peer bots)
+mb skills                           # list all skills (includes peer skills)
 mb talk alice/bot chatId "prompt"    # talk to a specific peer's bot
 ```
 

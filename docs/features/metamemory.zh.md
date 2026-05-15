@@ -1,6 +1,6 @@
 # MetaMemory
 
-内嵌知识库，全文搜索。Agent 跨会话读写 Markdown 文档，所有 Agent 共享。
+内嵌知识库，全文搜索。Agent 跨会话读写 Markdown 文档；在内网联邦部署中，每个 MetaBot 实例默认写自己的 namespace，同时读取共享知识。
 
 ## 概述
 
@@ -11,6 +11,7 @@ MetaMemory 是基于 **SQLite 的文档存储**（使用 FTS5 全文搜索），
 - **Web UI** 在 `http://localhost:8100?token=YOUR_TOKEN` 浏览和搜索
 - **REST API** 程序化访问
 - **CLI**（`mm`）终端访问
+- **实例 namespace** 支持内网/联邦部署
 
 ## Agent 如何使用
 
@@ -62,12 +63,21 @@ http://localhost:8100?token=YOUR_TOKEN
 
 ## 访问控制
 
-MetaMemory 支持文件夹级 ACL：
+MetaMemory 支持文件夹级 ACL 和实例级 scoped token：
 
 | Token | 访问权限 |
 |-------|---------|
 | `MEMORY_ADMIN_TOKEN` | 完整访问 — 可见所有文件夹 |
 | `MEMORY_TOKEN` | 读者访问 — 仅可见 shared 文件夹 |
+| `MEMORY_INSTANCE_TOKEN` | 实例访问 — 可写 `METABOT_MEMORY_NAMESPACE`，可读 shared 文件夹 |
+
+每个 MetaBot 实例会从 `~/.metabot/identity.json` 获得稳定身份。默认可写 namespace：
+
+```text
+/instances/<instanceId>
+```
+
+这样多台开发机可以共享一个 MetaMemory 服务，同时避免每个实例都能写入别人的空间。管理员 token 仍保留完整访问权限，用于维护和迁移。
 
 详见[安全](../concepts/security.md#metamemory-访问控制)。
 
@@ -79,7 +89,9 @@ MetaMemory 支持文件夹级 ACL：
 | `MEMORY_PORT` | `8100` | MetaMemory 端口 |
 | `MEMORY_ADMIN_TOKEN` | — | 管理员 Token（完整访问） |
 | `MEMORY_TOKEN` | — | 读者 Token（仅 shared） |
+| `MEMORY_INSTANCE_TOKEN` | — | 当前实例 namespace 的 scoped token |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory 地址（CLI 用） |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 当前实例默认 namespace |
 
 ## 自动同步到知识库
 

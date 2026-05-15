@@ -102,7 +102,7 @@ Slim summary only — see [docs/internal/architecture.md](docs/internal/architec
 - **Single-bot mode** (default): `.env` with `FEISHU_APP_ID` + `FEISHU_APP_SECRET` (see `.env.example`).
 - **Multi-bot mode**: `BOTS_CONFIG=./bots.json` runs multiple bots in one process (see `bots.example.json`). When set, the `FEISHU_APP_*` env vars are ignored.
 - **PersistentClaudeExecutor** (opt-in): `METABOT_PERSISTENT_EXECUTOR=true` keeps one long-lived `query()` per `chatId` so subagents / Agent Teams / `/background` / `/goal` survive across turns. Per-bot override via `persistentExecutor` in `bots.json`. Observability at `GET /api/executors`.
-- **MetaMemory**: external FastAPI+SQLite server at `META_MEMORY_URL` (default `http://localhost:8100`). Claude reads/writes via the `metamemory` skill; `/memory list|search|status` query directly.
+- **MetaMemory**: embedded SQLite document server at `META_MEMORY_URL` (default `http://localhost:8100`). Claude reads/writes via the `metamemory` skill; `/memory list|search|status` query directly. In federated/LAN mode, each instance has a stable `METABOT_INSTANCE_ID` and default `METABOT_MEMORY_NAMESPACE=/instances/<instanceId>`; `MEMORY_INSTANCE_TOKEN` can write only that namespace while reading shared folders.
 
 ## Branching Strategy
 

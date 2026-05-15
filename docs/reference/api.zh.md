@@ -17,6 +17,7 @@ Authorization: Bearer <API_SECRET>
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/health` | 健康检查（含 Bot 数、peer 状态） |
+| `GET` | `/api/manifest` | 实例身份、能力、endpoint、memory namespace 和联邦统计 |
 | `GET` | `/api/stats` | 费用与使用统计（按 Bot/用户） |
 | `GET` | `/api/metrics` | Prometheus 监控指标 |
 
@@ -55,6 +56,32 @@ Authorization: Bearer <API_SECRET>
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/peers` | 列出 peer 及健康状态 |
+
+### Skill Hub
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/api/skills` | 列出本地和 peer skill |
+| `GET` | `/api/skills/search?q=` | 搜索本地和 peer skill |
+| `GET` | `/api/skills/:name` | 获取 skill 内容和 metadata |
+| `POST` | `/api/skills` | 直接发布 skill 内容 |
+| `POST` | `/api/skills/:name/publish-from-bot` | 从 Bot 工作目录发布 skill |
+| `POST` | `/api/skills/:name/install` | 安装 skill 到 Bot 工作目录 |
+| `DELETE` | `/api/skills/:name` | 删除本地 skill |
+
+Skill 摘要会尽量包含 owner metadata：
+
+```json
+{
+  "name": "lark-doc",
+  "version": 3,
+  "author": "metabot",
+  "ownerInstanceId": "alice-laptop-7f3a",
+  "ownerInstanceName": "Alice Laptop",
+  "visibility": "published",
+  "contentHash": "sha256..."
+}
+```
 
 ### 定时调度
 
