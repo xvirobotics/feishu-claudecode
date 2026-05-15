@@ -286,6 +286,7 @@ async function main() {
     peerManager,
     memoryServerUrl: appConfig.memoryServerUrl,
     memoryAuthToken: appConfig.memory.adminToken || appConfig.memory.readerToken || appConfig.memory.secret || undefined,
+    instance: appConfig.instance,
     sessionRegistry,
   });
 
