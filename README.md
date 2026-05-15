@@ -402,6 +402,8 @@ MEMORY_INSTANCE_TOKEN=instance-scoped-token
 | `METABOT_CLUSTER_URL` | — | 可选的内网 cluster/registry 引导地址，当前会自动作为 peer 加入 |
 | `METABOT_CLUSTER_SECRET` | — | `METABOT_CLUSTER_URL` 的可选 Token |
 | `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 当前实例默认 memory namespace |
+| `METABOT_PEER_CACHE_PATH` | `./data/peer-cache.json` | Peer artifact 持久缓存；Skill Hub 可在 owner 离线时继续发现/安装缓存 skill |
+| `METABOT_PEER_SKILL_CACHE_CONTENTS` | true | 是否缓存 peer skill 的完整 `SKILL.md` 内容 |
 | `WIKI_SYNC_ENABLED` | true | 启用 MetaMemory→飞书知识库同步 |
 | `WIKI_SPACE_NAME` | MetaMemory | 飞书知识库空间名称 |
 | `WIKI_AUTO_SYNC` | true | MetaMemory 变更时自动同步 |

@@ -78,7 +78,8 @@ Peer skill 会复制到本地，所以 peer 之后离线也不影响已安装的
 Skill Hub 适合 P2P：
 
 - source copy 存在 owner 实例。
-- 其他实例通过 peer polling 缓存摘要。
+- 其他实例通过 peer polling 持久缓存摘要，默认也缓存完整 `SKILL.md` 内容。
+- owner 实例离线时，缓存的 peer skills 会以 stale 结果继续出现；如果已有内容缓存，仍可安装。
 - 安装时复制到本地。
 - `contentHash` 用于后续更新检测。
 - owner metadata 用于 UI 展示来源。

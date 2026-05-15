@@ -78,6 +78,8 @@
 | `METABOT_PEER_SECRETS` | — | 逗号分隔的 peer secret（位置对应） |
 | `METABOT_PEER_NAMES` | 自动 | 逗号分隔的 peer 名称 |
 | `METABOT_PEER_POLL_INTERVAL_MS` | `30000` | peer 拉取间隔 |
+| `METABOT_PEER_CACHE_PATH` | `./data/peer-cache.json` | peer artifact 持久缓存路径 |
+| `METABOT_PEER_SKILL_CACHE_CONTENTS` | `true` | 缓存 peer `SKILL.md` 完整内容，owner 离线时仍可安装；设为 `false` 只缓存摘要 |
 
 ## 远程访问
 

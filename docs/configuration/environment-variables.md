@@ -78,6 +78,8 @@ Falls back to the first Feishu bot's credentials if not set.
 | `METABOT_PEER_SECRETS` | — | Comma-separated peer secrets (positional match) |
 | `METABOT_PEER_NAMES` | auto | Comma-separated peer names |
 | `METABOT_PEER_POLL_INTERVAL_MS` | `30000` | Peer poll interval |
+| `METABOT_PEER_CACHE_PATH` | `./data/peer-cache.json` | Persistent peer artifact cache |
+| `METABOT_PEER_SKILL_CACHE_CONTENTS` | `true` | Cache full peer `SKILL.md` content for offline install fallback; set to `false` for summaries only |
 
 ## Remote Access
 

@@ -78,7 +78,8 @@ Installed peer skills are copied locally, so they continue to work if the peer l
 Skill Hub is designed to be P2P-friendly:
 
 - The owner instance stores the source copy.
-- Other instances cache summaries through peer polling.
+- Other instances persistently cache summaries and, by default, full `SKILL.md` content through peer polling.
+- If the owner instance goes offline, cached peer skills still appear as stale results and can be installed when cached content exists.
 - Installing creates a local copy.
 - `contentHash` lets future update checks detect changes.
 - Owner metadata lets UIs show where a skill came from.

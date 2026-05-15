@@ -1,4 +1,7 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { PeerManager } from '../src/api/peer-manager.js';
 
 function createLogger() {
@@ -9,9 +12,17 @@ function createLogger() {
 
 describe('PeerManager', () => {
   let manager: PeerManager;
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'metabot-peer-manager-'));
+    vi.stubEnv('METABOT_PEER_CACHE_PATH', path.join(tempDir, 'peer-cache.json'));
+  });
 
   afterEach(() => {
     if (manager) manager.destroy();
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
@@ -258,5 +269,103 @@ describe('PeerManager', () => {
 
     const bots = manager.getPeerBots();
     expect(bots[0].peerUrl).toBe('http://localhost:9200');
+  });
+
+  it('returns stale peer skills from the persistent cache when a peer is offline', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/bots')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ bots: [] }) });
+      }
+      if (url.includes('/api/skills/lark-doc')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            skillMd: '# Lark Doc\n',
+            referencesTar: Buffer.from('refs').toString('base64'),
+          }),
+        });
+      }
+      if (url.includes('/api/skills')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            skills: [{
+              name: 'lark-doc',
+              description: 'Read Lark docs',
+              version: 3,
+              author: 'alice',
+              tags: ['lark'],
+              contentHash: 'hash-1',
+            }],
+          }),
+        });
+      }
+      return Promise.reject(new Error(`Unexpected URL ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    manager = new PeerManager([
+      { name: 'alice', url: 'http://localhost:9200' },
+    ], createLogger());
+    await manager.refreshAll();
+    manager.destroy();
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    manager = new PeerManager([
+      { name: 'alice', url: 'http://localhost:9200' },
+    ], createLogger());
+    await manager.refreshAll();
+
+    const skills = manager.getPeerSkills();
+    expect(skills).toHaveLength(1);
+    expect(skills[0]).toMatchObject({
+      name: 'lark-doc',
+      peerName: 'alice',
+      stale: true,
+      hasCachedContent: true,
+    });
+  });
+
+  it('falls back to cached peer skill content when the peer is offline', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/bots')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ bots: [] }) });
+      }
+      if (url.includes('/api/skills/lark-doc')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            skillMd: '# Cached Skill\n',
+            referencesTar: Buffer.from('cached refs').toString('base64'),
+          }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          skills: [{
+            name: 'lark-doc',
+            description: 'Read Lark docs',
+            version: 1,
+            author: 'alice',
+            tags: [],
+            contentHash: 'hash-2',
+          }],
+        }),
+      });
+    }));
+
+    manager = new PeerManager([
+      { name: 'alice', url: 'http://localhost:9200' },
+    ], createLogger());
+    await manager.refreshAll();
+    manager.destroy();
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    manager = new PeerManager([], createLogger());
+
+    const skill = await manager.fetchPeerSkill('alice', 'lark-doc');
+    expect(skill?.skillMd).toBe('# Cached Skill\n');
+    expect(skill?.referencesTar?.toString()).toBe('cached refs');
   });
 });
