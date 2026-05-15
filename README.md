@@ -380,7 +380,8 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 | `MEMORY_TOKEN` | — | 读者 Token（仅共享文件夹） |
 | `MEMORY_INSTANCE_TOKEN` | — | 实例级 Token（可写自己的 namespace，可读共享内容） |
 | `METABOT_INSTANCE_ID` | 自动生成 | 当前 MetaBot 实例 ID，用于联邦发现和 memory namespace |
-| `METABOT_CLUSTER_URL` | — | 可选的内网 cluster/registry 引导地址 |
+| `METABOT_CLUSTER_URL` | — | 可选的内网 cluster/registry 引导地址，当前会自动作为 peer 加入 |
+| `METABOT_CLUSTER_SECRET` | — | `METABOT_CLUSTER_URL` 的可选 Token |
 | `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 当前实例默认 memory namespace |
 | `WIKI_SYNC_ENABLED` | true | 启用 MetaMemory→飞书知识库同步 |
 | `WIKI_SPACE_NAME` | MetaMemory | 飞书知识库空间名称 |

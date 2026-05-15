@@ -580,6 +580,17 @@ export function loadAppConfig(): AppConfig {
       }
     }
   }
+  if (instance.clusterUrl && instance.discoveryMode !== 'off') {
+    const url = instance.clusterUrl.replace(/\/+$/, '');
+    if (!peers.some((p) => p.url === url)) {
+      const name = instance.clusterId || url.replace(/^https?:\/\//, '').replace(/[:.]/g, '-');
+      peers.push({
+        name,
+        url,
+        secret: process.env.METABOT_CLUSTER_SECRET || undefined,
+      });
+    }
+  }
 
   return {
     instance,

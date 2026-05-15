@@ -101,10 +101,12 @@ Required changes:
 
 ## Phase 3: Federated Discovery
 
+Status: bootstrap URL partially implemented.
+
 Discovery sources should merge in this order:
 
 1. Static config: `METABOT_PEERS`, `bots.json`.
-2. Cluster registry: `METABOT_CLUSTER_URL`.
+2. Cluster registry: `METABOT_CLUSTER_URL`. Initial support adds this URL as a direct peer when discovery is not `off`.
 3. LAN discovery: mDNS service `_metabot._tcp.local`.
 4. Standalone self-advertise when no cluster is found.
 
