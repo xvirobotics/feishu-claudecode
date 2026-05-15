@@ -972,7 +972,7 @@ if ! grep -q 'mm()' "$BASH_ALIASES" 2>/dev/null; then
 
 # MetaMemory shortcuts (installed by MetaBot)
 export MEMORY_URL="http://localhost:8100"
-export MEMORY_AUTH="Authorization: Bearer ${MEMORY_ADMIN_TOKEN:-${MEMORY_TOKEN:-${MEMORY_SECRET:-${API_SECRET:-changeme}}}}"
+export MEMORY_AUTH="Authorization: Bearer ${MEMORY_ADMIN_TOKEN:-${MEMORY_INSTANCE_TOKEN:-${MEMORY_TOKEN:-${MEMORY_SECRET:-${API_SECRET:-changeme}}}}}"
 
 mm() {
   local cmd="${1:-help}"
