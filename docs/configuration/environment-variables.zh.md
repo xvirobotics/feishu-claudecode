@@ -22,7 +22,8 @@
 | `METABOT_INSTANCE_ID` | 自动生成 | 用于联邦和 memory namespace 的稳定实例 ID |
 | `METABOT_INSTANCE_NAME` | `user@hostname` | 便于识别的实例名称 |
 | `METABOT_CLUSTER_ID` | — | 可选的集群/团队标识 |
-| `METABOT_CLUSTER_URL` | — | 可选的集群注册/引导 URL |
+| `METABOT_CLUSTER_URL` | — | 可选的集群注册/引导 URL；当前 bootstrap 阶段会自动作为 peer 加入 |
+| `METABOT_CLUSTER_SECRET` | — | `METABOT_CLUSTER_URL` 可选 Bearer Token |
 | `METABOT_DISCOVERY_MODE` | `auto` | 发现模式：`auto`、`static`、`standalone` 或 `off` |
 | `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 当前实例默认的 MetaMemory namespace |
 

@@ -22,7 +22,8 @@ All configuration is via `.env` file or system environment variables. Copy `.env
 | `METABOT_INSTANCE_ID` | auto-generated | Stable instance ID used for federation and memory namespaces |
 | `METABOT_INSTANCE_NAME` | `user@hostname` | Human-readable instance name |
 | `METABOT_CLUSTER_ID` | — | Optional cluster/team identifier |
-| `METABOT_CLUSTER_URL` | — | Optional cluster registry/bootstrap URL |
+| `METABOT_CLUSTER_URL` | — | Optional cluster registry/bootstrap URL. In the current bootstrap phase, this URL is also added as a peer automatically |
+| `METABOT_CLUSTER_SECRET` | — | Optional bearer token for `METABOT_CLUSTER_URL` |
 | `METABOT_DISCOVERY_MODE` | `auto` | Discovery mode: `auto`, `static`, `standalone`, or `off` |
 | `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Default MetaMemory namespace for this instance |
 
