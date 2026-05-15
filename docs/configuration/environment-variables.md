@@ -13,6 +13,19 @@ All configuration is via `.env` file or system environment variables. Copy `.env
 | `API_SECRET` | — | Bearer token auth for API and MetaMemory. Generate one with `openssl rand -hex 32` |
 | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 
+## Instance Identity and Cluster
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `METABOT_HOME` | `~/.metabot` | MetaBot local state directory |
+| `METABOT_IDENTITY_PATH` | `~/.metabot/identity.json` | Persistent instance identity file |
+| `METABOT_INSTANCE_ID` | auto-generated | Stable instance ID used for federation and memory namespaces |
+| `METABOT_INSTANCE_NAME` | `user@hostname` | Human-readable instance name |
+| `METABOT_CLUSTER_ID` | — | Optional cluster/team identifier |
+| `METABOT_CLUSTER_URL` | — | Optional cluster registry/bootstrap URL |
+| `METABOT_DISCOVERY_MODE` | `auto` | Discovery mode: `auto`, `static`, `standalone`, or `off` |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Default MetaMemory namespace for this instance |
+
 ## Claude Code
 
 | Variable | Default | Description |
@@ -33,6 +46,7 @@ All configuration is via `.env` file or system environment variables. Copy `.env
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access) |
 | `MEMORY_TOKEN` | — | Reader token (shared folders only) |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL (for CLI remote access) |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Default namespace for agent writes; namespace ACL enforcement is introduced incrementally |
 
 ## Feishu Service App
 

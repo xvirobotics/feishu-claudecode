@@ -2,6 +2,7 @@ import 'dotenv/config';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { loadInstanceIdentity, type InstanceIdentity } from './cluster/identity.js';
 
 /** Agent engine backing a bot. */
 export type EngineName = 'claude' | 'kimi' | 'codex';
@@ -110,6 +111,7 @@ export interface PeerConfig {
 }
 
 export interface AppConfig {
+  instance: InstanceIdentity;
   feishuBots: BotConfig[];
   telegramBots: TelegramBotConfig[];
   webBots: BotConfigBase[];
@@ -134,6 +136,7 @@ export interface AppConfig {
     secret: string;
     adminToken?: string;
     readerToken?: string;
+    namespace: string;
   };
   /** Peer MetaBot instances for cross-instance bot discovery and task delegation. */
   peers: PeerConfig[];
@@ -547,6 +550,11 @@ export function loadAppConfig(): AppConfig {
   const memorySecret = process.env.MEMORY_SECRET || process.env.API_SECRET || '';
   const memoryAdminToken = process.env.MEMORY_ADMIN_TOKEN || undefined;
   const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
+  const instance = loadInstanceIdentity();
+
+  process.env.METABOT_INSTANCE_ID = instance.instanceId;
+  process.env.METABOT_INSTANCE_NAME = instance.instanceName;
+  process.env.METABOT_MEMORY_NAMESPACE = instance.memoryNamespace;
 
   // Parse peers from JSON config and/or env vars
   const peers: PeerConfig[] = [];
@@ -572,6 +580,7 @@ export function loadAppConfig(): AppConfig {
   }
 
   return {
+    instance,
     feishuBots,
     telegramBots,
     webBots,
@@ -592,6 +601,7 @@ export function loadAppConfig(): AppConfig {
       secret: memorySecret,
       adminToken: memoryAdminToken,
       readerToken: memoryReaderToken,
+      namespace: instance.memoryNamespace,
     },
     peers,
   };
