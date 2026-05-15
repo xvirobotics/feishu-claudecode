@@ -17,6 +17,7 @@ Authorization: Bearer <API_SECRET>
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/health` | Health check (includes bot count, peer status) |
+| `GET` | `/api/manifest` | Instance identity, capabilities, endpoints, memory namespace, and federation stats |
 | `GET` | `/api/stats` | Cost & usage stats (per-bot, per-user) |
 | `GET` | `/api/metrics` | Prometheus metrics endpoint |
 
@@ -55,6 +56,32 @@ The `botName` field supports [qualified names](../features/peers.md#qualified-na
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/api/peers` | List peers and their health status |
+
+### Skill Hub
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/skills` | List local and peer skills |
+| `GET` | `/api/skills/search?q=` | Search local and peer skills |
+| `GET` | `/api/skills/:name` | Get skill content and metadata |
+| `POST` | `/api/skills` | Publish skill content directly |
+| `POST` | `/api/skills/:name/publish-from-bot` | Publish a skill from a bot workdir |
+| `POST` | `/api/skills/:name/install` | Install a skill into a bot workdir |
+| `DELETE` | `/api/skills/:name` | Remove a local skill |
+
+Skill summaries include owner metadata where available:
+
+```json
+{
+  "name": "lark-doc",
+  "version": 3,
+  "author": "metabot",
+  "ownerInstanceId": "alice-laptop-7f3a",
+  "ownerInstanceName": "Alice Laptop",
+  "visibility": "published",
+  "contentHash": "sha256..."
+}
+```
 
 ### Scheduling
 

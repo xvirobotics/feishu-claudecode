@@ -1,6 +1,6 @@
 # MetaMemory
 
-Embedded knowledge store with full-text search. Agents read/write Markdown documents across sessions. Shared by all agents in the organization.
+Embedded knowledge store with full-text search. Agents read/write Markdown documents across sessions. Each MetaBot instance can write its own namespace while reading shared knowledge.
 
 ## Overview
 
@@ -11,6 +11,7 @@ MetaMemory is a **SQLite-based document store** (using FTS5 for full-text search
 - **Web UI** at `http://localhost:8100?token=YOUR_TOKEN` for browsing and searching
 - **REST API** for programmatic access
 - **CLI** (`mm`) for terminal access
+- **Instance namespaces** for LAN/federated deployments
 
 ## How Agents Use It
 
@@ -63,12 +64,21 @@ The full URL with token is printed to logs on startup. The token is saved to `lo
 
 ## Access Control
 
-MetaMemory supports folder-level ACL:
+MetaMemory supports folder-level ACL plus scoped instance tokens:
 
 | Token | Access |
 |-------|--------|
 | `MEMORY_ADMIN_TOKEN` | Full access — sees all folders |
 | `MEMORY_TOKEN` | Reader access — shared folders only |
+| `MEMORY_INSTANCE_TOKEN` | Instance access — writes `METABOT_MEMORY_NAMESPACE`, reads shared folders |
+
+Every MetaBot instance gets a stable identity from `~/.metabot/identity.json`. By default its writable namespace is:
+
+```text
+/instances/<instanceId>
+```
+
+This lets multiple developer-machine MetaBot instances share one MetaMemory service without giving every instance write access to every other instance's area. Admin tokens remain available for maintenance and migration.
 
 See [Security](../concepts/security.md#metamemory-access-control) for details.
 
@@ -80,7 +90,9 @@ See [Security](../concepts/security.md#metamemory-access-control) for details.
 | `MEMORY_PORT` | `8100` | MetaMemory port |
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access) |
 | `MEMORY_TOKEN` | — | Reader token (shared only) |
+| `MEMORY_INSTANCE_TOKEN` | — | Scoped token for this instance namespace |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL (for CLI) |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Default namespace for this instance |
 
 ## Auto-Sync to Wiki
 
