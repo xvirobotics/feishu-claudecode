@@ -9,6 +9,7 @@ Commands you can send to MetaBot in Feishu or Telegram.
 | `/reset` | Clear session — starts a fresh conversation |
 | `/stop` | Abort the currently running task |
 | `/status` | Show session info (session ID, working directory) |
+| `/goal <condition>` | Set a goal the agent keeps pursuing across turns. `/goal clear` to stop. See [Goal Loops](../features/goal-loops.md) |
 | `/memory list` | Browse MetaMemory knowledge tree |
 | `/memory search <query>` | Search MetaMemory knowledge base |
 | `/sync` | Trigger MetaMemory → Feishu Wiki sync |

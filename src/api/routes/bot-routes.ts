@@ -34,6 +34,8 @@ export async function handleBotRoutes(
       engine: resolveEngineName(bot.config),
       model: defaultModelForConfig(bot.config),
       workingDirectory: bot.config.claude.defaultWorkingDirectory,
+      memoryNamespace: bot.config.memoryNamespace,
+      memoryProject: bot.config.memoryProject,
       maxConcurrentTasks: bot.config.maxConcurrentTasks, budgetLimitDaily: bot.config.budgetLimitDaily,
       stats: botStats || { totalTasks: 0, completedTasks: 0, failedTasks: 0, totalCostUsd: 0 },
     });
@@ -84,6 +86,8 @@ export async function handleBotRoutes(
       }
       entry = {
         name, ...(body.description ? { description: body.description } : {}),
+        ...(body.memoryNamespace ? { memoryNamespace: body.memoryNamespace } : {}),
+        ...(body.memoryProject ? { memoryProject: body.memoryProject } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
         ...(body.kimi ? { kimi: body.kimi } : {}),
@@ -101,6 +105,8 @@ export async function handleBotRoutes(
       }
       entry = {
         name, ...(body.description ? { description: body.description } : {}),
+        ...(body.memoryNamespace ? { memoryNamespace: body.memoryNamespace } : {}),
+        ...(body.memoryProject ? { memoryProject: body.memoryProject } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
         ...(body.kimi ? { kimi: body.kimi } : {}),
@@ -117,6 +123,8 @@ export async function handleBotRoutes(
       }
       entry = {
         name, ...(body.description ? { description: body.description } : {}),
+        ...(body.memoryNamespace ? { memoryNamespace: body.memoryNamespace } : {}),
+        ...(body.memoryProject ? { memoryProject: body.memoryProject } : {}),
         ...(body.engine ? { engine: body.engine } : {}),
         ...(body.codex ? { codex: body.codex } : {}),
         ...(body.kimi ? { kimi: body.kimi } : {}),

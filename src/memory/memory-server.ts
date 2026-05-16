@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as url from 'node:url';
 import type { Logger } from '../utils/logger.js';
 import { MemoryStorage } from './memory-storage.js';
-import type { Role } from './memory-storage.js';
+import type { MemoryAccess } from './memory-storage.js';
 import {
   handleGetFolders,
   handleCreateFolder,
@@ -26,6 +26,10 @@ export interface MemoryServerOptions {
   secret?: string;
   adminToken?: string;
   readerToken?: string;
+  instanceToken?: string;
+  instanceId?: string;
+  memoryNamespace?: string;
+  memoryNamespaces?: string[];
   logger: Logger;
 }
 
@@ -112,12 +116,17 @@ function resolveStaticDir(): string {
 }
 
 export function startMemoryServer(options: MemoryServerOptions): { server: http.Server; storage: MemoryStorage } {
-  const { port, databaseDir, secret, adminToken, readerToken, logger } = options;
+  const { port, databaseDir, secret, adminToken, readerToken, instanceToken, instanceId, memoryNamespace, memoryNamespaces, logger } = options;
   const storage = new MemoryStorage(databaseDir, logger);
   const staticDir = resolveStaticDir();
+  const writableNamespaces = memoryNamespaces?.length
+    ? memoryNamespaces
+    : memoryNamespace
+      ? [memoryNamespace]
+      : [];
 
   // Auth is enabled if any token is configured
-  const authEnabled = !!(adminToken || readerToken || secret);
+  const authEnabled = !!(adminToken || readerToken || instanceToken || secret);
 
   /** Resolve role from Authorization header.
    *  - adminToken → 'admin'
@@ -125,7 +134,7 @@ export function startMemoryServer(options: MemoryServerOptions): { server: http.
    *  - No tokens configured → 'admin' (backward compatible, open access)
    *  - Invalid/missing token when auth enabled → null (reject)
    */
-  function resolveRole(req: http.IncomingMessage): Role | null {
+  function resolveAccess(req: http.IncomingMessage): MemoryAccess | null {
     if (!authEnabled) return 'admin'; // No auth configured → full access
 
     const authHeader = req.headers.authorization;
@@ -134,6 +143,13 @@ export function startMemoryServer(options: MemoryServerOptions): { server: http.
     if (!token) return null;
     if (adminToken && token === adminToken) return 'admin';
     if (readerToken && token === readerToken) return 'reader';
+    if (instanceToken && token === instanceToken && writableNamespaces.length > 0) {
+      return {
+        role: 'reader',
+        instanceId,
+        grants: writableNamespaces.map((namespace) => ({ namespace, access: 'write' as const })),
+      };
+    }
     // Legacy: old secret token gets admin access for backward compat
     if (secret && token === secret) return 'admin';
     return null; // invalid token
@@ -168,9 +184,9 @@ export function startMemoryServer(options: MemoryServerOptions): { server: http.
       }
 
       // Resolve role for authenticated API routes
-      let role: Role = 'admin';
+      let role: MemoryAccess = 'admin';
       if (pathname.startsWith('/api/')) {
-        const resolved = resolveRole(req);
+        const resolved = resolveAccess(req);
         if (resolved === null) {
           jsonResponse(res, 401, { detail: 'Unauthorized' });
           return;

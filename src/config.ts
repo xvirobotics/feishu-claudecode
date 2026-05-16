@@ -2,6 +2,7 @@ import 'dotenv/config';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { loadInstanceIdentity, type InstanceIdentity } from './cluster/identity.js';
 
 /** Agent engine backing a bot. */
 export type EngineName = 'claude' | 'kimi' | 'codex' | 'opencode';
@@ -12,6 +13,10 @@ export interface BotConfigBase {
   description?: string;
   specialties?: string[];
   icon?: string;
+  /** Stable writable MetaMemory namespace for this bot. Defaults to /bots/<botName>. */
+  memoryNamespace?: string;
+  /** Optional project identifier used to derive /projects/<memoryProject>. */
+  memoryProject?: string;
   maxConcurrentTasks?: number;
   budgetLimitDaily?: number;
   ttsVoice?: string;
@@ -40,9 +45,7 @@ export interface BotConfigBase {
   };
   /** Codex-specific overrides. Populated only when engine === 'codex'. */
   codex?: CodexBotConfig;
-  /** OpenCode-specific overrides. Populated only when engine === 'opencode'. */
-  opencode?: OpenCodeBotConfig;
-}
+
 
 /** Codex-specific overrides. Populated only when engine === 'codex'. */
 export interface CodexBotConfig {
@@ -98,6 +101,7 @@ export interface PeerConfig {
 }
 
 export interface AppConfig {
+  instance: InstanceIdentity;
   feishuBots: BotConfig[];
   telegramBots: TelegramBotConfig[];
   webBots: BotConfigBase[];
@@ -122,6 +126,9 @@ export interface AppConfig {
     secret: string;
     adminToken?: string;
     readerToken?: string;
+    instanceToken?: string;
+    namespace: string;
+    namespaces: string[];
   };
   /** Peer MetaBot instances for cross-instance bot discovery and task delegation. */
   peers: PeerConfig[];
@@ -175,6 +182,8 @@ interface EngineJsonFields {
   engine?: EngineName;
   kimi?: KimiJsonConfig;
   codex?: CodexJsonConfig;
+  memoryNamespace?: string;
+  memoryProject?: string;
 }
 
 export interface FeishuBotJsonEntry extends EngineJsonFields {
@@ -205,6 +214,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.description ? { description: entry.description } : {}),
     ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
     ...(entry.icon ? { icon: entry.icon } : {}),
+    ...buildBotMemoryConfig(entry),
     ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
@@ -247,6 +257,7 @@ function telegramBotFromJson(entry: TelegramBotJsonEntry): TelegramBotConfig {
     ...(entry.description ? { description: entry.description } : {}),
     ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
     ...(entry.icon ? { icon: entry.icon } : {}),
+    ...buildBotMemoryConfig(entry),
     ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
@@ -285,6 +296,7 @@ export function webBotFromJson(entry: WebBotJsonEntry): BotConfigBase {
     ...(entry.description ? { description: entry.description } : {}),
     ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
     ...(entry.icon ? { icon: entry.icon } : {}),
+    ...buildBotMemoryConfig(entry),
     ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
@@ -316,6 +328,7 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
   return {
     name: entry.name,
     ...(entry.description ? { description: entry.description } : {}),
+    ...buildBotMemoryConfig(entry),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
@@ -349,6 +362,38 @@ function buildClaudeConfig(entry: {
   };
 }
 
+export function slugifyNamespaceSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'default';
+}
+
+export function normalizeMemoryNamespace(namespace: string): string {
+  const trimmed = namespace.trim();
+  if (!trimmed || trimmed === '/') return '/';
+  return `/${trimmed.replace(/^\/+|\/+$/g, '')}`;
+}
+
+function buildBotMemoryConfig(entry: {
+  name: string;
+  memoryNamespace?: string;
+  memoryProject?: string;
+}): Pick<BotConfigBase, 'memoryNamespace' | 'memoryProject'> {
+  const project = entry.memoryProject?.trim();
+  const namespace = entry.memoryNamespace
+    ? normalizeMemoryNamespace(entry.memoryNamespace)
+    : project
+      ? `/projects/${slugifyNamespaceSegment(project)}`
+      : `/bots/${slugifyNamespaceSegment(entry.name)}`;
+  return {
+    memoryNamespace: namespace,
+    ...(project ? { memoryProject: slugifyNamespaceSegment(project) } : {}),
+  };
+}
+
 function buildCodexConfig(entry?: CodexJsonConfig): BotConfigBase['codex'] | undefined {
   const cfg: BotConfigBase['codex'] = {
     ...(process.env.CODEX_EXECUTABLE_PATH ? { executable: process.env.CODEX_EXECUTABLE_PATH } : {}),
@@ -370,6 +415,11 @@ function feishuBotFromEnv(): BotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'default',
+    ...buildBotMemoryConfig({
+      name: 'default',
+      memoryNamespace: process.env.METABOT_BOT_MEMORY_NAMESPACE,
+      memoryProject: process.env.METABOT_MEMORY_PROJECT,
+    }),
     ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
     ...(codex ? { codex } : {}),
     feishu: {
@@ -392,6 +442,11 @@ function telegramBotFromEnv(): TelegramBotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'telegram-default',
+    ...buildBotMemoryConfig({
+      name: 'telegram-default',
+      memoryNamespace: process.env.METABOT_BOT_MEMORY_NAMESPACE,
+      memoryProject: process.env.METABOT_MEMORY_PROJECT,
+    }),
     ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
     ...(codex ? { codex } : {}),
     telegram: {
@@ -413,6 +468,11 @@ function wechatBotFromEnv(): WechatBotConfig {
   const codex = buildCodexConfig();
   return {
     name: 'wechat-default',
+    ...buildBotMemoryConfig({
+      name: 'wechat-default',
+      memoryNamespace: process.env.METABOT_BOT_MEMORY_NAMESPACE,
+      memoryProject: process.env.METABOT_MEMORY_PROJECT,
+    }),
     ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
     ...(codex ? { codex } : {}),
     wechat: {
@@ -535,6 +595,24 @@ export function loadAppConfig(): AppConfig {
   const memorySecret = process.env.MEMORY_SECRET || process.env.API_SECRET || '';
   const memoryAdminToken = process.env.MEMORY_ADMIN_TOKEN || undefined;
   const memoryReaderToken = process.env.MEMORY_TOKEN || undefined;
+  const instance = loadInstanceIdentity();
+  const memoryInstanceToken = process.env.MEMORY_INSTANCE_TOKEN || process.env.METABOT_MEMORY_TOKEN || undefined;
+
+  process.env.METABOT_INSTANCE_ID = instance.instanceId;
+  process.env.METABOT_INSTANCE_NAME = instance.instanceName;
+  process.env.METABOT_MEMORY_NAMESPACE = instance.memoryNamespace;
+
+  const allBots = [...feishuBots, ...telegramBots, ...webBots, ...wechatBots];
+  const extraMemoryNamespaces = (process.env.METABOT_MEMORY_WRITE_NAMESPACES || '')
+    .split(',')
+    .map((ns) => ns.trim())
+    .filter(Boolean);
+  const memoryNamespaces = Array.from(new Set([
+    instance.memoryNamespace,
+    ...allBots.map((bot) => bot.memoryNamespace).filter((ns): ns is string => !!ns),
+    ...extraMemoryNamespaces,
+  ].map(normalizeMemoryNamespace)));
+  process.env.METABOT_MEMORY_NAMESPACES = memoryNamespaces.join(',');
 
   // Parse peers from JSON config and/or env vars
   const peers: PeerConfig[] = [];
@@ -558,8 +636,20 @@ export function loadAppConfig(): AppConfig {
       }
     }
   }
+  if (instance.clusterUrl && instance.discoveryMode !== 'off') {
+    const url = instance.clusterUrl.replace(/\/+$/, '');
+    if (!peers.some((p) => p.url === url)) {
+      const name = instance.clusterId || url.replace(/^https?:\/\//, '').replace(/[:.]/g, '-');
+      peers.push({
+        name,
+        url,
+        secret: process.env.METABOT_CLUSTER_SECRET || undefined,
+      });
+    }
+  }
 
   return {
+    instance,
     feishuBots,
     telegramBots,
     webBots,
@@ -580,6 +670,9 @@ export function loadAppConfig(): AppConfig {
       secret: memorySecret,
       adminToken: memoryAdminToken,
       readerToken: memoryReaderToken,
+      instanceToken: memoryInstanceToken,
+      namespace: instance.memoryNamespace,
+      namespaces: memoryNamespaces,
     },
     peers,
   };

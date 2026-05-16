@@ -62,6 +62,56 @@ describe('MetaMemory server request limits', () => {
     };
   }
 
+  async function startNamespaceTestServer() {
+    const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'metamemory-namespace-test-'));
+    cleanups.push(() => fs.rmSync(databaseDir, { recursive: true, force: true }));
+
+    const { server, storage } = startMemoryServer({
+      port: 0,
+      databaseDir,
+      adminToken: 'admin-token',
+      instanceToken: 'instance-token',
+      instanceId: 'alice',
+      memoryNamespace: '/instances/alice',
+      logger: createLogger(),
+    });
+
+    cleanups.push(() => storage.close());
+    cleanups.push(() => server.close());
+
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address() as AddressInfo;
+
+    return {
+      url: `http://127.0.0.1:${address.port}`,
+    };
+  }
+
+  async function startMultiNamespaceTestServer() {
+    const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'metamemory-namespace-list-test-'));
+    cleanups.push(() => fs.rmSync(databaseDir, { recursive: true, force: true }));
+
+    const { server, storage } = startMemoryServer({
+      port: 0,
+      databaseDir,
+      adminToken: 'admin-token',
+      instanceToken: 'instance-token',
+      instanceId: 'alice',
+      memoryNamespaces: ['/instances/alice', '/projects/metabot'],
+      logger: createLogger(),
+    });
+
+    cleanups.push(() => storage.close());
+    cleanups.push(() => server.close());
+
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address() as AddressInfo;
+
+    return {
+      url: `http://127.0.0.1:${address.port}`,
+    };
+  }
+
   it('returns 400 for invalid JSON bodies', async () => {
     const { url } = await startTestServer();
 
@@ -107,5 +157,85 @@ describe('MetaMemory server request limits', () => {
     await expect(foldersResponse.json()).resolves.toEqual({
       detail: 'Unauthorized',
     });
+  });
+
+  it('allows instance tokens to write only their own namespace', async () => {
+    const { url } = await startNamespaceTestServer();
+    const instanceHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer instance-token',
+    };
+
+    const instancesResponse = await fetch(`${url}/api/folders`, {
+      method: 'POST',
+      headers: instanceHeaders,
+      body: JSON.stringify({ name: 'instances' }),
+    });
+    expect(instancesResponse.status).toBe(201);
+    const instances = await instancesResponse.json() as { id: string };
+
+    const aliceResponse = await fetch(`${url}/api/folders`, {
+      method: 'POST',
+      headers: instanceHeaders,
+      body: JSON.stringify({ name: 'alice', parent_id: instances.id }),
+    });
+    expect(aliceResponse.status).toBe(201);
+    const alice = await aliceResponse.json() as { id: string };
+
+    const docResponse = await fetch(`${url}/api/documents`, {
+      method: 'POST',
+      headers: instanceHeaders,
+      body: JSON.stringify({
+        title: 'Alice Notes',
+        folder_id: alice.id,
+        content: 'owned by alice',
+      }),
+    });
+    expect(docResponse.status).toBe(201);
+
+    const bobResponse = await fetch(`${url}/api/folders`, {
+      method: 'POST',
+      headers: instanceHeaders,
+      body: JSON.stringify({ name: 'bob', parent_id: instances.id }),
+    });
+    expect(bobResponse.status).toBe(400);
+    await expect(bobResponse.json()).resolves.toEqual({
+      detail: 'Access denied: cannot create folder outside writable namespace',
+    });
+  });
+
+  it('allows instance tokens to write all configured namespaces', async () => {
+    const { url } = await startMultiNamespaceTestServer();
+    const instanceHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer instance-token',
+    };
+
+    const projectsResponse = await fetch(`${url}/api/folders`, {
+      method: 'POST',
+      headers: instanceHeaders,
+      body: JSON.stringify({ name: 'projects' }),
+    });
+    expect(projectsResponse.status).toBe(201);
+    const projects = await projectsResponse.json() as { id: string };
+
+    const metabotResponse = await fetch(`${url}/api/folders`, {
+      method: 'POST',
+      headers: instanceHeaders,
+      body: JSON.stringify({ name: 'metabot', parent_id: projects.id }),
+    });
+    expect(metabotResponse.status).toBe(201);
+    const metabot = await metabotResponse.json() as { id: string };
+
+    const docResponse = await fetch(`${url}/api/documents`, {
+      method: 'POST',
+      headers: instanceHeaders,
+      body: JSON.stringify({
+        title: 'Project Notes',
+        folder_id: metabot.id,
+        content: 'owned by project',
+      }),
+    });
+    expect(docResponse.status).toBe(201);
   });
 });

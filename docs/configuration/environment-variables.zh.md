@@ -13,6 +13,23 @@
 | `API_SECRET` | — | Bearer Token 认证 |
 | `LOG_LEVEL` | `info` | 日志级别（debug, info, warn, error） |
 
+## 实例身份与集群
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `METABOT_HOME` | `~/.metabot` | MetaBot 本地状态目录 |
+| `METABOT_IDENTITY_PATH` | `~/.metabot/identity.json` | 持久化实例身份文件 |
+| `METABOT_INSTANCE_ID` | 自动生成 | 用于联邦和 memory namespace 的稳定实例 ID |
+| `METABOT_INSTANCE_NAME` | `user@hostname` | 便于识别的实例名称 |
+| `METABOT_CLUSTER_ID` | — | 可选的集群/团队标识 |
+| `METABOT_CLUSTER_URL` | — | 可选的集群注册/引导 URL；当前 bootstrap 阶段会自动作为 peer 加入 |
+| `METABOT_CLUSTER_SECRET` | — | `METABOT_CLUSTER_URL` 可选 Bearer Token |
+| `METABOT_DISCOVERY_MODE` | `auto` | 发现模式：`auto`、`static`、`standalone` 或 `off` |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 当前实例兜底 MetaMemory namespace |
+| `METABOT_BOT_MEMORY_NAMESPACE` | `/bots/default` | 单 Bot 模式下的稳定写入 namespace 覆盖 |
+| `METABOT_MEMORY_PROJECT` | — | 单 Bot 模式项目名；未设置 `METABOT_BOT_MEMORY_NAMESPACE` 时推导 `/projects/<slug>` |
+| `METABOT_MEMORY_WRITE_NAMESPACES` | — | 额外授予 `MEMORY_INSTANCE_TOKEN` 写权限的 namespace，逗号分隔 |
+
 ## Claude Code
 
 | 变量 | 默认 | 说明 |
@@ -32,7 +49,9 @@
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory 认证（旧版） |
 | `MEMORY_ADMIN_TOKEN` | — | 管理员 Token（完整访问） |
 | `MEMORY_TOKEN` | — | 读者 Token（仅 shared 文件夹） |
+| `MEMORY_INSTANCE_TOKEN` | — | 实例级 scoped token；可写实例 namespace 以及已配置的 bot/project namespace，可读 shared 内容 |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory 地址（CLI 远程访问） |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 实例兜底 namespace；Agent 写入优先使用 bot/project namespace |
 
 ## 飞书服务应用
 
@@ -62,6 +81,10 @@
 | `METABOT_PEER_SECRETS` | — | 逗号分隔的 peer secret（位置对应） |
 | `METABOT_PEER_NAMES` | 自动 | 逗号分隔的 peer 名称 |
 | `METABOT_PEER_POLL_INTERVAL_MS` | `30000` | peer 拉取间隔 |
+| `METABOT_PEER_CACHE_PATH` | `./data/peer-cache.json` | peer artifact 持久缓存路径 |
+| `METABOT_PEER_SKILL_CACHE_CONTENTS` | `true` | 缓存 peer `SKILL.md` 完整内容，owner 离线时仍可安装；设为 `false` 只缓存摘要 |
+| `METABOT_PEER_MEMORY_CACHE_ENABLED` | `true` | 将 peer MetaMemory 文档镜像到本地只读 peer cache |
+| `METABOT_PEER_MEMORY_CACHE_LIMIT` | `200` | 每次 peer 拉取最多镜像的 memory 文档数 |
 
 ## 远程访问
 

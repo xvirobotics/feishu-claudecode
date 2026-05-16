@@ -40,16 +40,27 @@ describe('SkillHubStore', () => {
 
   it('publishes and retrieves a skill', () => {
     createStore();
-    const record = store.publish({ name: 'test-skill', skillMd: SAMPLE_SKILL, author: 'test-bot' });
+    const record = store.publish({
+      name: 'test-skill',
+      skillMd: SAMPLE_SKILL,
+      author: 'test-bot',
+      ownerInstanceId: 'alice',
+      ownerInstanceName: 'Alice MetaBot',
+    });
     expect(record.name).toBe('test-skill');
     expect(record.description).toBe('A test skill for unit testing');
     expect(record.version).toBe(1);
     expect(record.author).toBe('test-bot');
+    expect(record.ownerInstanceId).toBe('alice');
+    expect(record.ownerInstanceName).toBe('Alice MetaBot');
+    expect(record.visibility).toBe('published');
+    expect(record.contentHash).toMatch(/^[a-f0-9]{64}$/);
     expect(record.tags).toEqual(['test', 'demo']);
 
     const retrieved = store.get('test-skill');
     expect(retrieved).toBeDefined();
     expect(retrieved!.skillMd).toBe(SAMPLE_SKILL);
+    expect(retrieved!.contentHash).toBe(record.contentHash);
   });
 
   it('bumps version on re-publish', () => {
@@ -108,5 +119,29 @@ describe('SkillHubStore', () => {
     expect(content).toBeDefined();
     expect(content!.skillMd).toContain('with-refs');
     expect(content!.referencesTar).toEqual(tar);
+  });
+
+  it('stores visibility and content hashes in summaries and search results', () => {
+    createStore();
+    store.publish({
+      name: 'shared-skill',
+      skillMd: '---\nname: shared-skill\ndescription: Shared skill\n---\n# Shared',
+      referencesTar: Buffer.from('refs'),
+      author: 'bot',
+      ownerInstanceId: 'instance-a',
+      ownerInstanceName: 'Instance A',
+      visibility: 'shared',
+    });
+
+    const listed = store.list()[0];
+    expect(listed.ownerInstanceId).toBe('instance-a');
+    expect(listed.ownerInstanceName).toBe('Instance A');
+    expect(listed.visibility).toBe('shared');
+    expect(listed.contentHash).toMatch(/^[a-f0-9]{64}$/);
+
+    const searched = store.search('Shared')[0];
+    expect(searched.ownerInstanceId).toBe('instance-a');
+    expect(searched.visibility).toBe('shared');
+    expect(searched.contentHash).toBe(listed.contentHash);
   });
 });

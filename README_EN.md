@@ -34,7 +34,17 @@
 
 > **Claude Code**, **Kimi Code**, and **Codex CLI** — three first-class engines. Subscription or API key, your choice. Each bot picks its own engine.
 
-![MetaBot Demo](resources/metabot-demo.gif)
+<div align="center">
+<table>
+<tr>
+  <td width="25%"><img src="resources/demo-1.png" alt="Spawn an agent team" /></td>
+  <td width="25%"><img src="resources/demo-2.png" alt="Dispatch a task" /></td>
+  <td width="25%"><img src="resources/demo-3.png" alt="Agents working between turns" /></td>
+  <td width="25%"><img src="resources/demo-4.png" alt="PR merged" /></td>
+</tr>
+</table>
+<sub>Feishu mobile · Spawn a team · Dispatch a task · Watch progress · PR merged</sub>
+</div>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xvirobotics/metabot/main/install.sh | bash
@@ -55,9 +65,9 @@ MetaBot isn't locked to one vendor — all three top AI coding agents ship with 
 | **Subscription login** | ✅ `claude login` OAuth | ✅ `kimi login` | ✅ `codex login` — uses your ChatGPT subscription |
 | **API key fallback** | ✅ `ANTHROPIC_API_KEY` or third-party Anthropic-compat endpoints | ✅ Moonshot API key | ✅ `OPENAI_API_KEY` / Codex profile |
 | **Context window** | 200k (1M optional on Opus/Sonnet) | 256k (kimi-for-coding) | 400k (gpt-5.x-codex) |
-| **Tools** | Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP | Same (Kimi CLI builtin + `.claude/skills/` auto-discovery) | Codex CLI native sandbox + shell toolchain |
-| **Autonomous mode** | `bypassPermissions` | `yoloMode` (equivalent) | `--dangerously-bypass-approvals-and-sandbox` |
-| **Subagents** | `.claude/agents/*.md` auto-loaded | Builtin `default` / `okabe` only | Subagents not supported yet |
+| **Tools** | Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP | Same (Kimi CLI builtin + `.claude/skills/` auto-discovery) | Codex CLI native toolchain + `.codex/skills/` auto-discovery |
+| **Autonomous mode** | `bypassPermissions` | `yoloMode` (equivalent) | Defaults to `--sandbox danger-full-access` to avoid `bwrap` failures on hosts without user namespaces |
+| **Subagents** | `.claude/agents/*.md` auto-loaded | Builtin `default` / `okabe` only | Project subagents are not auto-loaded; put role routing in `AGENTS.md` |
 | **Workspace doc** | `CLAUDE.md` | `AGENTS.md` (installer creates the symlink) | `AGENTS.md` (Codex convention) |
 
 **One line of config** — each bot picks its engine:
@@ -67,7 +77,29 @@ MetaBot isn't locked to one vendor — all three top AI coding agents ship with 
 { "name": "vegeta", "engine": "codex", "codex": { "model": "gpt-5.4-codex" } }
 ```
 
-Codex support uses the local `codex exec --json` CLI and resumes chat sessions with `codex exec resume`. Authenticate once with `codex login` (or configure your Codex API key/profile) before starting MetaBot.
+Codex support uses the local `codex exec --json` CLI and resumes chat sessions with `codex exec resume`. Authenticate once with `codex login` (or configure your Codex API key/profile) before starting MetaBot. MetaBot translates Feishu slash-skill invocations like `/<skill> ...` into Codex's explicit `$<skill> ...` skill syntax (e.g. once `/metaschedule` is installed, Codex receives `$metaschedule ...`).
+
+### Codex Migration: Reuse `.claude` Config
+
+Claude/Kimi and Codex use different discovery paths. MetaBot mirrors bundled skills during install/update and Skill Hub installs:
+
+| Content | Claude / Kimi | Codex |
+|---------|---------------|-------|
+| Workspace instructions | `CLAUDE.md` | `AGENTS.md` |
+| Skills | `.claude/skills/<name>/SKILL.md` | `.codex/skills/<name>/SKILL.md` |
+| Subagents | `.claude/agents/*.md` | Not auto-loaded; migrate roles/routes into `AGENTS.md` |
+
+For an existing project, ask Codex to migrate it:
+
+```text
+/model codex
+Use the current project's .claude config to create Codex-compatible .codex/skills and AGENTS.md:
+- mirror .claude/skills/* into .codex/skills/*
+- generate or update AGENTS.md from CLAUDE.md
+- if .claude/agents/*.md exists, merge those subagent roles, routing tables, and workflows into AGENTS.md
+```
+
+If the host disables unprivileged user namespaces, Codex CLI's `workspace-write` sandbox can fail before commands run with `bwrap: No permissions to create a new namespace`. MetaBot defaults Codex to `danger-full-access` to avoid that failure; set `CODEX_SANDBOX` or `codex.sandbox` explicitly if you want stricter isolation.
 
 Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The Agent Bus lets them delegate to each other — the calling bot doesn't need to know which engine is on the other side.
 
@@ -92,7 +124,7 @@ Run your frontend bot on Claude and your backend bot on Kimi? Totally fine. The 
 | **Code capabilities** | Full Agent SDK (Read/Write/Edit/Bash/MCP) | Full | None |
 | **Multi-agent** | Agent Bus + task delegation + runtime creation | Single session | Yes, but closed ecosystem |
 | **Shared memory** | MetaMemory with FTS + auto-sync to Wiki | None | None |
-| **Scheduling** | Cron jobs, persisted across restarts | None | Yes |
+| **Scheduling** | CC-native `CronCreate` / `/loop` work out of the box; opt-in `/metaschedule` for cross-restart persistence | Native `CronCreate` / `/loop` only | Yes |
 | **Autonomous** | bypassPermissions / yoloMode, fully automated | Requires human approval | Limited to workflows |
 | **Open source** | MIT, fully controllable | CLI is open source | Closed-source SaaS |
 
@@ -106,9 +138,9 @@ Feishu/TG/WeChat → IM Bridge → Engine Router ──┬─→ Claude Code Age
                                                 └─→ Codex CLI (codex exec --json subprocess)
                                     ↕
                          MetaMemory (shared knowledge)
-                         MetaSkill (agent factory, emits CLAUDE.md + AGENTS.md)
-                         Scheduler (cron tasks)
+                         Scheduling (CC-native CronCreate / /loop; opt-in /metaschedule for persistence)
                          Agent Bus (cross-bot comms, engine-agnostic)
+                         Agent Factory (opt-in /metaskill)
 ```
 
 The engine layer is abstracted — Kimi's event stream and Codex's JSONL stream are both translated into Claude-shaped `SDKMessage` objects, so streaming cards, tool-call tracking, MetaMemory/Scheduler/Agent Bus behave identically across all three engines.
@@ -125,7 +157,7 @@ The engine layer is abstracted — Kimi's event stream and Codex's JSONL stream 
 |--------|-----------|-------------|
 | **Supervised** | IM Bridge | Real-time streaming cards show every tool call. Humans see everything agents do |
 | **Self-Improving** | MetaMemory | Shared knowledge store. Agents write what they learn, other agents retrieve it |
-| **Agent Organization** | MetaSkill + Scheduler + Agent Bus | One command generates a full agent team. Agents delegate tasks and create new agents |
+| **Agent Organization** | Agent Bus + CC-native scheduling (opt-in MetaSkill / MetaSchedule) | Agents delegate tasks and spin up new bots on demand; CC's built-in `CronCreate` / `/loop` cover scheduling, and opt-in `/metaschedule` adds cross-restart persistence |
 
 Full-featured browser-based chat interface. Access at `https://your-server/web/` after starting MetaBot.
 
@@ -149,11 +181,14 @@ Full-featured browser-based chat interface. Access at `https://your-server/web/`
 | Component | Description |
 |-----------|-------------|
 | **Triple Engine Kernel** | Each bot independently chooses Claude Code / Kimi Code / Codex CLI — full tool stack (Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP) in autonomous mode |
-| **MetaSkill** | Agent factory. `/metaskill` generates a complete `.claude/` agent team (orchestrator + specialists + reviewer) |
+| **Persistent Sessions & Goal Loops** | One Claude process per chat — `/goal` keeps the agent auto-driving across turns until a condition is met; teammates and background tasks survive between turns |
+| **Agent Teams** | A lead agent spawns specialist teammates in parallel, routes tasks between them, and aggregates results — all in one Feishu chat |
+| **CC-Native Scheduling** | Use Claude Code's built-in `CronCreate` and `/loop` directly — zero MetaBot setup, runs in-session |
 | **MetaMemory** | Embedded SQLite knowledge store with full-text search, Web UI, auto-syncs to Feishu Wiki |
 | **IM Bridge** | Chat with any agent from Feishu, Telegram, or WeChat (including mobile). Streaming cards + tool call tracking |
 | **Agent Bus** | Agents talk to each other via `mb talk`. Create/remove bots at runtime |
-| **Task Scheduler** | Cron recurring tasks + one-time delays, persisted across restarts, auto-retries when busy |
+| **MetaSchedule (opt-in)** | Persistent server-side scheduler — cron + one-shot, survives restarts, exposes HTTP API + `mb schedule` CLI. Not installed by default; enable with `cp src/skills/metaschedule/SKILL.md ~/.claude/skills/metaschedule/` |
+| **MetaSkill (opt-in)** | Agent factory. `/metaskill` generates portable agent teams. Not installed by default; enable with `cp -r src/skills/metaskill ~/.claude/skills/` |
 | **Feishu Lark CLI** | 200+ commands covering docs, messaging, calendar, tasks, and 8 more domains. 19 AI Agent Skills |
 | **Skill Hub** | Cross-instance skill sharing registry. `mb skills` to publish, discover, and install skills with FTS5 search |
 | **Peers** | Cross-instance bot discovery and task routing. `mb talk alice/backend-bot` routes automatically |
@@ -198,14 +233,9 @@ under /projects/deployment.
 Search MetaMemory for our API design conventions.
 ```
 
-### MetaSkill — Agent Factory
+### Scheduling (Claude Code native)
 
-```
-/metaskill Create an agent team for this React Native project —
-I need a frontend specialist, a backend API specialist, and a code reviewer.
-```
-
-### Scheduling
+Use CC's built-in `CronCreate` and `/loop` — zero setup, runs inside the session:
 
 ```
 Schedule a daily task at 9am: search Hacker News and TechCrunch for AI news,
@@ -213,8 +243,38 @@ summarize the top 5 stories, and save the summary to MetaMemory.
 ```
 
 ```
-Set up a weekly Monday 8am task: review last week's git commits, generate
-a progress report, and save it to MetaMemory under /reports.
+/loop poll PR #123's CI status every 5 minutes until it finishes.
+```
+
+> Need the schedule to survive MetaBot restarts and be visible to other bots?
+> Install the opt-in `/metaschedule` skill
+> (`cp src/skills/metaschedule/SKILL.md ~/.claude/skills/metaschedule/`),
+> then use `mb schedule cron` / the HTTP API to submit jobs to MetaBot's
+> persistent scheduler.
+
+### Agent Teams — Runtime
+
+```
+Act as a lead engineer. Spawn a frontend specialist and a backend specialist
+in parallel: the frontend handles the React UI changes, the backend adds the
+new /api/reports endpoint, and you review both PRs before merging.
+```
+
+### Goal Loops
+
+```
+/goal The CI for PR #123 is green and the deploy completes successfully.
+Check every 10 minutes and report back when done.
+```
+
+### MetaSkill — Agent Factory (opt-in)
+
+`/metaskill` is not installed by default. Enable it first:
+`cp -r src/skills/metaskill ~/.claude/skills/`. Then:
+
+```
+/metaskill Create an agent team for this React Native project —
+I need a frontend specialist, a backend API specialist, and a code reviewer.
 ```
 
 ### Agent-to-Agent
@@ -239,6 +299,7 @@ progress against these requirements.
 ```
 
 ```
+(First copy src/skills/metaskill into ~/.claude/skills/ to enable /metaskill)
 /metaskill Create a "daily-ops" agent that runs every morning at 8am:
 checks service health, reviews overnight error logs, and posts a summary.
 ```
@@ -375,14 +436,16 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 | `/reset` | Clear session |
 | `/stop` | Abort current task |
 | `/status` | Session info (includes current model) |
+| `/goal <condition>` | Set a goal the agent keeps pursuing across turns. `/goal clear` to stop |
 | `/model` | Show current engine/model; `/model list` — available engines/models; `/model claude`, `/model kimi`, or `/model codex` — switch engine; `/model <name>` — set model; `/model reset` — restore default |
 | `/memory list` | Browse knowledge tree |
 | `/memory search <query>` | Search knowledge base |
 | `/sync` | Sync MetaMemory to Feishu Wiki |
-| `/metaskill ...` | Generate agent teams, agents, or skills |
+| `/metaskill ...` | Generate agent teams, agents, or skills (opt-in skill — not installed by default) |
 | `/help` | Show help |
 
 > **Model switching**: Each session can pick its own model. Append `[1m]` to the model name to enable the 1M context window (only Opus 4.7/4.6 and Sonnet 4.6 support it), e.g. `/model claude-opus-4-7[1m]`. OAuth/Pro-Max users must use this suffix — the SDK silently drops beta headers under that auth mode.
+> **Codex skills**: Slash invocations like `/<skill> ...` are auto-rewritten to Codex's `$<skill> ...` form whenever the active session runs on Codex.
 
 <details>
 <summary><strong>API Reference</strong></summary>
@@ -431,9 +494,12 @@ mm folders                          # folder tree
 # Agent Bus
 mb bots                             # list all bots
 mb talk <bot> <chatId> <prompt>     # talk to a bot
-mb schedule list                    # list scheduled tasks
-mb schedule cron <bot> <chatId> '<cron>' <prompt>  # recurring task
 mb stats                            # cost & usage stats
+
+# Scheduling — prefer Claude Code's native CronCreate / /loop directly in chat.
+# The persistent server-side scheduler (`mb schedule list / cron / cancel /
+# pause / resume`) is exposed by the opt-in /metaschedule skill. Enable with:
+#   cp src/skills/metaschedule/SKILL.md ~/.claude/skills/metaschedule/
 
 # Feishu Lark CLI (Feishu bots only)
 lark-cli docs +fetch --doc <feishu-url>

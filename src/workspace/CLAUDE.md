@@ -1,17 +1,8 @@
 # MetaBot Workspace
 
-This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs the Claude Code or Kimi agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi"`).
+This workspace is managed by **MetaBot** — an AI assistant accessible via Feishu/Telegram that runs the Claude Code, Kimi, or Codex agent engine with full tool access. The bot's engine is configured per-bot in `bots.json` (`engine: "claude" | "kimi" | "codex"`).
 
 ## Available Skills
-
-### /metaskill — AI Agent Team Generator
-Create AI agent teams, individual agents, or custom skills for any project.
-
-```
-/metaskill ios app          → generates full .claude/ agent team
-/metaskill a security agent → creates a single agent
-/metaskill a deploy skill   → creates a custom slash command
-```
 
 ### /metamemory — Shared Knowledge Store
 Read and write persistent memory documents across sessions. Use the `mm` shell shortcut for quick operations:
@@ -25,18 +16,37 @@ mm folders              # Browse folder tree
 
 For full API (create with tags, update, delete), use the `/metamemory` skill.
 
-### /metabot — Agent Bus, Scheduling & Bot Management
+### /metabot — Agent Bus & Bot Management
 Use the `mb` shell shortcut for quick operations:
 
 ```bash
-mb bots                                    # List all bots
-mb task <botName> <chatId> <prompt>        # Delegate task
-mb schedule list                           # List scheduled tasks
-mb schedule add <bot> <chatId> <sec> <prompt>  # Schedule a task
+mb bots                                    # List all bots (local + peer)
+mb talk <botName> <chatId> <prompt>        # Delegate task to a bot
+mb peers                                   # List peers and their status
+mb skills                                  # Shared skills (Skill Hub)
 mb health                                  # Health check
 ```
 
-For full API (create bots, update tasks, sendCards), use the `/metabot` skill.
+For full API (create bots, sendCards, Skill Hub publish/install), use the `/metabot` skill.
+
+### Scheduling (Claude Code native)
+
+Prefer Claude Code's built-in scheduling tools for ad-hoc, session-scoped tasks — no MetaBot server hop, runs in-process, stops when the session ends:
+
+- **`CronCreate`** — fire a prompt on a cron schedule (recurring or one-shot). Pass `durable: true` to persist across restarts. Example use cases: "remind me at 3pm", "every weekday at 9am summarize my inbox".
+- **`/loop [interval] <prompt>`** — turn any task into a self-paced loop. Examples: `/loop 5m check the deploy`, `/loop check every PR` (dynamic mode — you pace yourself).
+
+For **persistent server-side scheduling** that outlives the Claude session, is visible to other bots, and lives in MetaBot's PM2 process, install the optional `/metaschedule` skill (not installed by default). Copy `<METABOT_HOME>/src/skills/metaschedule/SKILL.md` into `~/.claude/skills/metaschedule/` (or the bot's `.claude/skills/`).
+
+### /metaskill — AI Agent Team Generator (optional)
+
+Not installed by default. Generates portable agent teams, individual agents, or custom skills (`CLAUDE.md` / `AGENTS.md` + SKILL files). Enable it by copying `<METABOT_HOME>/src/skills/metaskill/` into `~/.claude/skills/` (or the bot's `.claude/skills/`). Once installed:
+
+```
+/metaskill ios app          → generates a portable agent team
+/metaskill a security agent → creates a single agent
+/metaskill a deploy skill   → creates a custom skill
+```
 
 ### Feishu / Lark CLI (Feishu bots only)
 
@@ -50,7 +60,7 @@ lark-cli calendar +agenda --as user                      # View calendar
 lark-cli base records list ...                           # Query bitable
 ```
 
-19 AI Agent Skills are installed (lark-doc, lark-im, lark-calendar, lark-sheets, lark-base, lark-task, lark-drive, lark-mail, lark-wiki, etc.) providing structured guidance for each domain.
+19 AI Agent Skills are installed (lark-doc, lark-im, lark-calendar, lark-sheets, lark-base, lark-task, lark-drive, lark-mail, lark-wiki, etc.) providing structured guidance for each domain. Claude/Kimi discover these under `.claude/skills`; Codex discovers the mirrored copies under `.codex/skills`.
 
 ## Guidelines
 

@@ -29,12 +29,13 @@ MetaBot 把它们都解放出来。给每个 Agent 一个 **Claude Code 或 Kimi
 |------|------|
 | **双引擎内核** | 每个 Bot 独立选 Claude Code 或 Kimi Code — 完整工具链（Read/Write/Edit/Bash/Glob/Grep/WebSearch/MCP），自主模式运行。 |
 | **MetaSkill** | Agent 工厂。`/metaskill ios app` 调研最佳实践后生成完整的 `.claude/` Agent 团队。 |
-| **MetaMemory** | 内嵌 SQLite 知识库，全文搜索，Web UI。Agent 跨会话读写 Markdown 文档。 |
+| **MetaMemory** | 内嵌 SQLite 知识库，全文搜索，Web UI，实例 namespace ACL。Agent 跨会话读写 Markdown 文档。 |
 | **IM Bridge** | 飞书或 Telegram（含手机端）与任意 Agent 对话。带颜色状态的流式卡片。 |
 | **Web UI** | 浏览器端聊天 `/web/`，WebSocket 流式输出、电话语音模式（VAD）、MetaMemory 浏览器、明暗主题。[了解更多](features/web-ui.md) |
 | **语音助手** | 通过 iOS 快捷指令（Jarvis 模式）或 Web UI 电话模式免手语音控制。服务端 STT + TTS。[了解更多](features/voice-jarvis.md) |
 | **Agent 总线** | 9100 端口 REST API。Agent 通过 `mb talk` 互相对话。运行时创建/删除 Bot。 |
-| **Peers 联邦** | 跨实例 Bot 发现和任务路由。 |
+| **Skill Hub** | 联邦 Skill 注册中心。发布、发现、安装 Skill，并记录 owner/hash metadata。[了解更多](features/skill-hub.zh.md) |
+| **Peers 联邦** | 跨实例 Bot/Skill 发现和任务路由。 |
 | **定时任务调度器** | 一次性延迟和周期性 cron 任务。支持时区，跨重启持久化。 |
 | **CLI 工具** | `metabot`、`mm`、`mb`、`fd` 命令，管理服务、知识库、Agent 总线和飞书文档。 |
 

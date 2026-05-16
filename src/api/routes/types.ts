@@ -18,8 +18,10 @@ import type { WebSocketHandle } from '../../web/ws-server.js';
 import type { SessionRegistry } from '../../session/session-registry.js';
 import type { ActivityStore } from '../activity-store.js';
 import type { SkillHubStore } from '../skill-hub-store.js';
+import type { InstanceIdentity } from '../../cluster/identity.js';
 
 export interface RouteContext {
+  instance: InstanceIdentity;
   registry: BotRegistry;
   scheduler: TaskScheduler;
   logger: Logger;

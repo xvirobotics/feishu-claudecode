@@ -24,6 +24,8 @@ export interface BotInfo {
   engine: EngineName;
   model?: string;
   workingDirectory: string;
+  memoryNamespace?: string;
+  memoryProject?: string;
   ttsVoice?: string;
   /** Set when the bot comes from a peer instance. */
   peerUrl?: string;
@@ -93,6 +95,8 @@ export class BotRegistry {
       engine: resolveEngineName(b.config),
       ...(defaultModelForEngine(b.config) ? { model: defaultModelForEngine(b.config) } : {}),
       workingDirectory: b.config.claude.defaultWorkingDirectory,
+      ...(b.config.memoryNamespace ? { memoryNamespace: b.config.memoryNamespace } : {}),
+      ...(b.config.memoryProject ? { memoryProject: b.config.memoryProject } : {}),
       ...(b.config.ttsVoice ? { ttsVoice: b.config.ttsVoice } : {}),
     }));
   }

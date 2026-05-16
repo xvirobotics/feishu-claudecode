@@ -31,8 +31,12 @@ import {
   handleRtcRoutes,
   handleSessionRoutes,
   handleSkillHubRoutes,
+  handleManifestRoutes,
+  handleExecutorRoutes,
+  handlePeerMemoryRoutes,
 } from './routes/index.js';
 import type { RouteContext } from './routes/index.js';
+import type { InstanceIdentity } from '../cluster/identity.js';
 
 interface ApiServerOptions {
   port: number;
@@ -50,6 +54,7 @@ interface ApiServerOptions {
   budgetManager?: BudgetManager;
   teamManager?: TeamManager;
   sessionRegistry?: SessionRegistry;
+  instance: InstanceIdentity;
 }
 
 const startTime = Date.now();
@@ -57,7 +62,7 @@ const startTime = Date.now();
 (globalThis as any).__metabot_start_time = startTime;
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager, memoryServerUrl, memoryAuthToken, instance } = options;
   const host = secret ? '0.0.0.0' : '127.0.0.1';
 
   // Initialize shared services
@@ -79,6 +84,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
   // Build route context (shared across all route handlers)
   const ctx: RouteContext = {
+    instance,
     registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient,
     peerManager, memoryServerUrl, memoryAuthToken,
     asyncTaskStore, intentRouter, circuitBreaker, budgetManager,
@@ -100,7 +106,10 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     handleSyncRoutes,
     handleRtcRoutes,
     handleSessionRoutes,
+    handleManifestRoutes,
+    handlePeerMemoryRoutes,
     handleSkillHubRoutes,
+    handleExecutorRoutes,
   ];
 
   const server = http.createServer(async (req, res) => {
@@ -108,7 +117,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     const url = req.url || '/';
 
     // Auth check (exempt /web/, /memory/, /api/files/)
-    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/')) {
+    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/') && url !== '/api/manifest') {
       const auth = req.headers.authorization;
       const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
       if (auth !== `Bearer ${secret}` && urlToken !== secret) {
@@ -123,6 +132,8 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         const peerStatuses = peerManager?.getPeerStatuses() ?? [];
         jsonResponse(res, 200, {
           status: 'ok',
+          instanceId: instance.instanceId,
+          instanceName: instance.instanceName,
           uptime: Math.floor((Date.now() - startTime) / 1000),
           bots: registry.list().length,
           peerBots: peerManager?.getPeerBots().length ?? 0,

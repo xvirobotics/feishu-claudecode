@@ -1,6 +1,6 @@
 # MetaMemory
 
-Embedded knowledge store with full-text search. Agents read/write Markdown documents across sessions. Shared by all agents in the organization.
+Embedded knowledge store with full-text search. Agents read/write Markdown documents across sessions. Each MetaBot instance can write its own namespace while reading shared knowledge.
 
 ## Overview
 
@@ -11,6 +11,7 @@ MetaMemory is a **SQLite-based document store** (using FTS5 for full-text search
 - **Web UI** at `http://localhost:8100?token=YOUR_TOKEN` for browsing and searching
 - **REST API** for programmatic access
 - **CLI** (`mm`) for terminal access
+- **Instance namespaces** for LAN/federated deployments
 
 ## How Agents Use It
 
@@ -40,9 +41,11 @@ These commands get quick responses without spawning Claude — they use the `Mem
 ```bash
 # Read
 mm search "deployment guide"        # full-text search
+mm peer-search "deployment guide"   # search cached peer memory
 mm list                             # list documents
 mm folders                          # folder tree
 mm path /projects/my-doc            # get doc by path
+mm peer-get alice DOC_ID            # read a cached peer document
 
 # Write
 echo '# Notes' | mm create "Title" --folder ID --tags "dev"
@@ -63,12 +66,21 @@ The full URL with token is printed to logs on startup. The token is saved to `lo
 
 ## Access Control
 
-MetaMemory supports folder-level ACL:
+MetaMemory supports folder-level ACL plus scoped instance tokens:
 
 | Token | Access |
 |-------|--------|
 | `MEMORY_ADMIN_TOKEN` | Full access — sees all folders |
 | `MEMORY_TOKEN` | Reader access — shared folders only |
+| `MEMORY_INSTANCE_TOKEN` | Instance access — writes the instance namespace plus configured bot/project namespaces, reads shared folders |
+
+Every MetaBot instance gets a stable identity from `~/.metabot/identity.json`. By default its writable namespace is:
+
+```text
+/instances/<instanceId>
+```
+
+This lets multiple developer-machine MetaBot instances share one MetaMemory service without giving every instance write access to every other instance's area. Admin tokens remain available for maintenance and migration.
 
 See [Security](../concepts/security.md#metamemory-access-control) for details.
 
@@ -80,7 +92,47 @@ See [Security](../concepts/security.md#metamemory-access-control) for details.
 | `MEMORY_PORT` | `8100` | MetaMemory port |
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access) |
 | `MEMORY_TOKEN` | — | Reader token (shared only) |
+| `MEMORY_INSTANCE_TOKEN` | — | Scoped token for this instance plus configured bot/project namespaces |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL (for CLI) |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Instance fallback namespace |
+| `METABOT_BOT_MEMORY_NAMESPACE` | `/bots/default` | Single-bot stable namespace override |
+| `METABOT_MEMORY_PROJECT` | — | Single-bot project name; derives `/projects/<slug>` |
+| `METABOT_MEMORY_WRITE_NAMESPACES` | — | Extra comma-separated writable namespaces |
+| `METABOT_PEER_MEMORY_CACHE_ENABLED` | `true` | Mirror peer MetaMemory documents into local read-only cache |
+| `METABOT_PEER_MEMORY_CACHE_LIMIT` | `200` | Maximum peer memory documents mirrored per peer poll |
+
+## Stable Project Namespaces
+
+MetaBot keeps `/instances/<instanceId>` as a safe fallback, but bot-owned knowledge should use a stable namespace that survives reinstalling a machine. In `bots.json`, set either:
+
+```json
+{
+  "name": "metabot",
+  "memoryProject": "metabot"
+}
+```
+
+which derives `/projects/metabot`, or set an explicit namespace:
+
+```json
+{
+  "name": "metabot",
+  "memoryNamespace": "/projects/metabot"
+}
+```
+
+If neither field is set, the bot defaults to `/bots/<botName>`. `MEMORY_INSTANCE_TOKEN` is automatically granted write access to the instance fallback plus all configured bot/project namespaces.
+
+## Peer Mirror
+
+When peers are configured, MetaBot mirrors readable peer MetaMemory documents into the local peer artifact cache. The mirror is read-only and keeps the owner instance as the source of truth. If a developer machine goes offline, other MetaBot instances can still search cached peer memory through:
+
+```bash
+mm peer-search "cluster bootstrap"
+mm peer-get alice DOC_ID
+```
+
+The API surface is `GET /api/peer-memory/search?q=` and `GET /api/peer-memory/documents/:peerName/:docId`.
 
 ## Auto-Sync to Wiki
 

@@ -5,7 +5,13 @@ module.exports = {
     {
       name: 'metabot',
       script: 'src/index.ts',
-      interpreter: path.join(__dirname, 'node_modules/.bin/tsx'),
+      // Use `node --import tsx` instead of the tsx wrapper script.
+      // The wrapper in node_modules/.bin/tsx is a POSIX shell script with no
+      // .cmd shim, so PM2's child_process.spawn can't exec it on Windows
+      // (EINVAL). `node --import tsx` is tsx 4.x's documented cross-platform
+      // entrypoint and works identically on Linux/macOS/Windows.
+      interpreter: 'node',
+      interpreter_args: '--import tsx',
       cwd: __dirname,
 
       // Watch disabled — use `metabot restart` to apply code changes manually

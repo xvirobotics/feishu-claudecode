@@ -32,12 +32,21 @@ Authorization: Bearer your-secret-token
 
 ## MetaMemory 访问控制
 
-MetaMemory 支持 **文件夹级 ACL**，双角色访问：
+MetaMemory 支持 **文件夹级 ACL** 和实例级 namespace 写入：
 
 | Token | 访问权限 |
 |-------|---------|
 | `MEMORY_ADMIN_TOKEN` | 完整访问 — 可见所有文件夹（private 和 shared） |
 | `MEMORY_TOKEN` | 读者访问 — 仅可见 `visibility: shared` 的文件夹 |
+| `MEMORY_INSTANCE_TOKEN` | 实例访问 — 可写 `METABOT_MEMORY_NAMESPACE`，可读 shared 文件夹 |
+
+实例级 token 面向内网/联邦部署，每个 MetaBot 实例默认拥有：
+
+```text
+/instances/<instanceId>
+```
+
+实例 token 不能写其他实例 namespace。迁移和维护仍使用 admin token。
 
 锁定文件夹：
 ```bash
@@ -52,4 +61,4 @@ curl -X PUT http://localhost:8100/api/folders/:id \
 2. **设置 `maxBudgetUsd`** — 为每次请求设置合理的费用上限
 3. **启用 `API_SECRET`** — 生产环境务必设置
 4. **监控 Agent 活动** — 流式卡片实时展示每一步工具调用
-5. **使用 MetaMemory ACL** — 敏感知识文件夹设为 private
+5. **使用 MetaMemory ACL** — 敏感知识文件夹设为 private，普通实例使用 scoped namespace token，不直接发 admin token

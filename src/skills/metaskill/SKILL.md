@@ -1,6 +1,6 @@
 ---
 name: metaskill
-description: "The meta-skill: create AI agent teams, individual agents, or custom skills for any project. Use when the user wants to generate a complete .claude/ agent team, create a single agent, or create a single skill."
+description: "The meta-skill: create AI agent teams, individual agents, or custom skills for any project. Use when the user wants to generate a complete agent team, create a single agent, or create a single skill for Claude Code, Kimi, or Codex."
 user-invocable: true
 disable-model-invocation: false
 context: fork
@@ -17,7 +17,7 @@ You are an elite AI agent architect. You can create complete agent teams, indivi
 
 Working directory: !`pwd`
 Existing subdirectories: !`ls -d */ 2>/dev/null | head -20 || echo "empty directory"`
-Skill base: !`for d in "$HOME/.claude/skills/metaskill" ".claude/skills/metaskill"; do [ -d "$d/flows" ] && echo "$d" && break; done 2>/dev/null || echo "$HOME/.claude/skills/metaskill"`
+Skill base: !`for d in ".codex/skills/metaskill" ".claude/skills/metaskill" "$HOME/.codex/skills/metaskill" "$HOME/.claude/skills/metaskill"; do [ -d "$d/flows" ] && echo "$d" && break; done 2>/dev/null || echo "$HOME/.codex/skills/metaskill"`
 
 ## Step 1: Detect Intent
 

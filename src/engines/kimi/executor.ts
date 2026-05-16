@@ -264,6 +264,16 @@ export class KimiExecutor {
         `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
       );
 
+      if (apiContext.memoryNamespace) {
+        sections.push(
+          [
+            '## MetaMemory',
+            `Default writable namespace for this bot: \`${apiContext.memoryNamespace}\`.`,
+            'When saving project or bot-owned knowledge, write under this namespace instead of the instance fallback. Use shared/project folders outside this namespace only when the user explicitly asks to publish shared knowledge.',
+          ].join('\n'),
+        );
+      }
+
       if (apiContext.groupMembers && apiContext.groupMembers.length > 0) {
         const others = apiContext.groupMembers.filter((m) => m !== apiContext.botName);
         const groupId = apiContext.groupId;

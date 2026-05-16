@@ -38,12 +38,21 @@ Authorization: Bearer your-secret-token
 
 ## MetaMemory Access Control
 
-MetaMemory supports **folder-level ACL** with dual-role access:
+MetaMemory supports **folder-level ACL** plus instance-scoped namespace writes:
 
 | Token | Access |
 |-------|--------|
 | `MEMORY_ADMIN_TOKEN` | Full access — sees all folders (private and shared) |
 | `MEMORY_TOKEN` | Reader access — only sees folders with `visibility: shared` |
+| `MEMORY_INSTANCE_TOKEN` | Instance access — writes `METABOT_MEMORY_NAMESPACE`, reads shared folders |
+
+Instance scoped tokens are intended for LAN/federated deployments where each MetaBot instance owns:
+
+```text
+/instances/<instanceId>
+```
+
+The instance token cannot write another instance namespace. Use the admin token for migration and maintenance.
 
 Lock a folder:
 ```bash
@@ -58,4 +67,4 @@ curl -X PUT http://localhost:8100/api/folders/:id \
 2. **Use `maxBudgetUsd`** — Set reasonable cost limits per request
 3. **Enable `API_SECRET`** — Always set this in production
 4. **Review agent activity** — Streaming cards show every tool call in real-time
-5. **Use MetaMemory ACL** — Lock sensitive knowledge folders as private
+5. **Use MetaMemory ACL** — Lock sensitive knowledge folders as private, and give normal instances scoped namespace tokens instead of admin tokens

@@ -2,7 +2,6 @@ import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage, SpawnOptions, SpawnedProcess } from '@anthropic-ai/claude-agent-sdk';
 import type { BotConfigBase } from '../../config.js';
@@ -31,6 +30,23 @@ const CLAUDE_EXECUTABLE = resolveClaudePath();
 const ALWAYS_FILTERED_PREFIXES = ['CLAUDE'];
 
 /**
+ * Specific CLAUDE_* env vars that are SAFE to pass through to the child
+ * Claude Code process even though the broad CLAUDE* filter would normally
+ * strip them. These are user-tunable feature flags / mode toggles, not
+ * session-state vars (which are what the nested-session guard is for).
+ *
+ * Add a var here when you need MetaBot users to be able to enable a
+ * Claude Code feature via .env or the host environment.
+ */
+const CLAUDE_ENV_PASSTHROUGH = new Set([
+  'CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS', // /agent teams (multi-instance coordination)
+  'CLAUDE_CODE_DISABLE_AGENT_VIEW',       // disable claude agents / --bg / /background
+  'CLAUDE_CODE_SIMPLE',                   // --bare equivalent
+  'CLAUDE_CODE_DISABLE_AUTO_MEMORY',      // toggle auto-memory (project patterns/learnings)
+  'CLAUDE_CODE_DISABLE_1M_CONTEXT',       // opt out of Max-tier silent 1M context upgrade
+]);
+
+/**
  * Auth-related env vars that are only filtered when an explicit API key
  * is provided in bots.json OR when ~/.claude/.credentials.json exists.
  * This ensures users who rely solely on ANTHROPIC_API_KEY env var can
@@ -52,7 +68,10 @@ function hasCredentialsFile(): boolean {
 
 /**
  * Create a custom spawn function for cross-platform compatibility.
- * - Uses process.execPath (current Node binary) to avoid PATH issues on Windows.
+ * - Honors `options.command` from the SDK — for claude-agent-sdk >= 0.2.140
+ *   the SDK spawns the native Claude binary directly, so we must NOT force
+ *   `process.execPath` (node). Legacy JS entrypoints set `options.command`
+ *   to the node executable themselves, so this works in both worlds.
  * - Always filters CLAUDE* env vars to prevent nested session errors.
  * - Filters ANTHROPIC auth env vars only when an explicit API key is provided
  *   or credentials.json exists (so env-var-only users can still authenticate).
@@ -60,12 +79,27 @@ function hasCredentialsFile(): boolean {
  * - Optionally injects an explicit ANTHROPIC_API_KEY from bots.json config.
  */
 function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => SpawnedProcess {
+  // Force-use-env mode: pass ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY /
+  // ANTHROPIC_BASE_URL through to the Claude Code subprocess instead of
+  // filtering them out. Triggered by either:
+  //   (a) METABOT_PREFER_ENV_AUTH=true (explicit opt-in flag), or
+  //   (b) presence of ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL
+  //       in the process env (auto-detect — user clearly wants env-based auth).
+  // Use case: a bot points Claude Code at a third-party Anthropic-compatible
+  // proxy while other bots on the same machine still use OAuth via
+  // ~/.claude/.credentials.json (which can't be deleted).
+  const preferEnvAuth =
+    process.env.METABOT_PREFER_ENV_AUTH === 'true' ||
+    !!(
+      process.env.ANTHROPIC_AUTH_TOKEN ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.ANTHROPIC_BASE_URL
+    );
+
   // Decide once whether to filter auth env vars
-  const filterAuthVars = !!(explicitApiKey || hasCredentialsFile());
+  const filterAuthVars = !preferEnvAuth && !!(explicitApiKey || hasCredentialsFile());
 
   return (options: SpawnOptions): SpawnedProcess => {
-    const nodePath = process.execPath;
-
     // Merge provided env with process.env for a complete environment
     const baseEnv = options.env && Object.keys(options.env).length > 0
       ? { ...process.env, ...options.env }
@@ -75,6 +109,12 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(baseEnv)) {
       if (value === undefined) continue;
+      // Safe-pass list takes precedence over the broad CLAUDE* strip — these
+      // are feature flags users opt into (agent teams, disable agent view, etc.)
+      if (CLAUDE_ENV_PASSTHROUGH.has(key)) {
+        env[key] = value;
+        continue;
+      }
       if (ALWAYS_FILTERED_PREFIXES.some(p => key.startsWith(p))) continue;
       if (filterAuthVars && AUTH_ENV_VARS.some(v => key.startsWith(v))) continue;
       env[key] = value;
@@ -85,7 +125,26 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
       env.ANTHROPIC_API_KEY = explicitApiKey;
     }
 
-    const child = spawn(nodePath, options.args, {
+    // Default-enable Claude Code Agent Teams. Without a real terminal there's
+    // no tmux/iTerm2, so teammates must run in-process (controlled via the
+    // `teammateMode` setting passed in queryOptions). Users can disable by
+    // setting CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=0 in MetaBot's parent env.
+    if (env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === undefined) {
+      env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = '1';
+    }
+
+    // Default-enable Claude Code auto-memory so Claude can write project
+    // patterns / preferences / decisions to ~/.claude/projects/<projDir>/memory/
+    // across sessions — the user-facing memory system the bot's skills
+    // rely on. Users can disable by setting
+    // CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 in MetaBot's parent env.
+    // Pinning to '0' here makes the feature immune to upstream default
+    // changes; the user shouldn't need to keep a magic line in .env.
+    if (env.CLAUDE_CODE_DISABLE_AUTO_MEMORY === undefined) {
+      env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '0';
+    }
+
+    const child = spawn(options.command, options.args, {
       cwd: options.cwd,
       env,
       signal: options.signal,
@@ -99,11 +158,71 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
 export interface ApiContext {
   botName: string;
   chatId: string;
+  /** Stable writable MetaMemory namespace for this bot/chat. */
+  memoryNamespace?: string;
+  /** Optional project identifier used to derive the namespace. */
+  memoryProject?: string;
   /** Group chat member names — enables inter-bot communication prompt. */
   groupMembers?: string[];
   /** Group ID — used to build grouptalk chatIds for inter-bot communication. */
   groupId?: string;
 }
+
+/**
+ * Apply 1M-context settings based on the effective model name in `queryOptions.model`:
+ *
+ *   - With `[1m]` suffix (e.g. `claude-opus-4-7[1m]`): set the matching
+ *     `betas` flag. The SDK strips the suffix and forwards the beta header
+ *     to the API. Belt-and-braces for API-key auth modes where the SDK
+ *     may not auto-infer the beta from the suffix alone.
+ *
+ *   - Without `[1m]`: set `CLAUDE_CODE_DISABLE_1M_CONTEXT=1` in the
+ *     spawn env. The Claude CLI silently auto-enables 1M context for
+ *     Max-tier OAuth subscriptions on models that support it (opus-4-7,
+ *     opus-4-6, sonnet-4-6) — billing every request at 2× rate even
+ *     though the user didn't request 1M. This env var is the binary's
+ *     opt-out switch. (MetaBot's spawn handler merges `queryOptions.env`
+ *     on top of `process.env`, so we only need to set the override key.)
+ *
+ * Must be called *after* any per-call `options.model` override so the
+ * suffix detection sees the actually-effective model, not the bot default.
+ */
+export function apply1MContextSettings(queryOptions: Record<string, unknown>): void {
+  const model = queryOptions.model as string | undefined;
+  if (model?.includes('[1m]')) {
+    queryOptions.betas = ['context-1m-2025-08-07'];
+  } else {
+    const existingEnv = (queryOptions.env as Record<string, string> | undefined) ?? {};
+    queryOptions.env = { ...existingEnv, CLAUDE_CODE_DISABLE_1M_CONTEXT: '1' };
+  }
+}
+
+/**
+ * Events surfaced by Claude Code's experimental Agent Teams hooks
+ * (TaskCreated / TaskCompleted / TeammateIdle). Used to drive the
+ * Feishu / Web team panel without requiring the user to switch panes.
+ */
+export type TeamEvent =
+  | {
+      kind: 'task_created';
+      taskId: string;
+      subject: string;
+      description?: string;
+      teammate?: string;
+      teamName?: string;
+    }
+  | {
+      kind: 'task_completed';
+      taskId: string;
+      subject: string;
+      teammate?: string;
+      teamName?: string;
+    }
+  | {
+      kind: 'teammate_idle';
+      teammate: string;
+      teamName: string;
+    };
 
 export interface ExecutorOptions {
   prompt: string;
@@ -118,6 +237,8 @@ export interface ExecutorOptions {
   model?: string;
   /** Override allowed tools for this execution (empty array = no tools). */
   allowedTools?: string[];
+  /** Called whenever Claude Code fires a team coordination hook. */
+  onTeamEvent?: (event: TeamEvent) => void;
 }
 
 export type SDKMessage = {
@@ -182,20 +303,31 @@ export class ClaudeExecutor {
   ) {}
 
   private buildQueryOptions(cwd: string, sessionId: string | undefined, abortController: AbortController, outputsDir?: string, apiContext?: ApiContext): Record<string, unknown> {
+    const isRoot = process.getuid?.() === 0;
     const queryOptions: Record<string, unknown> = {
-      permissionMode: 'bypassPermissions' as const,
-      allowDangerouslySkipPermissions: true,
+      permissionMode: isRoot ? 'auto' : ('bypassPermissions' as const),
+      ...(isRoot ? {} : { allowDangerouslySkipPermissions: true }),
       cwd,
       abortController,
       includePartialMessages: true,
       // Load MCP servers and settings from user/project config files
       settingSources: ['user', 'project'],
-      // Cross-platform spawn: custom spawn filters CLAUDE* env vars and uses
-      // process.execPath to avoid PATH issues on Windows; fileURLToPath converts
-      // file:// URLs to native paths for the SDK CLI entrypoint.
+      // Custom spawn filters CLAUDE* env vars (prevents nested session errors)
+      // and injects an explicit ANTHROPIC_API_KEY when configured. The SDK
+      // (>= 0.2.140) supplies the correct command in spawn options — for the
+      // native Claude binary that's the binary itself; for legacy JS
+      // entrypoints it's the Node executable.
       spawnClaudeCodeProcess: createSpawnFn(this.config.claude.apiKey),
-      executableArgs: [path.join(path.dirname(fileURLToPath(import.meta.resolve('@anthropic-ai/claude-agent-sdk'))), 'cli.js')],
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
+      // MetaBot has no terminal — split-pane (tmux/iTerm2) teammate display
+      // doesn't apply. Force in-process so teammates run inside the same
+      // session and surface via SDK message origin / TeammateIdle hooks.
+      settings: { teammateMode: 'in-process' },
+      // Periodic AI summaries for foreground/background subagents. The SDK
+      // emits these as `task_progress.summary`; StreamProcessor already
+      // forwards task events into the card's "Background" panel, so enabling
+      // this immediately makes subagent cards richer (Agent View parity).
+      agentProgressSummaries: true,
     };
 
     // Build system prompt appendix from sections
@@ -211,6 +343,37 @@ export class ClaudeExecutor {
       // Port and secret are already set as METABOT_* env vars in config.ts.
       appendSections.push(
         `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
+      );
+
+      if (apiContext.memoryNamespace) {
+        appendSections.push(
+          [
+            '## MetaMemory',
+            `Default writable namespace for this bot: \`${apiContext.memoryNamespace}\`.`,
+            'When saving project or bot-owned knowledge, write under this namespace instead of the instance fallback. Use shared/project folders outside this namespace only when the user explicitly asks to publish shared knowledge.',
+          ].join('\n')
+        );
+        const existingEnv = (queryOptions.env as Record<string, string> | undefined) ?? {};
+        queryOptions.env = {
+          ...existingEnv,
+          METABOT_MEMORY_NAMESPACE: apiContext.memoryNamespace,
+          METABOT_BOT_MEMORY_NAMESPACE: apiContext.memoryNamespace,
+          ...(apiContext.memoryProject ? { METABOT_MEMORY_PROJECT: apiContext.memoryProject } : {}),
+        };
+      }
+
+      // Agent Teams namespace guidance: the team config lives at
+      // ~/.claude/teams/{name}/, which is shared across all bots and chats
+      // on the same host. Tell the lead to namespace team names so concurrent
+      // bots/chats don't collide.
+      const teamNs = `${apiContext.botName}-${apiContext.chatId.slice(0, 8)}`;
+      appendSections.push(
+        [
+          '## Agent Teams (experimental)',
+          `When the user asks you to create an agent team, ALWAYS prefix the team name with \`${teamNs}-\` to avoid collisions with other MetaBot chats sharing this machine. For example: \`${teamNs}-research\`, \`${teamNs}-refactor\`.`,
+          'Display mode is forced to `in-process` (no tmux/iTerm2 in MetaBot). Teammates show up in the user\'s Feishu card via TeammateIdle / TaskCreated / TaskCompleted events — you don\'t need to walk the user through Shift+Down navigation.',
+          'Clean up the team yourself when work is done so resources don\'t leak (`Clean up the team`).',
+        ].join('\n')
       );
 
       // Group chat — tell the bot who else is in the group and how to talk to them
@@ -253,10 +416,6 @@ export class ClaudeExecutor {
       queryOptions.resume = sessionId;
     }
 
-    // Beta flags are ignored by the SDK on OAuth/Pro-Max auth. For 1M context,
-    // use the model-name suffix `[1m]` (e.g. `claude-opus-4-7[1m]`) instead.
-    queryOptions.betas = ['context-1m-2025-08-07'];
-
     return queryOptions;
   }
 
@@ -289,6 +448,8 @@ export class ClaudeExecutor {
     if (options.allowedTools !== undefined) {
       queryOptions.allowedTools = options.allowedTools;
     }
+
+    apply1MContextSettings(queryOptions);
 
     // AskUserQuestion PreToolUse hook: the SDK marks AskUserQuestion as
     // requiresUserInteraction=true, so in bypassPermissions mode it is denied
@@ -336,11 +497,53 @@ export class ClaudeExecutor {
       };
     };
 
+    // Agent Teams observation hooks. These never block — they just tap the
+    // event so we can re-render the team panel in the Feishu / Web card.
+    // Returning {} (no decision) lets the underlying action proceed.
+    const onTeamEvent = options.onTeamEvent;
+    const teamObserverHook = (kind: TeamEvent['kind']) => {
+      return async (input: any): Promise<Record<string, unknown>> => {
+        if (!onTeamEvent) return {};
+        try {
+          if (kind === 'task_created') {
+            onTeamEvent({
+              kind: 'task_created',
+              taskId: input.task_id,
+              subject: input.task_subject,
+              description: input.task_description,
+              teammate: input.teammate_name,
+              teamName: input.team_name,
+            });
+          } else if (kind === 'task_completed') {
+            onTeamEvent({
+              kind: 'task_completed',
+              taskId: input.task_id,
+              subject: input.task_subject,
+              teammate: input.teammate_name,
+              teamName: input.team_name,
+            });
+          } else if (kind === 'teammate_idle') {
+            onTeamEvent({
+              kind: 'teammate_idle',
+              teammate: input.teammate_name,
+              teamName: input.team_name,
+            });
+          }
+        } catch (err) {
+          this.logger.warn({ err, kind }, 'Team observer hook callback threw');
+        }
+        return {};
+      };
+    };
+
     queryOptions.hooks = {
       PreToolUse: [{
         matcher: 'AskUserQuestion',
         hooks: [askUserQuestionHook as any],
       }],
+      TaskCreated: [{ hooks: [teamObserverHook('task_created') as any] }],
+      TaskCompleted: [{ hooks: [teamObserverHook('task_completed') as any] }],
+      TeammateIdle: [{ hooks: [teamObserverHook('teammate_idle') as any] }],
     };
 
     const stream = query({

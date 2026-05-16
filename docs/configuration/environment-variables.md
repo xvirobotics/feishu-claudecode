@@ -13,6 +13,23 @@ All configuration is via `.env` file or system environment variables. Copy `.env
 | `API_SECRET` | — | Bearer token auth for API and MetaMemory. Generate one with `openssl rand -hex 32` |
 | `LOG_LEVEL` | `info` | Log level (debug, info, warn, error) |
 
+## Instance Identity and Cluster
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `METABOT_HOME` | `~/.metabot` | MetaBot local state directory |
+| `METABOT_IDENTITY_PATH` | `~/.metabot/identity.json` | Persistent instance identity file |
+| `METABOT_INSTANCE_ID` | auto-generated | Stable instance ID used for federation and memory namespaces |
+| `METABOT_INSTANCE_NAME` | `user@hostname` | Human-readable instance name |
+| `METABOT_CLUSTER_ID` | — | Optional cluster/team identifier |
+| `METABOT_CLUSTER_URL` | — | Optional cluster registry/bootstrap URL. In the current bootstrap phase, this URL is also added as a peer automatically |
+| `METABOT_CLUSTER_SECRET` | — | Optional bearer token for `METABOT_CLUSTER_URL` |
+| `METABOT_DISCOVERY_MODE` | `auto` | Discovery mode: `auto`, `static`, `standalone`, or `off` |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Instance fallback MetaMemory namespace |
+| `METABOT_BOT_MEMORY_NAMESPACE` | `/bots/default` | Single-bot stable writable namespace override |
+| `METABOT_MEMORY_PROJECT` | — | Single-bot project name; derives `/projects/<slug>` when `METABOT_BOT_MEMORY_NAMESPACE` is not set |
+| `METABOT_MEMORY_WRITE_NAMESPACES` | — | Extra comma-separated namespaces granted to `MEMORY_INSTANCE_TOKEN` |
+
 ## Claude Code
 
 | Variable | Default | Description |
@@ -32,7 +49,9 @@ All configuration is via `.env` file or system environment variables. Copy `.env
 | `MEMORY_SECRET` | `API_SECRET` | MetaMemory auth (legacy) |
 | `MEMORY_ADMIN_TOKEN` | — | Admin token (full access) |
 | `MEMORY_TOKEN` | — | Reader token (shared folders only) |
+| `MEMORY_INSTANCE_TOKEN` | — | Scoped instance token; can write the instance namespace plus configured bot/project namespaces and read shared content |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory URL (for CLI remote access) |
+| `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | Instance fallback namespace; bot/project namespaces are preferred for agent writes |
 
 ## Feishu Service App
 
@@ -62,6 +81,10 @@ Falls back to the first Feishu bot's credentials if not set.
 | `METABOT_PEER_SECRETS` | — | Comma-separated peer secrets (positional match) |
 | `METABOT_PEER_NAMES` | auto | Comma-separated peer names |
 | `METABOT_PEER_POLL_INTERVAL_MS` | `30000` | Peer poll interval |
+| `METABOT_PEER_CACHE_PATH` | `./data/peer-cache.json` | Persistent peer artifact cache |
+| `METABOT_PEER_SKILL_CACHE_CONTENTS` | `true` | Cache full peer `SKILL.md` content for offline install fallback; set to `false` for summaries only |
+| `METABOT_PEER_MEMORY_CACHE_ENABLED` | `true` | Mirror peer MetaMemory documents into the local read-only peer cache |
+| `METABOT_PEER_MEMORY_CACHE_LIMIT` | `200` | Maximum peer memory documents mirrored per peer poll |
 
 ## Remote Access
 

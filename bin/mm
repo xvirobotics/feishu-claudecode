@@ -18,18 +18,24 @@ _find_env() {
 METABOT_ENV="$(_find_env)"
 if [[ -n "$METABOT_ENV" && -f "$METABOT_ENV" ]]; then
   _admin_token=$(sed -n 's/^MEMORY_ADMIN_TOKEN=//p' "$METABOT_ENV" 2>/dev/null || true)
+  _instance_token=$(sed -n 's/^MEMORY_INSTANCE_TOKEN=//p' "$METABOT_ENV" 2>/dev/null || true)
   _reader_token=$(sed -n 's/^MEMORY_TOKEN=//p' "$METABOT_ENV" 2>/dev/null || true)
   _memory_secret=$(sed -n 's/^MEMORY_SECRET=//p' "$METABOT_ENV" 2>/dev/null || true)
   _secret=$(sed -n 's/^API_SECRET=//p' "$METABOT_ENV" 2>/dev/null || true)
   _memory_url=$(sed -n 's/^META_MEMORY_URL=//p' "$METABOT_ENV" 2>/dev/null || true)
+  _metabot_url=$(sed -n 's/^METABOT_URL=//p' "$METABOT_ENV" 2>/dev/null || true)
   [[ -z "$_memory_url" ]] && _memory_url=$(sed -n 's/^MEMORY_SERVER_URL=//p' "$METABOT_ENV" 2>/dev/null || true)
 fi
 META_MEMORY_URL="${META_MEMORY_URL:-${_memory_url:-http://localhost:8100}}"
+METABOT_URL="${METABOT_URL:-${_metabot_url:-http://localhost:9100}}"
 
-# Token priority: MEMORY_ADMIN_TOKEN > MEMORY_TOKEN > MEMORY_SECRET > API_SECRET
+# Token priority: MEMORY_ADMIN_TOKEN > MEMORY_INSTANCE_TOKEN > MEMORY_TOKEN > MEMORY_SECRET > API_SECRET
 # Always resolve from .env; ignore pre-set MEMORY_AUTH (may be stale/wrong token)
 {
   _token="${MEMORY_ADMIN_TOKEN:-${_admin_token:-}}"
+  if [[ -z "$_token" ]]; then
+    _token="${MEMORY_INSTANCE_TOKEN:-${_instance_token:-}}"
+  fi
   if [[ -z "$_token" ]]; then
     _token="${MEMORY_TOKEN:-${_reader_token:-}}"
   fi
@@ -57,6 +63,15 @@ _curl() {
   fi
 }
 
+_metabot_curl() {
+  local token="${API_SECRET:-${_secret:-}}"
+  if [[ -n "$token" ]]; then
+    curl -s -H "Authorization: Bearer $token" "$@"
+  else
+    curl -s "$@"
+  fi
+}
+
 # Build JSON safely using python3 to handle escaping
 _jsonify() {
   python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))" 2>/dev/null
@@ -70,8 +85,21 @@ case "$cmd" in
     query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(' '.join(sys.argv[1:])))" "$@" 2>/dev/null || echo "$*")
     _curl "$META_MEMORY_URL/api/search?q=$query" | _json
     ;;
+  peer-search|ps)
+    query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(' '.join(sys.argv[1:])))" "$@" 2>/dev/null || echo "$*")
+    _metabot_curl "$METABOT_URL/api/peer-memory/search?q=$query" | _json
+    ;;
   get|g)
     _curl "$META_MEMORY_URL/api/documents/$1" | _json
+    ;;
+  peer-get|pg)
+    if [[ $# -lt 2 ]]; then
+      echo "Usage: mm peer-get <peer_name> <doc_id>"
+      exit 1
+    fi
+    peer=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$1" 2>/dev/null || echo "$1")
+    doc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$2" 2>/dev/null || echo "$2")
+    _metabot_curl "$METABOT_URL/api/peer-memory/documents/$peer/$doc" | _json
     ;;
   path|p)
     # Get document by path, e.g.: mm path /metabot/weekly-updates
@@ -214,7 +242,9 @@ print(json.dumps({'name': sys.argv[1], 'parent_id': sys.argv[2]}))
     echo ""
     echo "  Read:"
     echo "    mm search <query>              - Search documents"
+    echo "    mm peer-search <query>         - Search cached peer memory"
     echo "    mm get <doc_id>                - Get document by ID"
+    echo "    mm peer-get <peer> <doc_id>    - Get cached peer memory document"
     echo "    mm path </folder/doc-slug>     - Get document by path"
     echo "    mm list [folder_id]            - List documents (default: root)"
     echo "    mm folders                     - List folder tree"

@@ -12,11 +12,12 @@ Peers 实现了**联邦架构**，多个 MetaBot 实例可以互相发现 Bot �
 
 ## 工作原理
 
-1. **发现** — 每个实例定期拉取 peer 的 `GET /api/bots`（每 30 秒）
-2. **缓存** — Bot 列表本地缓存，快速查找
-3. **路由** — 本地找不到的 Bot 名自动转发到对应 peer
-4. **防循环** — 转发请求带 `X-MetaBot-Origin` header 防止循环委派
-5. **防传递** — 来自 peer 的 Bot 不会再传播（无 transitive 转发）
+1. **身份** — 每个实例在 `~/.metabot/identity.json` 中有稳定身份
+2. **发现** — 每个实例定期拉取 peer 的 `GET /api/bots` 和 `GET /api/skills`（每 30 秒）
+3. **缓存** — Bot 和 Skill 列表本地缓存，快速查找
+4. **路由** — 本地找不到的 Bot 名自动转发到对应 peer
+5. **防循环** — 转发请求带 `X-MetaBot-Origin` header 防止循环委派
+6. **防传递** — 来自 peer 的 Bot/Skill 不会再传播（无 transitive 转发）
 
 ## 配置
 
@@ -65,6 +66,28 @@ Peers 实现了**联邦架构**，多个 MetaBot 实例可以互相发现 Bot �
 !!! tip "不需要 bots.json"
     如果你只运行一个 Bot，直接在 `.env` 加 `METABOT_PEERS` 就行，不需要 `bots.json`。`bots.json` 的 peers 字段只是多 Bot 配置的便利选项。
 
+### Cluster Bootstrap
+
+内网中可以让每个实例指向一个稳定的 MetaBot/cluster 地址：
+
+```bash
+METABOT_CLUSTER_ID=xvirobotics-lan
+METABOT_CLUSTER_URL=http://metabot.internal:9100
+METABOT_CLUSTER_SECRET=optional-token
+```
+
+当前 bootstrap 阶段里，只要 `METABOT_DISCOVERY_MODE` 不是 `off`，`METABOT_CLUSTER_URL` 会自动作为 peer 加入。这样普通部署只需要一个 URL，高级部署仍可继续使用显式 `METABOT_PEERS`。
+
+## 实例 Manifest
+
+每个实例暴露一个低风险 federation manifest：
+
+```bash
+curl http://localhost:9100/api/manifest
+```
+
+manifest 包含实例 ID/name、公钥、能力标记、endpoint path、memory namespace、可写 memory namespaces、本地/peer Bot 和 Skill 数量，不包含 secret。
+
 ## 限定名
 
 使用 `peerName/botName` 语法精确路由：
@@ -82,7 +105,9 @@ mb talk alice/backend-bot chatId "修复这个 bug"
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/api/peers` | 列出 peer 及健康状态 |
+| `GET` | `/api/manifest` | 实例身份和能力 manifest |
 | `GET` | `/api/bots` | 列出所有 Bot（本地 + peer） |
+| `GET` | `/api/skills` | 列出所有 Skill（本地 + peer） |
 | `POST` | `/api/talk` | 与 Bot 对话（自动路由到 peer） |
 
 ## CLI
@@ -90,6 +115,7 @@ mb talk alice/backend-bot chatId "修复这个 bug"
 ```bash
 mb peers                            # 列出 peer 及状态
 mb bots                             # 列出所有 Bot（含 peer）
+mb skills                           # 列出所有 Skill（含 peer）
 mb talk alice/bot chatId "prompt"   # 指定 peer 的 Bot 对话
 ```
 
