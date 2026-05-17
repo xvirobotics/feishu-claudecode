@@ -1,0 +1,14 @@
+# MetaBot Central — TLS terminator
+#
+# Replace `central.example.com` with your real domain (or set DOMAIN env var
+# in your wrapper script and template this file). Caddy auto-provisions
+# Let's Encrypt certs on first request.
+
+{$DOMAIN:central.example.com} {
+    encode gzip
+    reverse_proxy localhost:8200
+
+    # Optional rate-limit for /admin/* — uncomment if exposing publicly.
+    # @admin path /admin/*
+    # rate_limit @admin 5r/s
+}

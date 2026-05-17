@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+// Thin shim — delegate to compiled CLI.
+import('../dist/admin/admin-cli.js').catch((err) => {
+  console.error('central-admin: failed to load CLI', err);
+  process.exit(1);
+});

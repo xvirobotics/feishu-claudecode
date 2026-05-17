@@ -1,0 +1,36 @@
+services:
+  central:
+    build: .
+    container_name: metabot-central
+    restart: unless-stopped
+    environment:
+      CENTRAL_PORT: "8200"
+      CENTRAL_DATA_DIR: /app/data
+      LOG_FORMAT: json
+    volumes:
+      - central-data:/app/data
+    expose:
+      - "8200"
+    # In dev you can publish 8200 directly:
+    ports:
+      - "127.0.0.1:8200:8200"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: metabot-central-caddy
+    restart: unless-stopped
+    depends_on:
+      - central
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    profiles: ["tls"]
+
+volumes:
+  central-data:
+  caddy-data:
+  caddy-config:

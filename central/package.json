@@ -1,0 +1,31 @@
+{
+  "name": "metabot-central",
+  "version": "0.1.0",
+  "description": "MetaBot Central — centralized memory + skill hub server",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "central-admin": "bin/central-admin"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/ tests/",
+    "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "pino": "^9.0.0",
+    "pino-pretty": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}

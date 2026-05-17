@@ -1,0 +1,23 @@
+[Unit]
+Description=MetaBot Central Server
+After=network.target
+
+[Service]
+Type=simple
+User=central
+Group=central
+WorkingDirectory=/opt/metabot/central
+EnvironmentFile=-/etc/central/env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/central
+
+[Install]
+WantedBy=multi-user.target
