@@ -685,11 +685,14 @@ export class MessageBridge {
       answerText = trimmed;
     }
 
-    const answers: Record<string, string> = { [firstQ.header]: answerText };
+    // Key by `question` text (NOT header) — required by the SDK's
+    // AskUserQuestionOutput schema. See handleAnswer for the long-form
+    // comment on the same gotcha.
+    const answers: Record<string, string> = { [firstQ.question]: answerText };
     // For multi-sub-question between-turn calls (rare; logged on arrival),
     // synthesize empty answers for the rest so the hook still resolves.
     for (let i = 1; i < pending.questions.length; i++) {
-      answers[pending.questions[i].header] = '';
+      answers[pending.questions[i].question] = '';
     }
 
     const executor = this.persistentRegistry?.peek(chatId);
@@ -1379,8 +1382,14 @@ export class MessageBridge {
       answerText = trimmed;
     }
 
-    // Store answer for this question
-    task.collectedAnswers[currentQuestion.header] = answerText;
+    // Store answer for this question. The Claude Agent SDK's
+    // AskUserQuestionOutput schema (sdk-tools.d.ts) keys answers by the
+    // QUESTION TEXT, not the header — the docstring on the `answers` field
+    // says "question text -> answer string". Using header as the key produces
+    // a structurally valid dict but the SDK's tool_result text template can't
+    // interpolate it, surfacing as "User has answered your questions: ."
+    // (empty) to the model and a wasted turn.
+    task.collectedAnswers[currentQuestion.question] = answerText;
 
     this.logger.info(
       { chatId, answer: answerText, questionIndex: task.currentQuestionIndex, total: pending.questions.length, toolUseId: pending.toolUseId },
@@ -1516,11 +1525,12 @@ export class MessageBridge {
 
     this.logger.warn({ chatId: task.chatId, toolUseId: pending.toolUseId }, 'Question timeout, auto-answering remaining questions');
 
-    // Fill remaining unanswered questions with timeout message
+    // Fill remaining unanswered questions with timeout message. Keyed by
+    // `question` text — see handleAnswer for the SDK schema gotcha.
     for (let i = task.currentQuestionIndex; i < pending.questions.length; i++) {
       const q = pending.questions[i];
-      if (!task.collectedAnswers[q.header]) {
-        task.collectedAnswers[q.header] = '用户未及时回复，请自行判断继续';
+      if (!task.collectedAnswers[q.question]) {
+        task.collectedAnswers[q.question] = '用户未及时回复，请自行判断继续';
       }
     }
 

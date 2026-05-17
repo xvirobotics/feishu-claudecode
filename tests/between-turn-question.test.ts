@@ -141,7 +141,14 @@ describe('PersistentClaudeExecutor between-turn AskUserQuestion', () => {
 
     // Feed an answer back through the executor's resolveQuestion API —
     // this is what the bridge will do when the user replies in chat.
-    exec.resolveQuestion('toolu_btw_1', { cont: 'Yes' });
+    //
+    // IMPORTANT: keys MUST be the question TEXT, not the `header` field.
+    // The SDK's AskUserQuestionOutput schema (sdk-tools.d.ts) documents
+    // the answers dict as "question text -> answer string". The SDK's
+    // tool_result template looks up `answers[question.question]`; keying
+    // by header silently renders an empty answers list to the model
+    // ("User has answered your questions: .") and burns a turn.
+    exec.resolveQuestion('toolu_btw_1', { 'Continue?': 'Yes' });
 
     const result = await hookPromise;
     expect(result).toEqual({
@@ -150,7 +157,7 @@ describe('PersistentClaudeExecutor between-turn AskUserQuestion', () => {
         permissionDecision: 'allow',
         updatedInput: {
           questions: expect.any(Array),
-          answers: { cont: 'Yes' },
+          answers: { 'Continue?': 'Yes' },
         },
       },
     });
@@ -180,8 +187,9 @@ describe('PersistentClaudeExecutor between-turn AskUserQuestion', () => {
 
     expect(events).toHaveLength(0);
 
-    // Still resolves through the normal path
-    exec.resolveQuestion('toolu_in_turn_1', { h: 'answer' });
+    // Still resolves through the normal path (keyed by question text per
+    // the SDK schema — see the first test in this describe block).
+    exec.resolveQuestion('toolu_in_turn_1', { 'In-turn q': 'answer' });
     await hookPromise;
   });
 
@@ -210,7 +218,7 @@ describe('PersistentClaudeExecutor between-turn AskUserQuestion', () => {
     );
 
     expect(resolverPresentWhenEventFired).toBe(true);
-    exec.resolveQuestion('toolu_race_1', { h: 'x' });
+    exec.resolveQuestion('toolu_race_1', { q: 'x' });
     await p;
   });
 
