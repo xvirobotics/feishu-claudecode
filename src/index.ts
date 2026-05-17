@@ -14,6 +14,7 @@ import { BotRegistry } from './api/bot-registry.js';
 import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
 import { startMdns, type MdnsHandle } from './cluster/mdns.js';
+import { loadPeerToken } from './cluster/peer-token.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
@@ -200,10 +201,29 @@ async function main() {
   // Create task scheduler
   const scheduler = new TaskScheduler(registry, logger);
 
+  // Load (or generate) our stable reader token. Peers receive it during
+  // handshake and present it back to authenticate as Pragmatic v1 reader.
+  let peerTokenInfo: ReturnType<typeof loadPeerToken> | undefined;
+  try {
+    peerTokenInfo = loadPeerToken();
+    logger.info({ path: peerTokenInfo.path }, 'Peer reader token loaded');
+  } catch (err: any) {
+    logger.warn({ err: err?.message || err }, 'Failed to load peer reader token; cross-instance reads will require manual secret');
+  }
+
   // Initialize peer manager for cross-instance bot discovery. We always
   // construct it (even with zero static peers) so mDNS-discovered peers
   // have somewhere to land.
-  const peerManager = new PeerManager(appConfig.peers, logger);
+  const peerManager = new PeerManager(appConfig.peers, logger, {
+    ...(peerTokenInfo ? {
+      selfIdentity: {
+        instanceId: appConfig.instance.instanceId,
+        instanceName: appConfig.instance.instanceName,
+        ...(appConfig.instance.publicKey ? { publicKey: appConfig.instance.publicKey } : {}),
+        readerToken: peerTokenInfo.token,
+      },
+    } : {}),
+  });
   if (appConfig.peers.length > 0) {
     await peerManager.refreshAll();
     const statuses = peerManager.getPeerStatuses();
@@ -252,6 +272,7 @@ async function main() {
       instanceId: appConfig.instance.instanceId,
       memoryNamespace: appConfig.memory.namespace,
       memoryNamespaces: appConfig.memory.namespaces,
+      peerTokenLookup: (token) => peerManager.findPeerByInboundToken(token),
       logger,
     });
   }

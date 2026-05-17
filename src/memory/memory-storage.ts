@@ -148,6 +148,12 @@ function isAncestorOfNamespace(pathname: string, namespace: string): boolean {
   return pathNorm === '/' || nsNorm.startsWith(`${pathNorm}/`);
 }
 
+// Pragmatic v1 — read ACL gated by folder visibility; principal+grants deferred to Phase 7 (see plan doc + decision_acl_pragmatic_v1.md)
+//
+// The `grantAccess === 'read'` branch is intentionally a no-op for the current
+// read path: `canReadFolder` short-circuits on `folder.visibility !== 'private'`
+// before reaching here. Don't delete this function — it still gates writes and
+// the read branch is the placeholder for Phase 7 fine-grained read ACL.
 function hasNamespaceGrant(access: MemoryPrincipal, pathname: string, grantAccess: NamespaceAccess): boolean {
   const grants = access.grants || [];
   return grants.some((grant) => {

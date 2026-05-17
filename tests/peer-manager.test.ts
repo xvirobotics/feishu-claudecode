@@ -524,6 +524,159 @@ describe('PeerManager', () => {
     expect(manager.removeDynamicPeer({ url: 'http://10.0.0.1:9100' })).toBe(false);
   });
 
+  it('registerInboundHandshake records the peer token and returns our identity', () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ bots: [] }),
+    }));
+    manager = new PeerManager([], createLogger(), {
+      selfIdentity: {
+        instanceId: 'self-id',
+        instanceName: 'Self',
+        readerToken: 'self-token',
+      },
+    });
+    manager.addDynamicPeer({
+      name: 'alice',
+      url: 'http://alice:9100',
+      source: 'mdns',
+      instanceId: 'alice-id',
+    });
+
+    const reply = manager.registerInboundHandshake({
+      instanceId: 'alice-id',
+      readerToken: 'alice-token',
+    });
+    expect(reply).toEqual({ instanceId: 'self-id', instanceName: 'Self', readerToken: 'self-token' });
+
+    const lookup = manager.findPeerByInboundToken('alice-token');
+    expect(lookup).toEqual({ peerName: 'alice', instanceId: 'alice-id' });
+  });
+
+  it('registerInboundHandshake refuses self-loop handshakes', () => {
+    manager = new PeerManager([], createLogger(), {
+      selfIdentity: {
+        instanceId: 'self-id',
+        readerToken: 'self-token',
+      },
+    });
+    const reply = manager.registerInboundHandshake({
+      instanceId: 'self-id',
+      readerToken: 'forged-token',
+    });
+    expect(reply).toBeNull();
+    expect(manager.findPeerByInboundToken('forged-token')).toBeUndefined();
+  });
+
+  it('registerInboundHandshake parks tokens that arrive before discovery, then rehomes on addDynamicPeer', () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ bots: [] }),
+    }));
+    manager = new PeerManager([], createLogger(), {
+      selfIdentity: { instanceId: 'self-id', readerToken: 'self-token' },
+    });
+    manager.registerInboundHandshake({
+      instanceId: 'late-id',
+      readerToken: 'late-token',
+    });
+    // Before addDynamicPeer, the token still resolves (so memory-server can
+    // authenticate the very first cross-instance read).
+    let lookup = manager.findPeerByInboundToken('late-token');
+    expect(lookup).toBeUndefined(); // synthetic key doesn't resolve to a real peer yet
+
+    manager.addDynamicPeer({
+      name: 'late',
+      url: 'http://late:9100',
+      source: 'mdns',
+      instanceId: 'late-id',
+    });
+    lookup = manager.findPeerByInboundToken('late-token');
+    expect(lookup).toEqual({ peerName: 'late', instanceId: 'late-id' });
+  });
+
+  it('demotes dynamic peers that stay unhealthy past the configured window', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    manager = new PeerManager([
+      { name: 'static-keeper', url: 'http://10.0.0.1:9100' },
+    ], createLogger(), { demoteAfterMs: 1 });
+
+    manager.addDynamicPeer({
+      name: 'flaky',
+      url: 'http://flaky:9100',
+      source: 'mdns',
+      instanceId: 'flaky-id',
+    });
+    await manager.refreshAll();
+    // Force the lastChecked to be old enough to cross the cutoff.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await manager.refreshAll();
+
+    const names = manager.getPeerStatuses().map((s) => s.name);
+    expect(names).toContain('static-keeper');
+    expect(names).not.toContain('flaky');
+  });
+
+  it('initiateOutboundHandshake stores the peer reader token as the call secret', async () => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
+      if (url.endsWith('/api/peer-handshake')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            instanceId: 'alice-id',
+            instanceName: 'Alice',
+            readerToken: 'alice-reader-token',
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ bots: [] }) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    manager = new PeerManager([], createLogger(), {
+      selfIdentity: { instanceId: 'self-id', readerToken: 'self-token' },
+    });
+    manager.addDynamicPeer({
+      name: 'alice',
+      url: 'http://alice:9100',
+      source: 'mdns',
+      instanceId: 'alice-id',
+    });
+
+    const ok = await manager.initiateOutboundHandshake('alice');
+    expect(ok).toBe(true);
+    // Subsequent refresh should send Authorization with the new secret.
+    await manager.refreshAll();
+    const handshakeCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/api/peer-handshake'));
+    expect(handshakeCall).toBeDefined();
+    const refreshCall = fetchMock.mock.calls.find((c) => String(c[0]).endsWith('/api/bots'));
+    expect(refreshCall?.[1]?.headers?.Authorization).toBe('Bearer alice-reader-token');
+  });
+
+  it('initiateOutboundHandshake refuses identity mismatch', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({
+        instanceId: 'mallory-id',
+        readerToken: 'forged',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    manager = new PeerManager([], createLogger(), {
+      selfIdentity: { instanceId: 'self-id', readerToken: 'self-token' },
+    });
+    manager.addDynamicPeer({
+      name: 'alice',
+      url: 'http://alice:9100',
+      source: 'mdns',
+      instanceId: 'alice-id',
+    });
+
+    const ok = await manager.initiateOutboundHandshake('alice');
+    expect(ok).toBe(false);
+  });
+
   it('returns cached peer memory documents by peer and document id', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/bots')) {

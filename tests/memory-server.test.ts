@@ -238,4 +238,130 @@ describe('MetaMemory server request limits', () => {
     });
     expect(docResponse.status).toBe(201);
   });
+
+  // --- Pragmatic v1 peer-token regression coverage ---
+
+  async function startPeerTokenTestServer(peerTokenLookup: (token: string) => { instanceId?: string; peerName: string } | undefined) {
+    const databaseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'metamemory-peer-token-test-'));
+    cleanups.push(() => fs.rmSync(databaseDir, { recursive: true, force: true }));
+
+    const { server, storage } = startMemoryServer({
+      port: 0,
+      databaseDir,
+      adminToken: 'admin-token',
+      peerTokenLookup,
+      logger: createLogger(),
+    });
+
+    cleanups.push(() => storage.close());
+    cleanups.push(() => server.close());
+
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address() as AddressInfo;
+    return { url: `http://127.0.0.1:${address.port}` };
+  }
+
+  it('peer-token lookup authenticates known peer as reader, rejects unknown tokens', async () => {
+    const { url } = await startPeerTokenTestServer((token) =>
+      token === 'alice-reader-token' ? { peerName: 'alice', instanceId: 'alice-id' } : undefined,
+    );
+
+    const reject = await fetch(`${url}/api/folders`, {
+      headers: { Authorization: 'Bearer not-a-peer' },
+    });
+    expect(reject.status).toBe(401);
+
+    const accept = await fetch(`${url}/api/folders`, {
+      headers: { Authorization: 'Bearer alice-reader-token' },
+    });
+    expect(accept.status).toBe(200);
+  });
+
+  it('peer-token reader cannot read folders marked visibility=private (Pragmatic v1 read ACL)', async () => {
+    const { url } = await startPeerTokenTestServer((token) =>
+      token === 'alice-reader-token' ? { peerName: 'alice', instanceId: 'alice-id' } : undefined,
+    );
+
+    // Admin creates a private folder + doc inside it.
+    const adminHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer admin-token',
+    };
+    const folderResp = await fetch(`${url}/api/folders`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ name: 'drafts', visibility: 'private' }),
+    });
+    expect(folderResp.status).toBe(201);
+    const folder = await folderResp.json() as { id: string };
+
+    const docResp = await fetch(`${url}/api/documents`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ title: 'Private', folder_id: folder.id, content: 'secret' }),
+    });
+    expect(docResp.status).toBe(201);
+    const doc = await docResp.json() as { id: string };
+
+    // Peer-token reader sees the folder list but the private folder is omitted.
+    const foldersResp = await fetch(`${url}/api/folders`, {
+      headers: { Authorization: 'Bearer alice-reader-token' },
+    });
+    expect(foldersResp.status).toBe(200);
+    const folderTree = await foldersResp.json();
+    expect(JSON.stringify(folderTree)).not.toContain('drafts');
+
+    // Direct doc fetch by the peer-token reader is denied / not found.
+    const docFetch = await fetch(`${url}/api/documents/${doc.id}`, {
+      headers: { Authorization: 'Bearer alice-reader-token' },
+    });
+    expect([401, 403, 404]).toContain(docFetch.status);
+  });
+
+  it('peer-token reader can read shared folders (default visibility)', async () => {
+    const { url } = await startPeerTokenTestServer((token) =>
+      token === 'alice-reader-token' ? { peerName: 'alice', instanceId: 'alice-id' } : undefined,
+    );
+
+    const adminHeaders = {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer admin-token',
+    };
+    // Default folder visibility is 'shared'.
+    const folderResp = await fetch(`${url}/api/folders`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ name: 'public-notes' }),
+    });
+    expect(folderResp.status).toBe(201);
+    const folder = await folderResp.json() as { id: string };
+
+    await fetch(`${url}/api/documents`, {
+      method: 'POST',
+      headers: adminHeaders,
+      body: JSON.stringify({ title: 'Hello peer', folder_id: folder.id, content: 'visible' }),
+    });
+
+    const foldersResp = await fetch(`${url}/api/folders`, {
+      headers: { Authorization: 'Bearer alice-reader-token' },
+    });
+    expect(foldersResp.status).toBe(200);
+    expect(JSON.stringify(await foldersResp.json())).toContain('public-notes');
+  });
+
+  it('peer-token reader cannot write (Pragmatic v1 — reads only)', async () => {
+    const { url } = await startPeerTokenTestServer((token) =>
+      token === 'alice-reader-token' ? { peerName: 'alice', instanceId: 'alice-id' } : undefined,
+    );
+
+    const writeAttempt = await fetch(`${url}/api/folders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer alice-reader-token',
+      },
+      body: JSON.stringify({ name: 'should-fail' }),
+    });
+    expect([400, 401, 403]).toContain(writeAttempt.status);
+  });
 });

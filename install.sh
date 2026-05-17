@@ -432,6 +432,17 @@ if [[ -f "$METABOT_HOME/.env" ]]; then
   warn ".env already exists. Skipping interactive config."
   warn "Edit ${METABOT_HOME}/.env to modify settings."
   SKIP_CONFIG=true
+  # Idempotent backfill: existing installs may not yet carry MEMORY_INSTANCE_TOKEN.
+  # We only generate when truly absent; never overwrite an existing value.
+  if ! grep -q '^MEMORY_INSTANCE_TOKEN=' "$METABOT_HOME/.env"; then
+    BACKFILL_TOKEN="$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | xxd -p | tr -d '\n' | head -c 64)"
+    {
+      echo ""
+      echo "# Added by install.sh: per-instance MetaMemory write token (Pragmatic v1)"
+      echo "MEMORY_INSTANCE_TOKEN=${BACKFILL_TOKEN}"
+    } >> "$METABOT_HOME/.env"
+    success "MEMORY_INSTANCE_TOKEN backfilled into existing .env"
+  fi
 else
   SKIP_CONFIG=false
 fi
@@ -617,6 +628,9 @@ API_TIMEOUT_MS=600000"
 
   # Auto-generate API secret
   API_SECRET="$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | xxd -p | tr -d '\n' | head -c 64)"
+  # Auto-generate MetaMemory instance token (Pragmatic v1: scoped write token
+  # for this instance's own namespace; reader peers use a separate handshake).
+  MEMORY_INSTANCE_TOKEN="$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | xxd -p | tr -d '\n' | head -c 64)"
   API_PORT="9100"
   LOG_LEVEL="info"
   META_MEMORY_URL="http://localhost:8100"
@@ -671,6 +685,7 @@ if [[ "$SKIP_CONFIG" == "false" ]]; then
     echo ""
     echo "# MetaMemory"
     echo "META_MEMORY_URL=${META_MEMORY_URL}"
+    echo "MEMORY_INSTANCE_TOKEN=${MEMORY_INSTANCE_TOKEN}"
   } > "$METABOT_HOME/.env"
   chmod 600 "$METABOT_HOME/.env"
   success ".env generated"

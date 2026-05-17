@@ -116,8 +116,17 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     const method = req.method || 'GET';
     const url = req.url || '/';
 
-    // Auth check (exempt /web/, /memory/, /api/files/)
-    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/') && url !== '/api/manifest') {
+    // Auth check (exempt /web/, /memory/, /api/files/, /api/manifest, /api/peer-handshake)
+    // /api/peer-handshake is intentionally open: peers exchange tokens here
+    // before they share any other credential. The handshake payload itself
+    // identifies the caller (Pragmatic v1 — see decision_acl_pragmatic_v1.md).
+    if (secret
+      && !url.startsWith('/web')
+      && !url.startsWith('/memory')
+      && !url.startsWith('/api/files/')
+      && url !== '/api/manifest'
+      && url !== '/api/peer-handshake'
+    ) {
       const auth = req.headers.authorization;
       const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
       if (auth !== `Bearer ${secret}` && urlToken !== secret) {

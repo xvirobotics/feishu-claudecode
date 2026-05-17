@@ -78,9 +78,23 @@ interface PeerState {
   config: PeerConfig;
   source: PeerSource;
   instanceId?: string;
+  /**
+   * Reader token presented by this peer during handshake. Stored so that
+   * inbound requests carrying the same bearer can be authenticated as
+   * Pragmatic v1 reader principal scoped to `instanceId`. Distinct from
+   * `config.secret`, which is the token *we* send when calling the peer.
+   */
+  inboundToken?: string;
   healthy: boolean;
   lastChecked: number;
   lastHealthy: number;
+  /**
+   * Timestamp of the transition into the current unhealthy streak. Cleared
+   * once the peer becomes healthy again. Used by `demoteStaleDynamicPeers` so
+   * a never-healthy peer's window starts from first observation, not from the
+   * most recent failed refresh.
+   */
+  unhealthySince?: number;
   bots: PeerBotInfo[];
   skills: PeerSkillInfo[];
   error?: string;
@@ -130,6 +144,40 @@ interface PeerCacheFile {
 const DEFAULT_POLL_INTERVAL_MS = 30_000;
 const FETCH_TIMEOUT_MS = 5_000;
 const TASK_FORWARD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_DEMOTE_AFTER_MS = 5 * 60 * 1000; // 5 minutes
+const HANDSHAKE_TIMEOUT_MS = 5_000;
+
+export interface PeerHandshakeRequest {
+  instanceId: string;
+  instanceName?: string;
+  publicKey?: string;
+  readerToken: string;
+}
+
+export interface PeerHandshakeResponse {
+  instanceId: string;
+  instanceName?: string;
+  publicKey?: string;
+  readerToken: string;
+}
+
+export interface PeerIdentity {
+  instanceId: string;
+  instanceName?: string;
+  publicKey?: string;
+  readerToken: string;
+}
+
+export interface PeerManagerOptions {
+  /** Identity to advertise during outbound handshakes. */
+  selfIdentity?: PeerIdentity;
+  /**
+   * Drop dynamic peers that have been continuously unhealthy for this many
+   * milliseconds. Defaults to 5 minutes; override via
+   * `METABOT_DYNAMIC_PEER_DEMOTE_MS`.
+   */
+  demoteAfterMs?: number;
+}
 
 export class PeerManager {
   private peers: Map<string, PeerState> = new Map();
@@ -138,12 +186,22 @@ export class PeerManager {
   private logger: Logger;
   private cachePath: string;
   private cache: PeerCacheFile;
+  private selfIdentity?: PeerIdentity;
+  private demoteAfterMs: number;
+  /** Inbound token → peer name lookup, populated on successful handshake. */
+  private inboundTokens: Map<string, string> = new Map();
 
-  constructor(configs: PeerConfig[], logger: Logger) {
+  constructor(configs: PeerConfig[], logger: Logger, options: PeerManagerOptions = {}) {
     this.logger = logger.child({ module: 'peers' });
     this.cachePath = process.env.METABOT_PEER_CACHE_PATH
       || path.join(process.cwd(), 'data', 'peer-cache.json');
     this.cache = this.loadCache();
+    this.selfIdentity = options.selfIdentity;
+    const envDemote = process.env.METABOT_DYNAMIC_PEER_DEMOTE_MS
+      ? parseInt(process.env.METABOT_DYNAMIC_PEER_DEMOTE_MS, 10)
+      : undefined;
+    this.demoteAfterMs = options.demoteAfterMs
+      ?? (Number.isFinite(envDemote) && envDemote! > 0 ? envDemote! : DEFAULT_DEMOTE_AFTER_MS);
 
     for (const config of configs) {
       const normalizedUrl = config.url.replace(/\/+$/, '');
@@ -167,6 +225,11 @@ export class PeerManager {
     }
   }
 
+  /** Replace the identity advertised during outbound handshakes. */
+  setSelfIdentity(identity: PeerIdentity): void {
+    this.selfIdentity = identity;
+  }
+
   private ensurePollTimer(): void {
     if (this.pollTimer) return;
     this.pollTimer = setInterval(() => {
@@ -182,6 +245,36 @@ export class PeerManager {
       this.refreshPeer(state),
     );
     await Promise.allSettled(tasks);
+    this.demoteStaleDynamicPeers();
+  }
+
+  /**
+   * Drop dynamic peers (mDNS / cluster / manual) that have been continuously
+   * unhealthy for longer than `demoteAfterMs`. Static peers are kept forever —
+   * the operator configured them, so it isn't our place to forget them.
+   */
+  private demoteStaleDynamicPeers(): void {
+    const now = Date.now();
+    const cutoff = now - this.demoteAfterMs;
+    for (const [name, state] of this.peers.entries()) {
+      if (state.source === 'static') continue;
+      if (state.healthy) continue;
+      // Prefer the stable unhealthy-streak start over lastChecked, which would
+      // reset every poll. Fall back to lastHealthy (recovered then went down
+      // before unhealthySince was tracked) and finally `now` so the window
+      // only opens once we have a known starting point.
+      const referenceTime = state.unhealthySince ?? state.lastHealthy ?? 0;
+      if (referenceTime > 0 && referenceTime <= cutoff) {
+        this.peers.delete(name);
+        if (state.inboundToken) {
+          this.inboundTokens.delete(state.inboundToken);
+        }
+        this.logger.info(
+          { peerName: name, source: state.source, unhealthyForMs: now - referenceTime },
+          'Demoted unhealthy dynamic peer',
+        );
+      }
+    }
   }
 
   private async refreshPeer(state: PeerState): Promise<void> {
@@ -276,6 +369,7 @@ export class PeerManager {
       state.healthy = true;
       state.lastChecked = Date.now();
       state.lastHealthy = Date.now();
+      state.unhealthySince = undefined;
       state.error = undefined;
       this.cachePeerSkillSummaries(config, peerSkills, state.lastHealthy);
       await Promise.allSettled([
@@ -288,8 +382,12 @@ export class PeerManager {
         'Peer refreshed',
       );
     } catch (err: any) {
+      const now = Date.now();
+      if (state.healthy || state.unhealthySince === undefined) {
+        state.unhealthySince = now;
+      }
       state.healthy = false;
-      state.lastChecked = Date.now();
+      state.lastChecked = now;
       state.error = err.message || 'Unknown error';
       state.bots = [];
       state.skills = [];
@@ -670,6 +768,143 @@ export class PeerManager {
   }
 
   /**
+   * Look up the peer (if any) that presented the given bearer token during a
+   * prior handshake. Used by memory-server to authenticate inbound requests
+   * from known peers as Pragmatic v1 reader principals.
+   */
+  findPeerByInboundToken(token: string): { instanceId?: string; peerName: string } | undefined {
+    const peerName = this.inboundTokens.get(token);
+    if (!peerName) return undefined;
+    // Parked entry — handshake arrived before discovery. Do NOT delete; the
+    // pending key gets rehomed in addDynamicPeer when the peer record appears.
+    if (peerName.startsWith('__pending__:')) return undefined;
+    const state = this.peers.get(peerName);
+    if (!state) {
+      // Stale entry — token map outlived peer record (e.g. demoted).
+      this.inboundTokens.delete(token);
+      return undefined;
+    }
+    return {
+      peerName,
+      ...(state.instanceId ? { instanceId: state.instanceId } : {}),
+    };
+  }
+
+  /**
+   * Record the reader-token a peer presented during inbound handshake.
+   * Subsequent calls from that peer carrying the same bearer will resolve to a
+   * Pragmatic v1 reader principal in memory-server.
+   */
+  registerInboundHandshake(request: PeerHandshakeRequest): PeerHandshakeResponse | null {
+    if (!this.selfIdentity) {
+      return null;
+    }
+    if (!request.instanceId || !request.readerToken) {
+      return null;
+    }
+    if (request.instanceId === this.selfIdentity.instanceId) {
+      // Refuse self-loop handshakes.
+      return null;
+    }
+    // Find existing peer record by instanceId; if none, this is a peer we
+    // haven't observed yet (e.g. handshake arrived before mDNS announcement)
+    // — record an inbound-only token without creating a peer entry. The peer
+    // record will be created once dynamic discovery completes.
+    let targetName: string | undefined;
+    for (const [name, state] of this.peers.entries()) {
+      if (state.instanceId === request.instanceId) {
+        targetName = name;
+        // Evict any prior token mapping (in case the peer rotated tokens).
+        if (state.inboundToken && state.inboundToken !== request.readerToken) {
+          this.inboundTokens.delete(state.inboundToken);
+        }
+        state.inboundToken = request.readerToken;
+        break;
+      }
+    }
+    if (targetName) {
+      this.inboundTokens.set(request.readerToken, targetName);
+    } else {
+      // Park the token under a synthetic key so we can still authenticate
+      // until the peer record materialises. Re-keyed when addDynamicPeer
+      // fires for this instanceId.
+      this.inboundTokens.set(request.readerToken, `__pending__:${request.instanceId}`);
+    }
+    return {
+      instanceId: this.selfIdentity.instanceId,
+      ...(this.selfIdentity.instanceName ? { instanceName: this.selfIdentity.instanceName } : {}),
+      ...(this.selfIdentity.publicKey ? { publicKey: this.selfIdentity.publicKey } : {}),
+      readerToken: this.selfIdentity.readerToken,
+    };
+  }
+
+  /**
+   * Initiate the outbound side of a peer handshake. POSTs our identity +
+   * reader-token to `${peerUrl}/api/peer-handshake`, stores the peer's reply
+   * token as the secret used for future calls to that peer. Safe to call
+   * repeatedly — idempotent on the peer (it just re-records our token) and
+   * idempotent here (overwrites secret with the latest response).
+   */
+  async initiateOutboundHandshake(peerName: string): Promise<boolean> {
+    const state = this.peers.get(peerName);
+    if (!state || !this.selfIdentity) return false;
+    if (!this.selfIdentity.readerToken) return false;
+
+    const request: PeerHandshakeRequest = {
+      instanceId: this.selfIdentity.instanceId,
+      ...(this.selfIdentity.instanceName ? { instanceName: this.selfIdentity.instanceName } : {}),
+      ...(this.selfIdentity.publicKey ? { publicKey: this.selfIdentity.publicKey } : {}),
+      readerToken: this.selfIdentity.readerToken,
+    };
+
+    try {
+      const response = await proxyFetch(`${state.config.url}/api/peer-handshake`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-MetaBot-Origin': 'peer',
+        },
+        body: JSON.stringify(request),
+        signal: AbortSignal.timeout(HANDSHAKE_TIMEOUT_MS),
+      });
+      if (!response.ok) {
+        this.logger.debug(
+          { peerName, status: response.status },
+          'Peer handshake refused',
+        );
+        return false;
+      }
+      const data = (await response.json()) as Partial<PeerHandshakeResponse>;
+      if (!data?.readerToken || !data?.instanceId) return false;
+
+      // Refuse handshake replies that don't match the discovered identity —
+      // protects against a hostile responder claiming someone else's id.
+      if (state.instanceId && data.instanceId !== state.instanceId) {
+        this.logger.warn(
+          { peerName, expected: state.instanceId, got: data.instanceId },
+          'Peer handshake reply identity mismatch; ignoring',
+        );
+        return false;
+      }
+      if (!state.instanceId) {
+        state.instanceId = data.instanceId;
+      }
+      state.config = { ...state.config, secret: data.readerToken };
+      this.logger.info(
+        { peerName, peerInstance: data.instanceId },
+        'Peer handshake completed; reader token cached',
+      );
+      return true;
+    } catch (err: any) {
+      this.logger.debug(
+        { peerName, err: err?.message || err },
+        'Peer handshake failed',
+      );
+      return false;
+    }
+  }
+
+  /**
    * Register a peer discovered at runtime (e.g. via mDNS). Static peers that
    * point at the same URL take precedence — the dynamic record is dropped on
    * URL collision so that pre-configured secrets keep working. Returns true
@@ -709,15 +944,36 @@ export class PeerManager {
       bots: [],
       skills: [],
     });
+
+    // Rehome any pending inbound token that was parked under this instanceId
+    // before the peer record existed (handshake arrived before discovery).
+    if (input.instanceId) {
+      const pendingKey = `__pending__:${input.instanceId}`;
+      for (const [token, parkedName] of this.inboundTokens.entries()) {
+        if (parkedName === pendingKey) {
+          this.inboundTokens.set(token, name);
+          const state = this.peers.get(name);
+          if (state) state.inboundToken = token;
+        }
+      }
+    }
+
     this.logger.info(
       { peerName: name, peerUrl: normalizedUrl, source: input.source, instanceId: input.instanceId },
       'Peer added dynamically',
     );
     this.ensurePollTimer();
-    // Refresh asynchronously so the caller doesn't have to wait.
+    // Refresh asynchronously so the caller doesn't have to wait. Initiate the
+    // handshake first so the subsequent refresh can use the cached token.
     const state = this.peers.get(name);
     if (state) {
-      this.refreshPeer(state).catch((err) => {
+      const work = async () => {
+        if (this.selfIdentity && !state.config.secret) {
+          await this.initiateOutboundHandshake(name);
+        }
+        await this.refreshPeer(state);
+      };
+      work().catch((err) => {
         this.logger.warn({ err: err?.message || err, peerName: name }, 'Initial refresh of dynamic peer failed');
       });
     }

@@ -75,7 +75,7 @@ The manifest is intentionally low-risk and contains no secrets. It advertises:
 
 ## Phase 2: Namespace ACL for MetaMemory
 
-Status: partially implemented after Phase 1.
+Status: **Pragmatic v1** — read path gated by folder visibility (default `shared`); per-instance token grants `write` on `/instances/<self>` only. Principal+grants for fine-grained read ACL deferred to Phase 7; revisit when namespace-level revoke or cross-VLAN trust becomes a requirement.
 
 Add scoped memory tokens tied to instance identity:
 
@@ -85,19 +85,23 @@ Add scoped memory tokens tied to instance identity:
 /teams/<teamId>/...
 ```
 
-Policy:
+Policy (Pragmatic v1):
 
 - An instance token can write `/instances/<self>/...`.
-- It can read other published instance namespaces.
+- It can read all folders with `visibility !== 'private'` (i.e. `shared`).
 - It cannot write another instance namespace.
-- Team/shared write access requires explicit grant.
+- Private folders remain readable only to the owning instance's admin token.
+- Known peers (after auto-handshake) read via Pragmatic v1 reader principal — they get the same folder-visibility gate, no grants needed.
 
-Required changes:
+Required changes (shipped):
 
 - Extend memory auth from role-only (`admin`/`reader`) to principal + grants. Initial support added with `MEMORY_INSTANCE_TOKEN`.
 - Add namespace-aware checks in folder/document create/update/delete. Initial write checks are in place for instance namespaces.
 - Make the metamemory skill default writes to `METABOT_MEMORY_NAMESPACE`.
+- Peer auto-handshake exchanges reader tokens so cross-instance reads work zero-config on the LAN (`POST /api/peer-handshake`, `peerTokenLookup` in memory-server).
 - Add migration guidance for existing root-level documents.
+
+The `hasNamespaceGrant(...)` read branch in `memory-storage.ts` is intentionally a no-op under Pragmatic v1 — kept as the placeholder Phase 7 will switch on.
 
 ## Phase 3: Federated Discovery
 
@@ -174,6 +178,31 @@ Move from shared secrets to instance credentials:
 - Use short-lived registration tokens for cluster join.
 - Keep read endpoints low-risk; require signed/admin calls for publish/delete/install/write.
 - Add audit logs for memory writes, skill publish/install, and peer sync.
+
+## Phase 7: Fine-Grained Read ACL (Deferred)
+
+Status: **deferred** — current Pragmatic v1 (Phase 2 status above) is sufficient for trusted-LAN cluster deployments. Resume this work only when one of the trigger conditions below fires.
+
+Goal: replace the folder-visibility default with full principal+grant-based read ACL so individual peers can be granted or revoked at namespace granularity (e.g. *Alice can read `/teams/infra/*`, but not `/teams/sales/*`; revoke Alice without rotating every other peer's token*).
+
+Trigger conditions (any one is enough to revisit):
+
+1. **Namespace-level revoke** — a user asks for "revoke Alice's read access to `/drafts`" without rotating Bob's token. Today this requires rotating the central reader; Phase 7 would attach grants to individual peer principals so a revoke is one DB row.
+2. **Cross-VLAN / multi-tenant** — deployment crosses a trust boundary (different VLAN, different tenant, untrusted network). LAN trust assumption breaks; folder-visibility default is no longer "good enough".
+3. **Per-principal audit log** — Phase 6 audit log adds a "who read what" requirement. Pragmatic v1 reader principals are typed by `instanceId` but share a folder-visibility gate; full attribution requires per-principal grant evaluation.
+
+What Phase 7 should re-touch:
+
+- `memory-storage.ts` `canReadFolder` — replace the visibility short-circuit with grant lookup for non-admin principals.
+- `hasNamespaceGrant(..., 'read')` — the already-present no-op becomes load-bearing.
+- Peer handshake response — extend with a list of namespace grants the peer is offered (`grants: [{ namespace: '/teams/infra', access: 'read' }]`).
+- Storage migration for existing folders' `visibility` field (or a parallel `acl` table indexed by principal).
+
+Rejected alternatives (relitigate at your peril):
+
+- Folder-visibility plus per-instance write token. *That is Pragmatic v1 — already shipped.*
+- Token-rotation as substitute for revoke. Operationally noisy and forces every peer to re-exchange tokens.
+- Mutual TLS at the transport layer. Solves identity but not namespace-level granularity; orthogonal to this phase.
 
 ## Deployment Modes
 

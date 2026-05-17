@@ -42,6 +42,31 @@ To disable mDNS without touching `discoveryMode`, set `METABOT_MDNS_ENABLED=fals
 1. Install MetaBot on both machines and start each with the install-default `.env` (no `METABOT_PEERS`).
 2. On either machine, wait ~30 seconds, then `curl http://localhost:9100/api/peers`.
 3. The other instance appears with `"source": "mdns"` and `"healthy": true`.
+4. `mm peer-search "<query>"` returns results from the other machine — no manual secret exchange.
+
+## Auto Token Handshake
+
+When two instances discover each other (via mDNS or a manual `addDynamicPeer` call) they automatically exchange reader tokens through `POST /api/peer-handshake`. Each instance generates one stable reader token at `~/.metabot/peer-token` on first startup; that token is the only credential the peer needs to read this instance's published memory and skills.
+
+The handshake is the only path by which fresh installs can read each other zero-config. Static peers configured via `METABOT_PEERS` or `bots.json` with an explicit `secret` field skip the handshake — the configured secret wins. If you want a static peer to still receive your reader token (e.g. for the *reverse* read direction), leave its `secret` field empty.
+
+Reader tokens authenticate as a Pragmatic v1 **reader principal** scoped to the peer's `instanceId`. Read access is gated by folder visibility — private folders remain unreadable; shared folders are visible. Writes from peers are not allowed. See [federated-memory-skill-hub-plan.md](../internal/federated-memory-skill-hub-plan.md) Phase 2 for the full ACL model and Phase 7 for the deferred fine-grained read ACL.
+
+### Cluster ID onboarding tip
+
+If multiple cluster-isolated MetaBot deployments share one LAN (e.g. infra team + product team on the same office network), set `METABOT_CLUSTER_ID` to a stable label per cluster:
+
+```bash
+METABOT_CLUSTER_ID=infra-team
+```
+
+mDNS discovery only returns peers carrying the same `clusterId` TXT value, so the two teams stay isolated even on the same network. Omit the env var to join the default unscoped pool.
+
+### Dynamic Peer Demote
+
+Peers added at runtime (mDNS / cluster / manual) are *demoted* — dropped from the in-memory registry — if they stay unreachable for more than 5 minutes. This prevents a permanently-offline laptop from accumulating in `GET /api/peers` forever. Static peers configured by the operator are never demoted.
+
+Override the threshold via `METABOT_DYNAMIC_PEER_DEMOTE_MS` (milliseconds).
 
 ## Configuration
 
