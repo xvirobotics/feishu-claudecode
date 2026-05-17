@@ -33,6 +33,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         CLAUDE_MAX_TURNS: '',  // unlimited turns (override any inherited shell env)
+        CLAUDE_CODE_SIMPLE: 'true',  // reduce confirmation prompts, let Claude work autonomously
       },
     },
   ],
