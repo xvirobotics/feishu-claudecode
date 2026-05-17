@@ -1,5 +1,6 @@
 import type * as http from 'node:http';
-import { jsonResponse, parseJsonBody, readBody } from './helpers.js';
+import { jsonResponse, parseJsonBody } from './helpers.js';
+import { proxyMemoryRequest } from './memory-proxy.js';
 import type { RouteContext } from './types.js';
 
 export async function handleSyncRoutes(
@@ -94,36 +95,15 @@ export async function handleSyncRoutes(
     return true;
   }
 
-  // Proxy /memory/* to MetaMemory server
+  // Proxy /memory/* to MetaMemory server (preserves inbound Authorization for
+  // Pragmatic v1; see src/api/routes/memory-proxy.ts).
   if (url.startsWith('/memory/') || url === '/memory') {
     const memoryUrl = memoryServerUrl || process.env.META_MEMORY_URL || 'http://localhost:8100';
-    const targetPath = url.slice('/memory'.length) || '/';
-    const targetUrl = `${memoryUrl}${targetPath}`;
-
-    try {
-      const headers: Record<string, string> = {};
-      if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
-      if (memoryAuthToken) headers['Authorization'] = `Bearer ${memoryAuthToken}`;
-
-      let bodyContent: string | undefined;
-      if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-        bodyContent = await readBody(req);
-      }
-
-      const proxyRes = await fetch(targetUrl, {
-        method,
-        headers,
-        body: bodyContent,
-      });
-
-      const contentType = proxyRes.headers.get('content-type') || 'application/json';
-      const responseBody = await proxyRes.text();
-      res.writeHead(proxyRes.status, { 'Content-Type': contentType });
-      res.end(responseBody);
-    } catch (err: any) {
-      logger.warn({ err, targetUrl }, 'MetaMemory proxy error');
-      jsonResponse(res, 502, { error: `MetaMemory proxy error: ${err.message}` });
-    }
+    await proxyMemoryRequest(req, res, url, method, {
+      memoryUrl,
+      ...(memoryAuthToken ? { memoryAuthToken } : {}),
+      logger,
+    });
     return true;
   }
 
