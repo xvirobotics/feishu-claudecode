@@ -158,6 +158,8 @@ function createSpawnFn(explicitApiKey?: string): (options: SpawnOptions) => Spaw
 export interface ApiContext {
   botName: string;
   chatId: string;
+  /** Feishu/Lark user ID of the sender. */
+  userId?: string;
   /** Stable writable MetaMemory namespace for this bot/chat. */
   memoryNamespace?: string;
   /** Optional project identifier used to derive the namespace. */
@@ -342,7 +344,7 @@ export class ClaudeExecutor {
       // race conditions when multiple chats run concurrently.
       // Port and secret are already set as METABOT_* env vars in config.ts.
       appendSections.push(
-        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
+        `## MetaBot API\nYou are running as bot "${apiContext.botName}" in chat "${apiContext.chatId}".${apiContext.userId ? ` The current user's ID is "${apiContext.userId}".` : ''}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`
       );
 
       if (apiContext.memoryNamespace) {

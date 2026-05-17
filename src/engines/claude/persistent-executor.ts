@@ -374,7 +374,7 @@ export class PersistentClaudeExecutor extends EventEmitter {
     if (this.options.apiContext) {
       const ctx = this.options.apiContext;
       appendSections.push(
-        `## MetaBot API\nYou are running as bot "${ctx.botName}" in chat "${ctx.chatId}".\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
+        `## MetaBot API\nYou are running as bot "${ctx.botName}" in chat "${ctx.chatId}".${ctx.userId ? ` The current user's ID is "${ctx.userId}".` : ''}\nUse the /metabot skill for full API documentation (agent bus, scheduling, bot management).`,
       );
       if (ctx.memoryNamespace) {
         appendSections.push(

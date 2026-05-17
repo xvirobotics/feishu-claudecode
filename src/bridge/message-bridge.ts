@@ -1781,6 +1781,7 @@ export class MessageBridge {
     const apiContext = {
       botName: this.config.name,
       chatId,
+      userId: msg.userId,
       memoryNamespace: this.config.memoryNamespace,
       memoryProject: this.config.memoryProject,
     };
@@ -2273,6 +2274,7 @@ export class MessageBridge {
     const apiContext = {
       botName: this.config.name,
       chatId,
+      userId: options.userId,
       memoryNamespace: this.config.memoryNamespace,
       memoryProject: this.config.memoryProject,
       groupMembers: options.groupMembers,
