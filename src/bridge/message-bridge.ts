@@ -16,6 +16,7 @@ import type {
 } from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
 import { ExecutorRegistry } from '../engines/claude/executor-registry.js';
+import { composeScopeKey } from '../session/compose-key.js';
 import { RateLimiter } from './rate-limiter.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
@@ -140,6 +141,15 @@ interface RunningTask {
   processor: StreamProcessor;
   rateLimiter: RateLimiter;
   chatId: string;
+  /**
+   * Composed key used for SessionManager / ExecutorRegistry lookups. In default
+   * mode this equals `chatId`; under `perUserContext` it is `chatId:userId`.
+   * Carried alongside chatId so cleanup paths (autoAnswerRemainingQuestions,
+   * finalize) can route session work to the right scope without recomputing.
+   */
+  scopeKey: string;
+  /** Originating user, so retries / autoanswer paths can attribute correctly. */
+  userId?: string;
   /** Live snapshot of the active Agent Team, accumulated from team hooks. */
   teamState?: TeamState;
 }
@@ -201,9 +211,9 @@ export class MessageBridge {
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
   private sessionRegistry?: SessionRegistry;
-  private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
-  private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
-  private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
+  private runningTasks = new Map<string, RunningTask>(); // keyed by scopeKey (chatId or chatId:userId under perUserContext)
+  private messageQueues = new Map<string, IncomingMessage[]>(); // per-scopeKey message queue
+  private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches — chatId-keyed (per-chat by design, see Phase 2 notes)
   /**
    * Stage 2 — persistent executor pool. Lazy-created on first acquire when
    * the PERSISTENT_EXECUTOR env feature flag is on. One pool per bot.
@@ -278,10 +288,10 @@ export class MessageBridge {
 
     this.commandHandler = new CommandHandler(
       config, logger, sender, this.sessionManager, memoryClient, this.audit,
-      (chatId) => this.runningTasks.get(chatId),
-      (chatId) => this.stopTask(chatId),
-      (chatId) => this.clearChatQueue(chatId),
-      (chatId, reason) => this.releaseChatExecutor(chatId, reason),
+      (scopeKey) => this.runningTasks.get(scopeKey),
+      (scopeKey) => this.stopTask(scopeKey),
+      (scopeKey) => this.clearChatQueue(scopeKey),
+      (scopeKey, reason) => this.releaseChatExecutor(scopeKey, reason),
     );
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
@@ -298,8 +308,14 @@ export class MessageBridge {
    * configured engine. Executors are cached per-engine so repeated turns
    * on the same engine don't re-instantiate the SDK wrapper.
    */
-  private executorForChat(chatId: string): Executor {
-    const session = this.sessionManager.getSession(chatId);
+  /**
+   * Pick the executor for a scope based on its session engine override
+   * (set via `/model claude` or `/model kimi`), falling back to the bot's
+   * configured engine. Executors are cached per-engine so repeated turns
+   * on the same engine don't re-instantiate the SDK wrapper.
+   */
+  private executorForScope(scopeKey: string): Executor {
+    const session = this.sessionManager.getSession(scopeKey);
     const name: EngineName = session.engine ?? resolveEngineName(this.config);
     let entry = this.engineCache.get(name);
     if (!entry) {
@@ -307,38 +323,38 @@ export class MessageBridge {
       const executor = engine.createExecutor();
       entry = { engine, executor };
       this.engineCache.set(name, entry);
-      this.logger.info({ engine: name, chatId }, 'Instantiated engine on demand for session override');
+      this.logger.info({ engine: name, scopeKey }, 'Instantiated engine on demand for session override');
     }
     return entry.executor;
   }
 
   /**
    * Session ids and model overrides are engine-specific. If a bot's default
-   * engine changes between restarts, discard the old per-chat state before the
+   * engine changes between restarts, discard the old per-scope state before the
    * next execution so another engine does not try to resume it.
    */
-  private prepareSessionForExecution(chatId: string) {
-    const session = this.sessionManager.getSession(chatId);
+  private prepareSessionForExecution(scopeKey: string) {
+    const session = this.sessionManager.getSession(scopeKey);
     const engineName: EngineName = session.engine ?? resolveEngineName(this.config);
 
     if (session.sessionId && session.sessionIdEngine && session.sessionIdEngine !== engineName) {
       this.logger.info(
-        { chatId, sessionIdEngine: session.sessionIdEngine, engine: engineName },
+        { scopeKey, sessionIdEngine: session.sessionIdEngine, engine: engineName },
         'Clearing session id from a different engine',
       );
-      this.sessionManager.resetSession(chatId);
+      this.sessionManager.resetSession(scopeKey);
     }
 
     if (session.model && session.modelEngine && session.modelEngine !== engineName) {
       this.logger.info(
-        { chatId, modelEngine: session.modelEngine, engine: engineName },
+        { scopeKey, modelEngine: session.modelEngine, engine: engineName },
         'Clearing model override from a different engine',
       );
-      this.sessionManager.setSessionModel(chatId, undefined);
+      this.sessionManager.setSessionModel(scopeKey, undefined);
     }
 
     return {
-      session: this.sessionManager.getSession(chatId),
+      session: this.sessionManager.getSession(scopeKey),
       engineName,
     };
   }
@@ -358,27 +374,65 @@ export class MessageBridge {
     return this.sessionManager;
   }
 
+  /**
+   * Whether the chat has any running task. For perUserContext bots, returns
+   * true if ANY user in the chat has a running task — callers (scheduler,
+   * web UI) typically don't have a userId in hand, so we treat the chat as
+   * busy if any per-user scope key is active.
+   */
   isBusy(chatId: string): boolean {
-    return this.runningTasks.has(chatId);
+    if (this.runningTasks.has(chatId)) return true;
+    const prefix = `${chatId}:`;
+    for (const key of this.runningTasks.keys()) {
+      if (key.startsWith(prefix)) return true;
+    }
+    return false;
   }
 
-  /** Return info about all currently running tasks (for team status display). */
+  /** Internal: precise scope-keyed busy check. */
+  private isScopeBusy(scopeKey: string): boolean {
+    return this.runningTasks.has(scopeKey);
+  }
+
+  /**
+   * Return info about all currently running tasks (for team status display).
+   * Returns the originating chatId for each task (peeled from the scopeKey
+   * when perUserContext is in use), so callers that group by chat keep
+   * working without knowing about scopeKey shape.
+   */
   getRunningTasksInfo(): Array<{ chatId: string; startTime: number }> {
-    return Array.from(this.runningTasks.entries()).map(([chatId, task]) => ({
-      chatId,
+    return Array.from(this.runningTasks.values()).map((task) => ({
+      chatId: task.chatId,
       startTime: task.startTime,
     }));
   }
 
-  /** Stop a running task for the given chatId. Returns true if a task was stopped. */
+  /**
+   * Stop a running task. With perUserContext bots, external callers (web UI,
+   * scheduler) don't know about scopeKey — for them we stop EVERY task
+   * matching the chatId. Internal callers can use {@link stopTask} directly
+   * with a scopeKey.
+   *
+   * Returns true if at least one task was stopped.
+   */
   stopChatTask(chatId: string): boolean {
-    if (!this.runningTasks.has(chatId)) return false;
-    this.stopTask(chatId);
-    return true;
+    let stopped = false;
+    if (this.runningTasks.has(chatId)) {
+      this.stopTask(chatId);
+      stopped = true;
+    }
+    const prefix = `${chatId}:`;
+    for (const key of Array.from(this.runningTasks.keys())) {
+      if (key.startsWith(prefix)) {
+        this.stopTask(key);
+        stopped = true;
+      }
+    }
+    return stopped;
   }
 
   /**
-   * Discard every queued message for a chat without touching the running
+   * Discard every queued message for a scope without touching the running
    * task. Returns the number of messages discarded. Used by the /stop
    * command so the user's "stop" intent isn't immediately undone by the
    * next queued message taking over via {@link processQueue}.
@@ -386,17 +440,17 @@ export class MessageBridge {
    * Not called from internal timeout / error paths — those keep the queue
    * intact in case the user wants follow-up to still process.
    */
-  clearChatQueue(chatId: string): number {
-    const queue = this.messageQueues.get(chatId);
+  clearChatQueue(scopeKey: string): number {
+    const queue = this.messageQueues.get(scopeKey);
     if (!queue || queue.length === 0) return 0;
     const cleared = queue.length;
-    this.messageQueues.delete(chatId);
-    this.logger.info({ chatId, cleared }, 'MessageBridge: cleared chat queue');
+    this.messageQueues.delete(scopeKey);
+    this.logger.info({ scopeKey, cleared }, 'MessageBridge: cleared queue');
     return cleared;
   }
 
-  private stopTask(chatId: string): void {
-    const task = this.runningTasks.get(chatId);
+  private stopTask(scopeKey: string): void {
+    const task = this.runningTasks.get(scopeKey);
     if (!task) return;
     if (task.questionTimeoutId) clearTimeout(task.questionTimeoutId);
     // Finalize any in-flight question card so the user doesn't see buttons
@@ -472,32 +526,32 @@ export class MessageBridge {
       // Stage 3 — every newly added executor gets a spontaneous-activity
       // subscription so teammate / goal / background pings between turns
       // surface as Feishu cards.
-      this.persistentRegistry.on('executor-added', (chatId: string) => {
-        this.attachSpontaneousHandler(chatId);
+      this.persistentRegistry.on('executor-added', (scopeKey: string) => {
+        this.attachSpontaneousHandler(scopeKey);
       });
-      this.persistentRegistry.on('executor-removed', (chatId: string) => {
-        this.spontaneousSubscribed.delete(chatId);
+      this.persistentRegistry.on('executor-removed', (scopeKey: string) => {
+        this.spontaneousSubscribed.delete(scopeKey);
         // Flush any pending spontaneous buffer so we don't lose accumulated
         // activity when an executor goes away (e.g. idle eviction).
-        const buf = this.spontaneousBuffers.get(chatId);
+        const buf = this.spontaneousBuffers.get(scopeKey);
         if (buf) {
           clearTimeout(buf.timer);
-          void this.flushSpontaneous(chatId);
+          void this.flushSpontaneous(scopeKey);
         }
         // Abort any in-flight continuation card — its stream is bound to the
         // executor we're tearing down and will never deliver another message.
         // The handleContinuationTurn loop will finalize the card to an error
         // state via its abort-aware fallback.
-        const cont = this.continuationTasks.get(chatId);
+        const cont = this.continuationTasks.get(scopeKey);
         if (cont) {
           cont.abortController.abort();
         }
         // Between-turn question whose resolver is now dead — flush the
         // question card to an error state and drop the bookkeeping so the
         // user's next message isn't intercepted as the answer.
-        const q = this.pendingBetweenTurnQuestions.get(chatId);
+        const q = this.pendingBetweenTurnQuestions.get(scopeKey);
         if (q) {
-          this.pendingBetweenTurnQuestions.delete(chatId);
+          this.pendingBetweenTurnQuestions.delete(scopeKey);
           void this.finalizeBetweenTurnQuestionCard(q.cardMessageId, {
             status: 'error',
             userPrompt: 'Question',
@@ -531,26 +585,26 @@ export class MessageBridge {
    *     task settled, agent now replying in main-line). Rendered as a fresh
    *     streaming card just like a user-prompted turn.
    */
-  private attachSpontaneousHandler(chatId: string): void {
-    if (this.spontaneousSubscribed.has(chatId)) return;
-    const exec = this.persistentRegistry?.peek(chatId);
+  private attachSpontaneousHandler(scopeKey: string): void {
+    if (this.spontaneousSubscribed.has(scopeKey)) return;
+    const exec = this.persistentRegistry?.peek(scopeKey);
     if (!exec) return;
-    this.spontaneousSubscribed.add(chatId);
+    this.spontaneousSubscribed.add(scopeKey);
     exec.on('spontaneous', (msg) => {
-      this.handleSpontaneousMessage(chatId, msg);
+      this.handleSpontaneousMessage(scopeKey, msg);
     });
     exec.on('continuation-turn', (handle) => {
       // Fire-and-forget — handleContinuationTurn manages its own lifecycle
       // (card + stream loop + finalize). Errors are logged inside.
-      void this.handleContinuationTurn(chatId, handle as ExecutionHandle);
+      void this.handleContinuationTurn(scopeKey, handle as ExecutionHandle);
     });
     exec.on('between-turn-question', (payload: {
       toolUseId: string;
       questions: PendingQuestion['questions'];
     }) => {
-      void this.handleBetweenTurnQuestion(chatId, payload);
+      void this.handleBetweenTurnQuestion(scopeKey, payload);
     });
-    this.logger.debug({ chatId }, 'MessageBridge: attached executor subscriptions');
+    this.logger.debug({ scopeKey }, 'MessageBridge: attached executor subscriptions');
   }
 
   /**
@@ -566,17 +620,18 @@ export class MessageBridge {
    * "superseded" so the user sees what happened.
    */
   private async handleBetweenTurnQuestion(
-    chatId: string,
+    scopeKey: string,
     payload: { toolUseId: string; questions: PendingQuestion['questions'] },
   ): Promise<void> {
+    const chatId = scopeKey.split(':')[0]; // recover chatId for IM delivery
     if (!payload.questions || payload.questions.length === 0) {
-      this.logger.warn({ chatId, toolUseId: payload.toolUseId }, 'between-turn question with no parsed questions; skipping card');
+      this.logger.warn({ scopeKey, toolUseId: payload.toolUseId }, 'between-turn question with no parsed questions; skipping card');
       return;
     }
-    const existing = this.pendingBetweenTurnQuestions.get(chatId);
+    const existing = this.pendingBetweenTurnQuestions.get(scopeKey);
     if (existing) {
       this.logger.warn(
-        { chatId, prevToolUseId: existing.toolUseId, newToolUseId: payload.toolUseId },
+        { scopeKey, prevToolUseId: existing.toolUseId, newToolUseId: payload.toolUseId },
         'MessageBridge: between-turn question superseded by newer one',
       );
       void this.finalizeBetweenTurnQuestionCard(existing.cardMessageId, {
@@ -585,7 +640,7 @@ export class MessageBridge {
         responseText: '_Superseded by a newer question._',
         toolCalls: [],
       });
-      this.pendingBetweenTurnQuestions.delete(chatId);
+      this.pendingBetweenTurnQuestions.delete(scopeKey);
     }
 
     // Show only the first question on the card (matches runOneTurn — the
@@ -595,7 +650,7 @@ export class MessageBridge {
     // yet, so we route only the first answer and short-circuit the rest.
     if (payload.questions.length > 1) {
       this.logger.warn(
-        { chatId, toolUseId: payload.toolUseId, total: payload.questions.length },
+        { scopeKey, toolUseId: payload.toolUseId, total: payload.questions.length },
         'between-turn AskUserQuestion has multiple sub-questions; only the first will be displayed and routed',
       );
     }
@@ -619,21 +674,21 @@ export class MessageBridge {
     try {
       cardMessageId = await send(chatId, card);
     } catch (err) {
-      this.logger.error({ err, chatId, toolUseId: payload.toolUseId }, 'MessageBridge: failed to send between-turn question card');
+      this.logger.error({ err, scopeKey, toolUseId: payload.toolUseId }, 'MessageBridge: failed to send between-turn question card');
       return;
     }
     if (!cardMessageId) {
-      this.logger.warn({ chatId, toolUseId: payload.toolUseId }, 'MessageBridge: between-turn question card returned no messageId');
+      this.logger.warn({ scopeKey, toolUseId: payload.toolUseId }, 'MessageBridge: between-turn question card returned no messageId');
       return;
     }
 
-    this.pendingBetweenTurnQuestions.set(chatId, {
+    this.pendingBetweenTurnQuestions.set(scopeKey, {
       toolUseId: payload.toolUseId,
       questions: payload.questions,
       cardMessageId,
     });
     this.logger.info(
-      { chatId, toolUseId: payload.toolUseId, cardMessageId },
+      { scopeKey, toolUseId: payload.toolUseId, cardMessageId },
       'MessageBridge: between-turn question card opened',
     );
   }
@@ -665,8 +720,9 @@ export class MessageBridge {
    * NOT continue to executeQuery).
    */
   private async tryHandleBetweenTurnQuestionReply(msg: IncomingMessage): Promise<boolean> {
-    const { chatId, text, imageKey } = msg;
-    const pending = this.pendingBetweenTurnQuestions.get(chatId);
+    const { chatId, userId, text, imageKey } = msg;
+    const scopeKey = composeScopeKey(chatId, userId, this.config.perUserContext);
+    const pending = this.pendingBetweenTurnQuestions.get(scopeKey);
     if (!pending) return false;
 
     // Image-only reply isn't a valid answer; nudge the user.
@@ -692,13 +748,13 @@ export class MessageBridge {
       answers[pending.questions[i].header] = '';
     }
 
-    const executor = this.persistentRegistry?.peek(chatId);
+    const executor = this.persistentRegistry?.peek(scopeKey);
     if (!executor) {
       this.logger.warn(
-        { chatId, toolUseId: pending.toolUseId },
+        { scopeKey, toolUseId: pending.toolUseId },
         'MessageBridge: between-turn answer arrived but executor is gone; dropping',
       );
-      this.pendingBetweenTurnQuestions.delete(chatId);
+      this.pendingBetweenTurnQuestions.delete(scopeKey);
       await this.finalizeBetweenTurnQuestionCard(pending.cardMessageId, {
         status: 'error',
         userPrompt: 'Question',
@@ -708,14 +764,14 @@ export class MessageBridge {
       return true;
     }
 
-    this.pendingBetweenTurnQuestions.delete(chatId);
+    this.pendingBetweenTurnQuestions.delete(scopeKey);
     try {
       executor.resolveQuestion(pending.toolUseId, answers);
     } catch (err) {
-      this.logger.error({ err, chatId, toolUseId: pending.toolUseId }, 'MessageBridge: resolveQuestion threw');
+      this.logger.error({ err, scopeKey, toolUseId: pending.toolUseId }, 'MessageBridge: resolveQuestion threw');
     }
     this.logger.info(
-      { chatId, toolUseId: pending.toolUseId, answer: answerText },
+      { scopeKey, toolUseId: pending.toolUseId, answer: answerText },
       'MessageBridge: resolved between-turn question',
     );
 
@@ -740,21 +796,21 @@ export class MessageBridge {
    * assistant message, once with a 🤖 prefix from the result). Skipping
    * result here removes that duplication.
    */
-  private handleSpontaneousMessage(chatId: string, msg: unknown): void {
+  private handleSpontaneousMessage(scopeKey: string, msg: unknown): void {
     const snippet = extractSpontaneousSnippet(msg);
     // Tool/system events without text aren't worth a card.
     if (!snippet) return;
 
-    let buf = this.spontaneousBuffers.get(chatId);
+    let buf = this.spontaneousBuffers.get(scopeKey);
     if (!buf) {
       buf = {
         teamState: { teammates: [], tasks: [] },
         snippets: [],
         timer: setTimeout(() => {
-          void this.flushSpontaneous(chatId);
+          void this.flushSpontaneous(scopeKey);
         }, SPONTANEOUS_COALESCE_MS),
       };
-      this.spontaneousBuffers.set(chatId, buf);
+      this.spontaneousBuffers.set(scopeKey, buf);
     }
     buf.snippets.push(snippet);
     // Cap to prevent runaway growth in a single window
@@ -773,16 +829,16 @@ export class MessageBridge {
    * body caption, but users found the caption ugly and the green color
    * indistinguishable from a regular turn.
    */
-  private async flushSpontaneous(chatId: string): Promise<void> {
-    const buf = this.spontaneousBuffers.get(chatId);
+  private async flushSpontaneous(scopeKey: string): Promise<void> {
+    const buf = this.spontaneousBuffers.get(scopeKey);
     if (!buf) return;
-    this.spontaneousBuffers.delete(chatId);
+    this.spontaneousBuffers.delete(scopeKey);
     clearTimeout(buf.timer);
 
     // If a user turn just started, drop the spontaneous batch — its content
     // is about to land in the live card anyway.
-    if (this.runningTasks.has(chatId)) {
-      this.logger.debug({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: drop spontaneous (active turn)');
+    if (this.runningTasks.has(scopeKey)) {
+      this.logger.debug({ scopeKey, snippetCount: buf.snippets.length }, 'MessageBridge: drop spontaneous (active turn)');
       return;
     }
 
@@ -790,11 +846,12 @@ export class MessageBridge {
     // teammate ping landed but extractSpontaneousSnippet filtered all of
     // its blocks (e.g. tool-only burst). Silently skip the card.
     if (buf.snippets.length === 0) {
-      this.logger.debug({ chatId }, 'MessageBridge: drop spontaneous (no text snippets)');
+      this.logger.debug({ scopeKey }, 'MessageBridge: drop spontaneous (no text snippets)');
       return;
     }
 
     const responseText = formatSpontaneousCardBody(buf.snippets);
+    const chatId = scopeKey.split(':')[0]; // recover chatId for IM delivery
 
     const card: CardState = {
       status: 'agent_activity',
@@ -805,9 +862,9 @@ export class MessageBridge {
     };
     try {
       await this.sender.sendCard(chatId, card);
-      this.logger.info({ chatId, snippetCount: buf.snippets.length }, 'MessageBridge: sent spontaneous card');
+      this.logger.info({ scopeKey, snippetCount: buf.snippets.length }, 'MessageBridge: sent spontaneous card');
     } catch (err) {
-      this.logger.warn({ err, chatId }, 'MessageBridge: failed to send spontaneous card');
+      this.logger.warn({ err, scopeKey }, 'MessageBridge: failed to send spontaneous card');
     }
   }
 
@@ -840,17 +897,18 @@ export class MessageBridge {
    *     simultaneously — we accept dropping the second card's chrome since
    *     the active card's stream still receives that burst's messages).
    */
-  private async handleContinuationTurn(chatId: string, handle: ExecutionHandle): Promise<void> {
-    if (this.continuationTasks.has(chatId)) {
+  private async handleContinuationTurn(scopeKey: string, handle: ExecutionHandle): Promise<void> {
+    const chatId = scopeKey.split(':')[0];
+    if (this.continuationTasks.has(scopeKey)) {
       // Rare but possible — log and drain silently so the SDK turn still
       // terminates. The visible signal is already on the in-flight card.
-      this.logger.warn({ chatId }, 'MessageBridge: continuation turn already in flight — draining new handle');
+      this.logger.warn({ scopeKey }, 'MessageBridge: continuation turn already in flight — draining new handle');
       try {
         for await (const _msg of handle.stream) {
           // drop
         }
       } catch (err) {
-        this.logger.debug({ err, chatId }, 'MessageBridge: drained extra continuation handle');
+        this.logger.debug({ err, scopeKey }, 'MessageBridge: drained extra continuation handle');
       }
       return;
     }
@@ -859,7 +917,7 @@ export class MessageBridge {
     const processor = new StreamProcessor(displayPrompt);
     const rateLimiter = new RateLimiter(1500);
     const abortController = new AbortController();
-    const session = this.sessionManager.getSession(chatId);
+    const session = this.sessionManager.getSession(scopeKey);
     const activeGoal = session.activeGoal;
 
     const initialState: CardState = {
@@ -872,19 +930,19 @@ export class MessageBridge {
 
     const messageId = await this.sender.sendCard(chatId, initialState);
     if (!messageId) {
-      this.logger.warn({ chatId }, 'MessageBridge: failed to send continuation initial card');
+      this.logger.warn({ scopeKey }, 'MessageBridge: failed to send continuation initial card');
       // Drain stream so the SDK turn still completes cleanly
       try { for await (const _msg of handle.stream) { /* drop */ } } catch { /* ignore */ }
       try { handle.finish(); } catch { /* ignore */ }
       return;
     }
 
-    this.continuationTasks.set(chatId, {
+    this.continuationTasks.set(scopeKey, {
       abortController,
       cardMessageId: messageId,
       turnId: (handle as unknown as { turnId?: string }).turnId ?? 'continuation',
     });
-    this.logger.info({ chatId, messageId }, 'MessageBridge: continuation card opened');
+    this.logger.info({ scopeKey, messageId }, 'MessageBridge: continuation card opened');
 
     let lastState: CardState = initialState;
     const outputsDir = this.outputsManager.prepareDir(chatId);
@@ -925,12 +983,12 @@ export class MessageBridge {
             try {
               await this.sender.updateCard(messageId, hintedState);
             } catch (err) {
-              this.logger.warn({ err, chatId }, 'MessageBridge: continuation hint update failed');
+              this.logger.warn({ err, scopeKey }, 'MessageBridge: continuation hint update failed');
             }
             // Surface the question on its own card via the shared between-
             // turn pipeline. Re-uses pendingBetweenTurnQuestions bookkeeping
             // so handleMessage's reply-interception path Just Works.
-            await this.handleBetweenTurnQuestion(chatId, {
+            await this.handleBetweenTurnQuestion(scopeKey, {
               toolUseId: q.toolUseId,
               questions: q.questions,
             });
@@ -957,7 +1015,7 @@ export class MessageBridge {
         }
       }
 
-      await this.sendFinalCard(messageId, lastState, chatId);
+      await this.sendFinalCard(messageId, lastState, chatId, scopeKey);
       // Intentionally NO sendCompletionNotice here. Continuation turns are
       // between-turn agent activity the user didn't initiate — the card
       // itself (blue → green lifecycle, complete with timestamps in the
@@ -968,7 +1026,7 @@ export class MessageBridge {
       // in the bash background task whose summary triggered this.
       await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
     } catch (err: any) {
-      this.logger.error({ err, chatId }, 'MessageBridge: continuation stream errored');
+      this.logger.error({ err, scopeKey }, 'MessageBridge: continuation stream errored');
       const errorState: CardState = {
         ...lastState,
         status: 'error',
@@ -978,8 +1036,8 @@ export class MessageBridge {
       try { await this.sendFinalCard(messageId, errorState, chatId); } catch { /* ignore */ }
     } finally {
       try { handle.finish(); } catch { /* ignore */ }
-      if (this.continuationTasks.get(chatId)?.cardMessageId === messageId) {
-        this.continuationTasks.delete(chatId);
+      if (this.continuationTasks.get(scopeKey)?.cardMessageId === messageId) {
+        this.continuationTasks.delete(scopeKey);
       }
       try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
@@ -1004,14 +1062,19 @@ export class MessageBridge {
   }
 
   /**
-   * Stage 3b — release a single chat's persistent executor (graceful
+   * Stage 3b — release a single scope's persistent executor (graceful
    * shutdown + remove from pool). Used by /reset to discard any teammates
    * / background tasks tied to the old session before starting fresh.
-   * No-op if persistent mode is off or chat has no executor.
+   * No-op if persistent mode is off or scope has no executor.
+   *
+   * Accepts a scopeKey (chatId or chatId:userId). The CommandHandler's
+   * /reset callback hands us a precomposed scopeKey via the constructor
+   * wiring, so caller-side knowledge of perUserContext stays in the
+   * handler.
    */
-  async releaseChatExecutor(chatId: string, reason: string = 'reset'): Promise<void> {
+  async releaseChatExecutor(scopeKey: string, reason: string = 'reset'): Promise<void> {
     if (!this.persistentRegistry) return;
-    await this.persistentRegistry.release(chatId, reason);
+    await this.persistentRegistry.release(scopeKey, reason);
   }
 
   /**
@@ -1036,7 +1099,7 @@ export class MessageBridge {
    * instance.
    */
   private async runOneTurn(
-    chatId: string,
+    scopeKey: string,
     engineName: EngineName,
     opts: {
       prompt: string;
@@ -1051,7 +1114,7 @@ export class MessageBridge {
       freshSession?: boolean;
     },
   ): Promise<ExecutionHandle> {
-    const session = this.sessionManager.getSession(chatId);
+    const session = this.sessionManager.getSession(scopeKey);
     // Persistent only applies to Claude. Options that need per-turn binding
     // (maxTurns / allowedTools) aren't plumbed through the persistent path yet,
     // so fall back to legacy spawn when they're present — matches the gating
@@ -1065,12 +1128,12 @@ export class MessageBridge {
     if (usePersistent) {
       if (opts.freshSession) {
         try {
-          await this.releaseChatExecutor(chatId, 'retry-fresh-session');
+          await this.releaseChatExecutor(scopeKey, 'retry-fresh-session');
         } catch (err) {
-          this.logger.warn({ err, chatId }, 'runOneTurn: failed to release persistent executor before retry');
+          this.logger.warn({ err, scopeKey }, 'runOneTurn: failed to release persistent executor before retry');
         }
       }
-      const exec = await this.getOrCreateRegistry().acquire(chatId, {
+      const exec = await this.getOrCreateRegistry().acquire(scopeKey, {
         cwd: opts.cwd,
         resumeSessionId: opts.freshSession ? undefined : session.sessionId,
         onTeamEvent: opts.onTeamEvent,
@@ -1083,7 +1146,7 @@ export class MessageBridge {
       return exec.nextTurn(opts.prompt) as unknown as ExecutionHandle;
     }
 
-    return this.executorForChat(chatId).startExecution({
+    return this.executorForScope(scopeKey).startExecution({
       prompt: opts.prompt,
       cwd: opts.cwd,
       sessionId: opts.freshSession ? undefined : session.sessionId,
@@ -1167,31 +1230,31 @@ export class MessageBridge {
    *   /goal clear|stop|off|reset|none|cancel
    *                                    → clear goal (per Claude docs aliases)
    */
-  private mirrorGoalCommand(chatId: string, text: string): void {
+  private mirrorGoalCommand(scopeKey: string, text: string): void {
     const trimmed = text.trim();
     if (!/^\/goal(\s|$)/i.test(trimmed)) return;
     const rest = trimmed.replace(/^\/goal\s*/i, '').trim();
     if (!rest) return; // status query — leave existing goal alone
     const lowered = rest.toLowerCase();
     if (['clear', 'stop', 'off', 'reset', 'none', 'cancel'].includes(lowered)) {
-      this.sessionManager.setGoal(chatId, undefined);
+      this.sessionManager.setGoal(scopeKey, undefined);
       return;
     }
-    this.sessionManager.setGoal(chatId, rest);
+    this.sessionManager.setGoal(scopeKey, rest);
   }
 
-  private processQueue(chatId: string): void {
-    const queue = this.messageQueues.get(chatId);
+  private processQueue(scopeKey: string): void {
+    const queue = this.messageQueues.get(scopeKey);
     if (!queue || queue.length === 0) {
-      this.messageQueues.delete(chatId);
+      this.messageQueues.delete(scopeKey);
       return;
     }
     const next = queue.shift()!;
     if (queue.length === 0) {
-      this.messageQueues.delete(chatId);
+      this.messageQueues.delete(scopeKey);
     }
     this.executeQuery(next).catch((err) => {
-      this.logger.error({ err, chatId }, 'Error processing queued message');
+      this.logger.error({ err, scopeKey }, 'Error processing queued message');
     });
   }
 
@@ -1208,9 +1271,10 @@ export class MessageBridge {
     value: Record<string, unknown>;
   }): Promise<void> {
     const { chatId, userId, messageId, value } = event;
-    const task = this.runningTasks.get(chatId);
+    const scopeKey = composeScopeKey(chatId, userId, this.config.perUserContext);
+    const task = this.runningTasks.get(scopeKey);
     if (!task || !task.pendingQuestion) {
-      this.logger.debug({ chatId, userId }, 'Card action but no pending question — ignoring');
+      this.logger.debug({ chatId, userId, scopeKey }, 'Card action but no pending question — ignoring');
       return;
     }
     if (value.action !== 'answer_question') {
@@ -1242,7 +1306,8 @@ export class MessageBridge {
   }
 
   async handleMessage(msg: IncomingMessage): Promise<void> {
-    const { chatId, text } = msg;
+    const { chatId, text, userId } = msg;
+    const scopeKey = composeScopeKey(chatId, userId, this.config.perUserContext);
 
     // Handle commands (always allowed, even during pending questions)
     if (text.startsWith('/')) {
@@ -1251,10 +1316,10 @@ export class MessageBridge {
 
       // Mirror /goal state locally so the card can show a persistent badge
       // across turns. The actual goal mechanism still runs inside Claude Code.
-      this.mirrorGoalCommand(chatId, text);
+      this.mirrorGoalCommand(scopeKey, text);
 
       // Unrecognized /xxx command — pass through to Claude
-      if (this.runningTasks.has(chatId)) {
+      if (this.isScopeBusy(scopeKey)) {
         await this.sender.sendTextNotice(
           chatId,
           '⏳ Task In Progress',
@@ -1280,14 +1345,14 @@ export class MessageBridge {
     }
 
     // Check if there's a pending question waiting for an answer
-    const task = this.runningTasks.get(chatId);
+    const task = this.runningTasks.get(scopeKey);
     if (task && task.pendingQuestion) {
       await this.handleAnswer(msg, task);
       return;
     }
 
     // If a task is running, queue the message instead of rejecting
-    if (this.runningTasks.has(chatId)) {
+    if (this.isScopeBusy(scopeKey)) {
       // If there's a pending batch and this is a text message, merge batch into the queued text
       const batch = this.pendingBatches.get(chatId);
       if (batch && !this.isDefaultMediaText(msg)) {
@@ -1303,7 +1368,7 @@ export class MessageBridge {
         return;
       }
 
-      const queue = this.messageQueues.get(chatId) || [];
+      const queue = this.messageQueues.get(scopeKey) || [];
       if (queue.length >= MAX_QUEUE_SIZE) {
         await this.sender.sendTextNotice(
           chatId,
@@ -1314,7 +1379,7 @@ export class MessageBridge {
         return;
       }
       queue.push(msg);
-      this.messageQueues.set(chatId, queue);
+      this.messageQueues.set(scopeKey, queue);
       this.audit.log({ event: 'task_queued', botName: this.config.name, chatId, userId: msg.userId, prompt: msg.text, meta: { position: queue.length } });
       await this.sender.sendTextNotice(
         chatId,
@@ -1564,12 +1629,15 @@ export class MessageBridge {
     const merged = this.mergeBatchMessages(batch.messages);
     this.logger.info({ chatId, batchSize: batch.messages.length }, 'Flushing media batch (timeout)');
 
-    // If a task started running during the debounce window, queue instead
-    if (this.runningTasks.has(chatId)) {
-      const queue = this.messageQueues.get(chatId) || [];
+    // If a task started running during the debounce window, queue instead.
+    // Scope by the merged message's userId so perUserContext bots route to
+    // the right per-user queue.
+    const scopeKey = composeScopeKey(merged.chatId, merged.userId, this.config.perUserContext);
+    if (this.isScopeBusy(scopeKey)) {
+      const queue = this.messageQueues.get(scopeKey) || [];
       if (queue.length < MAX_QUEUE_SIZE) {
         queue.push(merged);
-        this.messageQueues.set(chatId, queue);
+        this.messageQueues.set(scopeKey, queue);
         this.sender.sendTextNotice(chatId, '📋 Queued', `Your ${batch.messages.length} media message(s) have been queued.`, 'blue')
           .catch(() => {});
       }
@@ -1619,7 +1687,8 @@ export class MessageBridge {
 
   private async executeQuery(msg: IncomingMessage): Promise<void> {
     const { userId, chatId, text, imageKey, fileKey, fileName, messageId: msgId } = msg;
-    const { session, engineName } = this.prepareSessionForExecution(chatId);
+    const scopeKey = composeScopeKey(chatId, userId, this.config.perUserContext);
+    const { session, engineName } = this.prepareSessionForExecution(scopeKey);
     const cwd = session.workingDirectory;
     const abortController = new AbortController();
     const activeEngine = session.engine ?? resolveEngineName(this.config);
@@ -1744,7 +1813,7 @@ export class MessageBridge {
     // All turn-starting paths (initial + retry) route through runOneTurn so
     // persistent mode is enforced consistently and stale-session retries
     // properly release the bound executor before reacquiring.
-    const executionHandle = await this.runOneTurn(chatId, engineName, {
+    const executionHandle = await this.runOneTurn(scopeKey, engineName, {
       prompt,
       cwd,
       abortController,
@@ -1767,8 +1836,10 @@ export class MessageBridge {
       processor,
       rateLimiter,
       chatId,
+      scopeKey,
+      userId,
     };
-    this.runningTasks.set(chatId, runningTask);
+    this.runningTasks.set(scopeKey, runningTask);
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
 
     this.audit.log({ event: 'task_start', botName: this.config.name, chatId, userId, prompt: text });
@@ -1812,7 +1883,7 @@ export class MessageBridge {
         // Update session ID if discovered
         const newSessionId = processor.getSessionId();
         if (newSessionId && (newSessionId !== session.sessionId || session.sessionIdEngine !== engineName)) {
-          this.sessionManager.setSessionId(chatId, newSessionId, engineName);
+          this.sessionManager.setSessionId(scopeKey, newSessionId, engineName);
         }
 
         // Check if we hit a waiting_for_input state
@@ -1961,8 +2032,8 @@ export class MessageBridge {
 
       // Auto-retry with fresh session when Claude can't find the conversation
       if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage) && session.sessionId) {
-        this.logger.info({ chatId }, 'Stale session detected, retrying with fresh session');
-        this.sessionManager.resetSession(chatId);
+        this.logger.info({ scopeKey }, 'Stale session detected, retrying with fresh session');
+        this.sessionManager.resetSession(scopeKey);
         lastState = { ...lastState, status: 'running', errorMessage: undefined };
         await this.sender.updateCard(messageId, { ...lastState, responseText: '_Session expired, retrying..._' });
 
@@ -1970,7 +2041,7 @@ export class MessageBridge {
         // released-then-reacquired (its start() is bound to the now-stale
         // sessionId; without release, acquire would return the same broken
         // instance).
-        const retryHandle = await this.runOneTurn(chatId, engineName, {
+        const retryHandle = await this.runOneTurn(scopeKey, engineName, {
           prompt, cwd, abortController, outputsDir, apiContext, model: session.model,
           onTeamEvent, freshSession: true,
         });
@@ -1983,7 +2054,7 @@ export class MessageBridge {
           const state = processor.processMessage(message);
           lastState = state;
           const newSid = processor.getSessionId();
-          if (newSid) this.sessionManager.setSessionId(chatId, newSid, engineName);
+          if (newSid) this.sessionManager.setSessionId(scopeKey, newSid, engineName);
           if (state.status === 'complete' || state.status === 'error') break;
           rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
         }
@@ -1992,12 +2063,12 @@ export class MessageBridge {
 
       // Auto-retry with fresh session on context overflow (e.g. third-party models without compaction)
       if (lastState.status === 'error' && isContextOverflowError(lastState.errorMessage) && session.sessionId) {
-        this.logger.info({ chatId }, 'Context overflow detected, retrying with fresh session');
-        this.sessionManager.resetSession(chatId);
+        this.logger.info({ scopeKey }, 'Context overflow detected, retrying with fresh session');
+        this.sessionManager.resetSession(scopeKey);
         lastState = { ...lastState, status: 'running', errorMessage: undefined };
         await this.sender.updateCard(messageId, { ...lastState, responseText: '_Context limit reached, starting fresh session..._' });
 
-        const retryHandle = await this.runOneTurn(chatId, engineName, {
+        const retryHandle = await this.runOneTurn(scopeKey, engineName, {
           prompt, cwd, abortController, outputsDir, apiContext, model: session.model,
           onTeamEvent, freshSession: true,
         });
@@ -2010,14 +2081,14 @@ export class MessageBridge {
           const state = processor.processMessage(message);
           lastState = state;
           const newSid = processor.getSessionId();
-          if (newSid) this.sessionManager.setSessionId(chatId, newSid, engineName);
+          if (newSid) this.sessionManager.setSessionId(scopeKey, newSid, engineName);
           if (state.status === 'complete' || state.status === 'error') break;
           rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
         }
         await rateLimiter.cancelAndWait();
       }
 
-      await this.sendFinalCard(messageId, lastState, chatId);
+      await this.sendFinalCard(messageId, lastState, chatId, scopeKey);
 
       // Audit + cost tracking
       const durationMs = Date.now() - startTime;
@@ -2044,7 +2115,7 @@ export class MessageBridge {
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
       // Record in cross-platform session registry
-      this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
+      this.recordSession(scopeKey, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       // Send completion notification for long-running tasks (>10s) so user gets a Feishu push
       await this.sendCompletionNotice(chatId, lastState, durationMs);
@@ -2058,13 +2129,13 @@ export class MessageBridge {
       const errMsg: string = err.message || '';
       if ((isStaleSessionError(errMsg) || isContextOverflowError(errMsg)) && session.sessionId) {
         const isOverflow = isContextOverflowError(errMsg);
-        this.logger.info({ chatId, isOverflow }, isOverflow ? 'Context overflow in catch, retrying with fresh session' : 'Stale session detected in catch, retrying with fresh session');
-        this.sessionManager.resetSession(chatId);
+        this.logger.info({ scopeKey, isOverflow }, isOverflow ? 'Context overflow in catch, retrying with fresh session' : 'Stale session detected in catch, retrying with fresh session');
+        this.sessionManager.resetSession(scopeKey);
         const retryMsg = isOverflow ? '_Context limit reached, starting fresh session..._' : '_Session expired, retrying..._';
         await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
 
         try {
-          const retryHandle = await this.runOneTurn(chatId, engineName, {
+          const retryHandle = await this.runOneTurn(scopeKey, engineName, {
             prompt, cwd, abortController, outputsDir, apiContext, model: session.model,
             onTeamEvent, freshSession: true,
           });
@@ -2077,12 +2148,12 @@ export class MessageBridge {
             const state = processor.processMessage(message);
             lastState = state;
             const newSid = processor.getSessionId();
-            if (newSid) this.sessionManager.setSessionId(chatId, newSid, engineName);
+            if (newSid) this.sessionManager.setSessionId(scopeKey, newSid, engineName);
             if (state.status === 'complete' || state.status === 'error') break;
             rateLimiter.schedule(() => { this.sender.updateCard(messageId, state); });
           }
           await rateLimiter.cancelAndWait();
-          await this.sendFinalCard(messageId, lastState, chatId);
+          await this.sendFinalCard(messageId, lastState, chatId, scopeKey);
 
           const durationMs = Date.now() - startTime;
           this.audit.log({
@@ -2101,12 +2172,12 @@ export class MessageBridge {
           metrics.incCounter('metabot_tasks_total');
           metrics.incCounter('metabot_tasks_by_status', lastState.status === 'complete' ? 'success' : 'error');
 
-          this.recordSession(chatId, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
+          this.recordSession(scopeKey, displayPrompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
           await this.sendCompletionNotice(chatId, lastState, durationMs);
           await this.outputHandler.sendOutputFiles(chatId, outputsDir, processor, lastState);
           return; // skip the normal error handling below
         } catch (retryErr: any) {
-          this.logger.error({ err: retryErr, chatId }, 'Retry after stale session also failed');
+          this.logger.error({ err: retryErr, scopeKey }, 'Retry after stale session also failed');
           lastState = { ...lastState, status: 'error', errorMessage: retryErr.message || 'Retry failed' };
         }
       }
@@ -2139,12 +2210,12 @@ export class MessageBridge {
       if (runningTask.questionTimeoutId) {
         clearTimeout(runningTask.questionTimeoutId);
       }
-      try { executionHandle.finish(); } catch (e) { this.logger.warn({ err: e, chatId }, 'Error finishing execution handle'); }
+      try { executionHandle.finish(); } catch (e) { this.logger.warn({ err: e, scopeKey }, 'Error finishing execution handle'); }
       // Only delete if this is still our task (guards against stopTask race condition)
-      if (this.runningTasks.get(chatId) === runningTask) {
-        this.runningTasks.delete(chatId);
+      if (this.runningTasks.get(scopeKey) === runningTask) {
+        this.runningTasks.delete(scopeKey);
         metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
-        this.processQueue(chatId);
+        this.processQueue(scopeKey);
       }
       if (imagePath) {
         try { fs.unlinkSync(imagePath); } catch { /* ignore */ }
@@ -2161,12 +2232,17 @@ export class MessageBridge {
 
   async executeApiTask(options: ApiTaskOptions): Promise<ApiTaskResult> {
     const { prompt, chatId, userId = 'api', sendCards = false } = options;
+    // API tasks are background-initiated and have no originating userId in
+    // the same sense as an IM message. Use chatId-only scopeKey so they
+    // share the default chat-scoped session (same behavior as before
+    // perUserContext). Future work can plumb userId through ApiTaskOptions.
+    const scopeKey = chatId;
 
-    if (this.runningTasks.has(chatId)) {
+    if (this.runningTasks.has(scopeKey)) {
       return { success: false, responseText: '', error: 'Chat is busy with another task' };
     }
 
-    const { session, engineName } = this.prepareSessionForExecution(chatId);
+    const { session, engineName } = this.prepareSessionForExecution(scopeKey);
     const cwd = session.workingDirectory;
     const abortController = new AbortController();
 
@@ -2231,7 +2307,7 @@ export class MessageBridge {
     // options; persistent executor would need additional plumbing to apply
     // them per-turn — runOneTurn falls back to legacy spawn automatically
     // when those are set.
-    const executionHandle = await this.runOneTurn(chatId, engineName, {
+    const executionHandle = await this.runOneTurn(scopeKey, engineName, {
       prompt,
       cwd,
       abortController,
@@ -2255,8 +2331,10 @@ export class MessageBridge {
       processor,
       rateLimiter,
       chatId,
+      scopeKey,
+      userId,
     };
-    this.runningTasks.set(chatId, runningTask);
+    this.runningTasks.set(scopeKey, runningTask);
     metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
 
     this.audit.log({ event: 'api_task_start', botName: this.config.name, chatId, userId, prompt });
@@ -2303,7 +2381,7 @@ export class MessageBridge {
 
         const newSessionId = processor.getSessionId();
         if (newSessionId && (newSessionId !== session.sessionId || session.sessionIdEngine !== engineName)) {
-          this.sessionManager.setSessionId(chatId, newSessionId, engineName);
+          this.sessionManager.setSessionId(scopeKey, newSessionId, engineName);
         }
 
         if (state.status === 'waiting_for_input' && state.pendingQuestion) {
@@ -2371,14 +2449,14 @@ export class MessageBridge {
       // Auto-retry with fresh session when Claude can't find the conversation or context overflows
       if (lastState.status === 'error' && (isStaleSessionError(lastState.errorMessage) || isContextOverflowError(lastState.errorMessage)) && session.sessionId) {
         const isOverflow = isContextOverflowError(lastState.errorMessage);
-        this.logger.info({ chatId, isOverflow }, isOverflow ? 'API task: context overflow, retrying with fresh session' : 'API task: stale session detected, retrying with fresh session');
-        this.sessionManager.resetSession(chatId);
+        this.logger.info({ scopeKey, isOverflow }, isOverflow ? 'API task: context overflow, retrying with fresh session' : 'API task: stale session detected, retrying with fresh session');
+        this.sessionManager.resetSession(scopeKey);
         const retryMsg = isOverflow ? '_Context limit reached, starting fresh session..._' : '_Session expired, retrying..._';
         if (sendCards && messageId) {
           await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
         }
 
-        const retryHandle = await this.runOneTurn(chatId, engineName, {
+        const retryHandle = await this.runOneTurn(scopeKey, engineName, {
           prompt, cwd, abortController, outputsDir, apiContext,
           model: options.model ?? session.model,
           onTeamEvent, freshSession: true,
@@ -2392,7 +2470,7 @@ export class MessageBridge {
           const state = processor.processMessage(message);
           lastState = state;
           const newSid = processor.getSessionId();
-          if (newSid) this.sessionManager.setSessionId(chatId, newSid, engineName);
+          if (newSid) this.sessionManager.setSessionId(scopeKey, newSid, engineName);
           if (state.status === 'complete' || state.status === 'error') break;
           if (sendCards && messageId) {
             rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
@@ -2403,7 +2481,7 @@ export class MessageBridge {
       }
 
       if (sendCards && messageId) {
-        await this.sendFinalCard(messageId, lastState, chatId);
+        await this.sendFinalCard(messageId, lastState, chatId, scopeKey);
       }
       options.onUpdate?.(lastState, effectiveMessageId, true);
 
@@ -2433,7 +2511,7 @@ export class MessageBridge {
       if (lastState.costUsd) metrics.observeHistogram('metabot_task_cost_usd', lastState.costUsd);
 
       // Record in cross-platform session registry
-      this.recordSession(chatId, prompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
+      this.recordSession(scopeKey, prompt, lastState.responseText, processor.getSessionId(), lastState.costUsd, durationMs);
 
       return {
         success: lastState.status === 'complete',
@@ -2444,21 +2522,21 @@ export class MessageBridge {
         error: lastState.errorMessage,
       };
     } catch (err: any) {
-      this.logger.error({ err, chatId, userId }, 'API task execution error');
+      this.logger.error({ err, scopeKey, userId }, 'API task execution error');
 
       // Auto-retry with fresh session when Claude can't find the conversation or context overflows
       const errMsg: string = err.message || '';
       if ((isStaleSessionError(errMsg) || isContextOverflowError(errMsg)) && session.sessionId) {
         const isOverflow = isContextOverflowError(errMsg);
-        this.logger.info({ chatId, isOverflow }, isOverflow ? 'API task: context overflow in catch, retrying with fresh session' : 'API task: stale session in catch, retrying with fresh session');
-        this.sessionManager.resetSession(chatId);
+        this.logger.info({ scopeKey, isOverflow }, isOverflow ? 'API task: context overflow in catch, retrying with fresh session' : 'API task: stale session in catch, retrying with fresh session');
+        this.sessionManager.resetSession(scopeKey);
         const retryMsg = isOverflow ? '_Context limit reached, starting fresh session..._' : '_Session expired, retrying..._';
         if (sendCards && messageId) {
           await this.sender.updateCard(messageId, { ...lastState, status: 'running', responseText: retryMsg });
         }
 
         try {
-          const retryHandle = await this.runOneTurn(chatId, engineName, {
+          const retryHandle = await this.runOneTurn(scopeKey, engineName, {
             prompt, cwd, abortController, outputsDir, apiContext,
             model: options.model ?? session.model,
             onTeamEvent, freshSession: true,
@@ -2472,7 +2550,7 @@ export class MessageBridge {
             const state = processor.processMessage(message);
             lastState = state;
             const newSid = processor.getSessionId();
-            if (newSid) this.sessionManager.setSessionId(chatId, newSid, engineName);
+            if (newSid) this.sessionManager.setSessionId(scopeKey, newSid, engineName);
             if (state.status === 'complete' || state.status === 'error') break;
             if (sendCards && messageId) {
               rateLimiter.schedule(() => { this.sender.updateCard(messageId!, state); });
@@ -2482,7 +2560,7 @@ export class MessageBridge {
           await rateLimiter.cancelAndWait();
 
           if (sendCards && messageId) {
-            await this.sendFinalCard(messageId, lastState, chatId);
+            await this.sendFinalCard(messageId, lastState, chatId, scopeKey);
           }
           options.onUpdate?.(lastState, effectiveMessageId, true);
 
@@ -2502,7 +2580,7 @@ export class MessageBridge {
             error: lastState.errorMessage,
           };
         } catch (retryErr: any) {
-          this.logger.error({ err: retryErr, chatId }, 'API task retry after stale session also failed');
+          this.logger.error({ err: retryErr, scopeKey }, 'API task retry after stale session also failed');
           // Fall through to normal error handling
         }
       }
@@ -2541,10 +2619,10 @@ export class MessageBridge {
     } finally {
       clearTimeout(timeoutId);
       if (idleTimerId) clearTimeout(idleTimerId);
-      try { executionHandle.finish(); } catch (e) { this.logger.warn({ err: e, chatId }, 'Error finishing execution handle'); }
-      this.runningTasks.delete(chatId);
+      try { executionHandle.finish(); } catch (e) { this.logger.warn({ err: e, scopeKey }, 'Error finishing execution handle'); }
+      this.runningTasks.delete(scopeKey);
       metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
-      this.processQueue(chatId);
+      this.processQueue(scopeKey);
       try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
   }
@@ -2554,11 +2632,14 @@ export class MessageBridge {
    * Retries with exponential backoff (2s → 4s → 8s). If all retries fail,
    * sends a plain text fallback so the user at least sees the result.
    */
-  private async sendFinalCard(messageId: string, state: CardState, chatId?: string): Promise<void> {
-    // Accumulate usage into session and inject cumulative cost for display
-    if (chatId && (state.status === 'complete' || state.status === 'error')) {
-      this.sessionManager.addUsage(chatId, state.totalTokens ?? 0, state.costUsd ?? 0, state.durationMs ?? 0);
-      const session = this.sessionManager.getSession(chatId);
+  private async sendFinalCard(messageId: string, state: CardState, chatId?: string, scopeKey?: string): Promise<void> {
+    // Accumulate usage into session and inject cumulative cost for display.
+    // Prefer scopeKey (exact per-user lookup) when available; fall back to
+    // chatId for callers that don't have scopeKey in hand.
+    const usageKey = scopeKey || chatId;
+    if (usageKey && (state.status === 'complete' || state.status === 'error')) {
+      this.sessionManager.addUsage(usageKey, state.totalTokens ?? 0, state.costUsd ?? 0, state.durationMs ?? 0);
+      const session = this.sessionManager.getSession(usageKey);
       state.sessionCostUsd = session.cumulativeCostUsd;
     }
     for (let attempt = 0; attempt < FINAL_CARD_RETRIES; attempt++) {
@@ -2604,21 +2685,21 @@ export class MessageBridge {
    * Only sends for tasks that took longer than 10 seconds.
    */
   /** Record session and messages in the cross-platform registry. */
-  private recordSession(chatId: string, prompt: string, responseText: string | undefined, claudeSessionId: string | undefined, costUsd: number | undefined, durationMs: number | undefined): void {
+  private recordSession(scopeKey: string, prompt: string, responseText: string | undefined, claudeSessionId: string | undefined, costUsd: number | undefined, durationMs: number | undefined): void {
     if (!this.sessionRegistry) return;
     try {
       this.sessionRegistry.createOrUpdate({
-        chatId,
+        chatId: scopeKey.split(':')[0],
         botName: this.config.name,
         claudeSessionId,
-        workingDirectory: this.sessionManager.getSession(chatId).workingDirectory,
+        workingDirectory: this.sessionManager.getSession(scopeKey).workingDirectory,
         prompt,
         responseText,
         costUsd,
         durationMs,
       });
     } catch (err) {
-      this.logger.warn({ err, chatId }, 'Failed to record session in registry');
+      this.logger.warn({ err, scopeKey }, 'Failed to record session in registry');
     }
   }
 
@@ -2662,20 +2743,20 @@ export class MessageBridge {
       clearTimeout(batch.timerId);
     }
     this.pendingBatches.clear();
-    for (const [chatId, task] of this.runningTasks) {
+    for (const [scopeKey, task] of this.runningTasks) {
       if (task.questionTimeoutId) {
         clearTimeout(task.questionTimeoutId);
       }
       task.executionHandle.finish();
       task.abortController.abort();
-      this.logger.info({ chatId }, 'Aborted running task during shutdown');
+      this.logger.info({ scopeKey }, 'Aborted running task during shutdown');
     }
     this.runningTasks.clear();
     // Abort any in-flight continuation cards too — their executors are
     // about to be torn down by shutdownAll below.
-    for (const [chatId, cont] of this.continuationTasks) {
+    for (const [scopeKey, cont] of this.continuationTasks) {
       cont.abortController.abort();
-      this.logger.info({ chatId }, 'Aborted continuation task during shutdown');
+      this.logger.info({ scopeKey }, 'Aborted continuation task during shutdown');
     }
     this.continuationTasks.clear();
     this.sessionManager.destroy();

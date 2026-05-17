@@ -17,6 +17,16 @@ export interface BotConfigBase {
   memoryNamespace?: string;
   /** Optional project identifier used to derive /projects/<memoryProject>. */
   memoryProject?: string;
+  /**
+   * When true, conversation state (Claude session, persistent executor,
+   * message queue, running task) is scoped per-(chatId, userId) instead of
+   * per-chatId. Useful for group chats where each member should keep their
+   * own thread with the bot. `/reset` only clears the caller's scope.
+   *
+   * p2p chats already get one chat per user, so this only matters in groups.
+   * Default false — preserves existing single-context-per-chat behavior.
+   */
+  perUserContext?: boolean;
   maxConcurrentTasks?: number;
   budgetLimitDaily?: number;
   ttsVoice?: string;
@@ -217,6 +227,8 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   apiKey?: string;
   outputsBaseDir?: string;
   downloadsDir?: string;
+  /** Per-user conversation scoping in group chats. See BotConfigBase.perUserContext. */
+  perUserContext?: boolean;
   /** When true, respond to all messages in group chats without requiring @mention. */
   groupNoMention?: boolean;
 }
@@ -233,6 +245,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     ...(entry.groupNoMention ? { groupNoMention: true } : {}),
+    ...(entry.perUserContext ? { perUserContext: true } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),

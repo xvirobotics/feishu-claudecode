@@ -2,6 +2,7 @@ import type * as http from 'node:http';
 import { jsonResponse } from './helpers.js';
 import type { RouteContext } from './types.js';
 import { resolvePersistentExecutorEnvDefault } from '../../bridge/message-bridge.js';
+import { chatIdFromScopeKey } from '../../session/compose-key.js';
 
 /**
  * Stage 4 — observability for the persistent-executor pool.
@@ -26,6 +27,8 @@ export async function handleExecutorRoutes(
     botName: string;
     platform: string;
     chatId: string;
+    /** Per-user scope key (chatId or chatId:userId) when perUserContext is on. Always present. */
+    scopeKey: string;
     state: string;
     sessionId?: string;
     hasActiveTurn: boolean;
@@ -41,7 +44,8 @@ export async function handleExecutorRoutes(
       out.push({
         botName: bot.name,
         platform: bot.platform,
-        chatId: e.chatId,
+        chatId: chatIdFromScopeKey(e.scopeKey),
+        scopeKey: e.scopeKey,
         state: e.state,
         sessionId: e.sessionId,
         hasActiveTurn: e.hasActiveTurn,

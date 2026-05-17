@@ -7,6 +7,7 @@ import type { EngineName } from '../engines/index.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
+import { composeScopeKey } from '../session/compose-key.js';
 
 export class CommandHandler {
   private docSync: DocSync | null = null;
@@ -18,8 +19,8 @@ export class CommandHandler {
     private sessionManager: SessionManager,
     private memoryClient: MemoryClient,
     private audit: AuditLogger,
-    private getRunningTask: (chatId: string) => { startTime: number } | undefined,
-    private stopTask: (chatId: string) => void,
+    private getRunningTask: (scopeKey: string) => { startTime: number } | undefined,
+    private stopTask: (scopeKey: string) => void,
     /**
      * Drain the chat's queued-message buffer, returning the number of
      * messages discarded. Called from /stop so the user's "stop" intent
@@ -27,14 +28,14 @@ export class CommandHandler {
      * the bridge's processQueue would start the next one as soon as the
      * aborted task's finally block runs.
      */
-    private clearQueue: (chatId: string) => number,
+    private clearQueue: (scopeKey: string) => number,
     /**
      * Release the persistent Claude process associated with this chat
      * (no-op if the persistent-executor feature flag is off or no
      * executor exists). Called on /reset so teammates and /goal state
      * tied to the old session are torn down with the conversation.
      */
-    private releaseExecutor: (chatId: string, reason: string) => Promise<void>,
+    private releaseExecutor: (scopeKey: string, reason: string) => Promise<void>,
   ) {}
 
   /** Set the doc sync service (optional, only available for Feishu bots). */
@@ -48,6 +49,7 @@ export class CommandHandler {
     if (!text.startsWith('/')) return false;
 
     const { userId, chatId } = msg;
+    const scopeKey = composeScopeKey(chatId, userId, this.config.perUserContext);
     const [cmd] = text.split(/\s+/);
 
     this.audit.log({ event: 'command', botName: this.config.name, chatId, userId, prompt: cmd });
@@ -85,28 +87,34 @@ export class CommandHandler {
         return true;
 
       case '/reset':
-        this.sessionManager.resetSession(chatId);
-        // Tear down the persistent Claude process for this chat (Stage 3b).
+        this.sessionManager.resetSession(scopeKey);
+        // Tear down the persistent Claude process for this scope (Stage 3b).
         // Otherwise the old long-lived executor would keep running with its
         // stale (now-cleared) sessionId mapping. No-op when persistent mode
         // is off. Best-effort — log but don't fail the /reset on shutdown errors.
         try {
-          await this.releaseExecutor(chatId, 'reset-command');
+          await this.releaseExecutor(scopeKey, 'reset-command');
         } catch (err) {
-          this.logger.warn({ err, chatId }, 'Failed to release persistent executor on /reset');
+          this.logger.warn({ err, scopeKey }, 'Failed to release persistent executor on /reset');
         }
-        await this.sender.sendTextNotice(chatId, '✅ Session Reset', 'Conversation cleared. Working directory preserved.', 'green');
+        {
+          let body = 'Conversation cleared. Working directory preserved.';
+          if (this.config.perUserContext) {
+            body += '\n_(your scope only — other members\' sessions are unaffected)_';
+          }
+          await this.sender.sendTextNotice(chatId, '✅ Session Reset', body, 'green');
+        }
         return true;
 
       case '/stop': {
-        const task = this.getRunningTask(chatId);
+        const task = this.getRunningTask(scopeKey);
         // Always drain the queue first — otherwise the running task's
         // finally block immediately picks the next queued message via
         // processQueue and the user's "stop" intent silently fails.
-        const cleared = this.clearQueue(chatId);
+        const cleared = this.clearQueue(scopeKey);
         if (task) {
           this.audit.log({ event: 'task_stopped', botName: this.config.name, chatId, userId, durationMs: Date.now() - task.startTime, meta: { clearedQueue: cleared } });
-          this.stopTask(chatId);
+          this.stopTask(scopeKey);
           const body = cleared > 0
             ? `Current task aborted. Discarded **${cleared}** queued message${cleared === 1 ? '' : 's'}.`
             : 'Current task has been aborted.';
@@ -127,8 +135,8 @@ export class CommandHandler {
       }
 
       case '/status': {
-        const session = this.sessionManager.getSession(chatId);
-        const isRunning = !!this.getRunningTask(chatId);
+        const session = this.sessionManager.getSession(scopeKey);
+        const isRunning = !!this.getRunningTask(scopeKey);
         const botEngine = resolveEngineName(this.config);
         const activeEngine = session.engine ?? botEngine;
         const defaultModel = this.defaultModelForEngine(activeEngine) || '_default_';
@@ -158,7 +166,7 @@ export class CommandHandler {
 
       case '/model': {
         const args = text.slice('/model'.length).trim();
-        await this.handleModelCommand(chatId, args);
+        await this.handleModelCommand(scopeKey, chatId, args);
         return true;
       }
 
@@ -279,8 +287,8 @@ export class CommandHandler {
     }
   }
 
-  private async handleModelCommand(chatId: string, args: string): Promise<void> {
-    const session = this.sessionManager.getSession(chatId);
+  private async handleModelCommand(scopeKey: string, chatId: string, args: string): Promise<void> {
+    const session = this.sessionManager.getSession(scopeKey);
     const botEngine = resolveEngineName(this.config);
     const activeEngine = session.engine ?? botEngine;
     const botDefault = this.defaultModelForEngine(activeEngine);
@@ -317,7 +325,7 @@ export class CommandHandler {
         );
         return;
       }
-      this.sessionManager.setSessionEngine(chatId, normalized);
+      this.sessionManager.setSessionEngine(scopeKey, normalized);
       await this.sender.sendTextNotice(
         chatId,
         `✅ Engine switched to ${normalized}`,
@@ -386,8 +394,8 @@ export class CommandHandler {
 
     // Reset — clear overrides (both engine AND model)
     if (normalized === 'reset' || normalized === 'clear' || normalized === 'default') {
-      this.sessionManager.setSessionModel(chatId, undefined);
-      this.sessionManager.setSessionEngine(chatId, undefined);
+      this.sessionManager.setSessionModel(scopeKey, undefined);
+      this.sessionManager.setSessionEngine(scopeKey, undefined);
       const fallback = botDefault || '_default_';
       await this.sender.sendTextNotice(
         chatId,
@@ -400,7 +408,7 @@ export class CommandHandler {
 
     // Set the model (use only the first token, ignore trailing junk)
     const newModel = args.split(/\s+/)[0];
-    this.sessionManager.setSessionModel(chatId, newModel, activeEngine);
+    this.sessionManager.setSessionModel(scopeKey, newModel, activeEngine);
     await this.sender.sendTextNotice(
       chatId,
       '✅ Model Set',

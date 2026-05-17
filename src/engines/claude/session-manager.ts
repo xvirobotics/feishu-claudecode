@@ -56,6 +56,19 @@ interface PersistedSession {
 const SESSION_TTL_MS = Infinity;
 const MAX_SESSIONS = 10_000;
 
+/**
+ * Manages per-conversation Claude session state.
+ *
+ * Sessions are keyed by an opaque `scopeKey` string. In the default
+ * single-context-per-chat mode this is just `chatId`; when a bot opts into
+ * `perUserContext` the bridge composes `chatId:userId` so each member of a
+ * group keeps their own thread. SessionManager doesn't care which — it just
+ * treats the key as opaque storage.
+ *
+ * Persistence file (`sessions-<bot>.json`) is `Record<string, PersistedSession>`
+ * — same shape across both modes, so existing chatId-keyed sessions continue
+ * to load and resume after a bot opts into perUserContext.
+ */
 export class SessionManager {
   private sessions = new Map<string, UserSession>();
   private cleanupTimer: ReturnType<typeof setInterval>;
@@ -78,8 +91,8 @@ export class SessionManager {
     this.cleanupTimer = setInterval(() => this.cleanupExpired(), 60 * 60 * 1000);
   }
 
-  getSession(chatId: string): UserSession {
-    let session = this.sessions.get(chatId);
+  getSession(scopeKey: string): UserSession {
+    let session = this.sessions.get(scopeKey);
     if (!session) {
       // Evict least-recently-used session if at capacity
       if (this.sessions.size >= MAX_SESSIONS) {
@@ -93,7 +106,7 @@ export class SessionManager {
         cumulativeCostUsd: 0,
         cumulativeDurationMs: 0,
       };
-      this.sessions.set(chatId, session);
+      this.sessions.set(scopeKey, session);
     }
     session.lastUsed = Date.now();
     return session;
@@ -110,24 +123,24 @@ export class SessionManager {
     }
     if (oldestKey) {
       this.sessions.delete(oldestKey);
-      this.logger.debug({ chatId: oldestKey }, 'Evicted oldest session (capacity limit)');
+      this.logger.debug({ scopeKey: oldestKey }, 'Evicted oldest session (capacity limit)');
     }
   }
 
-  setSessionId(chatId: string, sessionId: string, engine?: EngineName): void {
-    const session = this.getSession(chatId);
+  setSessionId(scopeKey: string, sessionId: string, engine?: EngineName): void {
+    const session = this.getSession(scopeKey);
     session.sessionId = sessionId;
     session.sessionIdEngine = engine;
-    this.logger.debug({ chatId, sessionId: sessionId.slice(0, 8), engine }, 'Session ID updated');
+    this.logger.debug({ scopeKey, sessionId: sessionId.slice(0, 8), engine }, 'Session ID updated');
     this.saveToDisk();
   }
 
   /** Set per-session model override. Pass undefined to clear. */
-  setSessionModel(chatId: string, model: string | undefined, engine?: EngineName): void {
-    const session = this.getSession(chatId);
+  setSessionModel(scopeKey: string, model: string | undefined, engine?: EngineName): void {
+    const session = this.getSession(scopeKey);
     session.model = model;
     session.modelEngine = model ? engine : undefined;
-    this.logger.info({ chatId, model, engine: session.modelEngine }, 'Session model override updated');
+    this.logger.info({ scopeKey, model, engine: session.modelEngine }, 'Session model override updated');
     this.saveToDisk();
   }
 
@@ -137,15 +150,15 @@ export class SessionManager {
    * `sessionId` (engines track conversation state in different stores) and
    * any stale model override, so the next turn starts a fresh session.
    */
-  setSessionEngine(chatId: string, engine: EngineName | undefined): void {
-    const session = this.getSession(chatId);
+  setSessionEngine(scopeKey: string, engine: EngineName | undefined): void {
+    const session = this.getSession(scopeKey);
     if (session.engine === engine) return;
     session.engine = engine;
     session.sessionId = undefined;
     session.sessionIdEngine = undefined;
     session.model = undefined;
     session.modelEngine = undefined;
-    this.logger.info({ chatId, engine }, 'Session engine override updated (session reset)');
+    this.logger.info({ scopeKey, engine }, 'Session engine override updated (session reset)');
     this.saveToDisk();
   }
 
@@ -154,8 +167,8 @@ export class SessionManager {
    * clear it. The actual goal mechanism runs inside Claude Code; this is
    * purely so the card can display a persistent badge.
    */
-  setGoal(chatId: string, condition: string | undefined): void {
-    const session = this.getSession(chatId);
+  setGoal(scopeKey: string, condition: string | undefined): void {
+    const session = this.getSession(scopeKey);
     if (condition) {
       session.activeGoal = condition;
       session.goalSetAt = Date.now();
@@ -163,21 +176,21 @@ export class SessionManager {
       session.activeGoal = undefined;
       session.goalSetAt = undefined;
     }
-    this.logger.info({ chatId, hasGoal: !!condition }, 'Session goal updated');
+    this.logger.info({ scopeKey, hasGoal: !!condition }, 'Session goal updated');
     this.saveToDisk();
   }
 
   /** Accumulate token/cost/duration from a completed query into the session totals. */
-  addUsage(chatId: string, tokens: number, costUsd: number, durationMs: number): void {
-    const session = this.getSession(chatId);
+  addUsage(scopeKey: string, tokens: number, costUsd: number, durationMs: number): void {
+    const session = this.getSession(scopeKey);
     session.cumulativeTokens += tokens;
     session.cumulativeCostUsd += costUsd;
     session.cumulativeDurationMs += durationMs;
     this.saveToDisk();
   }
 
-  resetSession(chatId: string): void {
-    const session = this.sessions.get(chatId);
+  resetSession(scopeKey: string): void {
+    const session = this.sessions.get(scopeKey);
     if (session) {
       session.sessionId = undefined;
       session.sessionIdEngine = undefined;
@@ -187,7 +200,7 @@ export class SessionManager {
       session.activeGoal = undefined;
       session.goalSetAt = undefined;
       // Keep working directory
-      this.logger.info({ chatId }, 'Session reset');
+      this.logger.info({ scopeKey }, 'Session reset');
       this.saveToDisk();
     }
   }
@@ -195,10 +208,10 @@ export class SessionManager {
   private cleanupExpired(): void {
     const now = Date.now();
     let changed = false;
-    for (const [chatId, session] of this.sessions) {
+    for (const [scopeKey, session] of this.sessions) {
       if (now - session.lastUsed > SESSION_TTL_MS) {
-        this.sessions.delete(chatId);
-        this.logger.debug({ chatId }, 'Expired session cleaned up');
+        this.sessions.delete(scopeKey);
+        this.logger.debug({ scopeKey }, 'Expired session cleaned up');
         changed = true;
       }
     }
@@ -210,10 +223,10 @@ export class SessionManager {
   private saveToDisk(): void {
     try {
       const data: Record<string, PersistedSession> = {};
-      for (const [chatId, session] of this.sessions) {
+      for (const [scopeKey, session] of this.sessions) {
         // Persist sessions that have a sessionId, model, engine override, or active goal
         if (session.sessionId || session.model || session.engine || session.activeGoal) {
-          data[chatId] = {
+          data[scopeKey] = {
             sessionId: session.sessionId || '',
             sessionIdEngine: session.sessionIdEngine,
             workingDirectory: session.workingDirectory,
@@ -242,10 +255,10 @@ export class SessionManager {
       const data: Record<string, PersistedSession> = JSON.parse(raw);
       const now = Date.now();
       let loaded = 0;
-      for (const [chatId, persisted] of Object.entries(data)) {
+      for (const [scopeKey, persisted] of Object.entries(data)) {
         // Skip expired sessions
         if (now - persisted.lastUsed > SESSION_TTL_MS) continue;
-        this.sessions.set(chatId, {
+        this.sessions.set(scopeKey, {
           sessionId: persisted.sessionId || undefined,
           sessionIdEngine: persisted.sessionIdEngine,
           workingDirectory: persisted.workingDirectory,
