@@ -318,7 +318,7 @@ describe('MetaMemory server request limits', () => {
     expect([401, 403, 404]).toContain(docFetch.status);
   });
 
-  it('peer-token reader can read shared folders (default visibility)', async () => {
+  it('peer-token reader can read shared folders (when explicitly marked shared)', async () => {
     const { url } = await startPeerTokenTestServer((token) =>
       token === 'alice-reader-token' ? { peerName: 'alice', instanceId: 'alice-id' } : undefined,
     );
@@ -327,11 +327,12 @@ describe('MetaMemory server request limits', () => {
       'Content-Type': 'application/json',
       Authorization: 'Bearer admin-token',
     };
-    // Default folder visibility is 'shared'.
+    // Phase 0: folders are private by default — must opt-in to `shared` for
+    // peer-token readers to see them.
     const folderResp = await fetch(`${url}/api/folders`, {
       method: 'POST',
       headers: adminHeaders,
-      body: JSON.stringify({ name: 'public-notes' }),
+      body: JSON.stringify({ name: 'public-notes', visibility: 'shared' }),
     });
     expect(folderResp.status).toBe(201);
     const folder = await folderResp.json() as { id: string };

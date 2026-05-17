@@ -257,6 +257,16 @@ MEMORY_INSTANCE_TOKEN=instance-scoped-token
 
 `METABOT_CLUSTER_URL` 会自动作为 peer 加入，当前实例就能发现对方的 Bot 和 Skill。`MEMORY_INSTANCE_TOKEN` 可写当前实例兜底 namespace 以及已配置的 bot/project namespace，读共享内容；管理员 token 仍保留完整访问权限。
 
+> ⚠️ **破坏性语义变更（Phase 0 默认私有）**：新建文件夹默认 `visibility=private`，对**其他实例的 peer-token 读者不可见**，直到你显式 `mm share` 它。本地 admin / instance-token 读写**不受影响**，已有文件夹也不动（迁移保留原 `visibility=shared`）。
+>
+> ```bash
+> mm share /projects/our-team          # 让 peer 实例能读到
+> mm unshare /projects/our-team        # 收回共享
+> # 或直接 PUT /api/folders/<id>  body: { "visibility": "shared" | "private" }
+> ```
+>
+> 这是在中心化架构（Phase 2–3）落地前，对 P2P 联邦更安全的默认值——避免新文件夹一旦创建就立刻对全网内其他 MetaBot 可见。
+
 ### 定时任务（Claude Code 原生）
 
 直接用 CC 内置的 `CronCreate` 和 `/loop`，会话内即开即用：

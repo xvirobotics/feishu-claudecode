@@ -19,11 +19,11 @@ export function handleCreateFolder(storage: MemoryStorage, body: Record<string, 
     return { status: 400, body: { detail: 'name is required' } };
   }
   const parentId = (body.parent_id as string) || 'root';
-  const visibility = (body.visibility as Visibility) || 'shared';
-  // Only admin can create private folders
-  if (visibility === 'private' && (typeof role !== 'string' || role !== 'admin')) {
-    return { status: 403, body: { detail: 'Only admin can create private folders' } };
-  }
+  // Default-private: folders are invisible to cross-instance peers until
+  // explicitly marked `shared` (via `mm share` or PUT /api/folders/<id>).
+  // Anyone with write access to the namespace may create folders; visibility
+  // can be flipped later by an admin.
+  const visibility = (body.visibility as Visibility) || 'private';
   try {
     const folder = storage.createFolder(name, parentId, visibility, role);
     memoryEvents.emitChange({ type: 'folder_created', folderId: folder.id });

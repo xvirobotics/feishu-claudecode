@@ -237,14 +237,21 @@ export class MemoryStorage {
       END;
     `);
 
-    // Migration: add visibility column if not exists
+    // Migration: add visibility column if not exists.
+    //
+    // First-rollout default is 'shared' so pre-existing folders stay visible
+    // to peers after upgrade (backward-compat for the federated P2P era).
+    // New folders created after this rollout default to 'private' — see
+    // `createFolder` below. To make a folder cross-peer visible, mark it
+    // `shared` explicitly (CLI: `mm share <path>`).
     const cols = this.db.prepare("PRAGMA table_info('folders')").all() as { name: string }[];
     if (!cols.some((c) => c.name === 'visibility')) {
       this.db.exec("ALTER TABLE folders ADD COLUMN visibility TEXT NOT NULL DEFAULT 'shared'");
       this.logger.info('Migration: added visibility column to folders');
     }
 
-    // Seed root folder if not exists
+    // Seed root folder if not exists. Root stays 'shared' — it's the navigation
+    // entry point; per-folder marking takes over below the root.
     const root = this.db.prepare('SELECT id FROM folders WHERE id = ?').get('root');
     if (!root) {
       const now = nowISO();
@@ -263,7 +270,7 @@ export class MemoryStorage {
     return `${parentPath}/${name}`;
   }
 
-  createFolder(name: string, parentId = 'root', visibility: Visibility = 'shared', access: MemoryAccess = 'admin'): Folder {
+  createFolder(name: string, parentId = 'root', visibility: Visibility = 'private', access: MemoryAccess = 'admin'): Folder {
     const folderPath = this.computeFolderPath(parentId, name);
     const principal = normalizeAccess(access);
     if (!this.canWritePath(folderPath, principal) && !canCreateNamespacePath(principal, folderPath)) {

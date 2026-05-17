@@ -246,6 +246,57 @@ print(json.dumps({'name': sys.argv[1], 'parent_id': sys.argv[2]}))
     _curl -X DELETE "$META_MEMORY_URL/api/documents/$1" | _json
     ;;
 
+  # --- Share folder (set visibility=shared so cross-instance peers can read) ---
+  # Usage: mm share <folder-path|folder-id>
+  #   Default-private (Phase 0): newly created folders are invisible to peer
+  #   instances until explicitly shared. Use this to opt a folder in.
+  share|unshare)
+    _verb="$cmd"
+    _vis="shared"
+    [[ "$_verb" == "unshare" ]] && _vis="private"
+    if [[ -z "${1:-}" ]]; then
+      echo "Usage: mm $_verb <folder-path|folder-id>"
+      echo "  e.g. mm $_verb /metabot/weekly-updates"
+      echo "       mm $_verb 1234abcd-..."
+      exit 1
+    fi
+    _target="$1"
+    # If looks like a UUID, use directly; otherwise resolve path -> id by
+    # walking the folder tree from /api/folders.
+    _id=""
+    if [[ "$_target" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+      _id="$_target"
+    else
+      _tree=$(_curl "$META_MEMORY_URL/api/folders")
+      _id=$(python3 -c "
+import json, sys
+tree = json.loads(sys.argv[1])
+target = sys.argv[2].strip('/')
+parts = [p for p in target.split('/') if p]
+def walk(nodes, parts):
+    if not parts:
+        return None
+    head, rest = parts[0], parts[1:]
+    for n in nodes:
+        if n.get('name') == head:
+            if not rest:
+                return n.get('id')
+            return walk(n.get('children', []) or [], rest)
+    return None
+fid = walk(tree if isinstance(tree, list) else tree.get('children', []) or [], parts)
+print(fid or '')
+" "$_tree" "$_target" 2>/dev/null || true)
+    fi
+    if [[ -z "$_id" ]]; then
+      echo "mm $_verb: folder not found: $_target" >&2
+      exit 1
+    fi
+    python3 -c "import json,sys; print(json.dumps({'visibility': sys.argv[1]}))" "$_vis" | \
+    _curl -X PUT "$META_MEMORY_URL/api/folders/$_id" \
+      -H "Content-Type: application/json" \
+      -d @- | _json
+    ;;
+
   health|h)
     _curl "$META_MEMORY_URL/api/health" | _json
     ;;
@@ -276,6 +327,10 @@ print(json.dumps({'name': sys.argv[1], 'parent_id': sys.argv[2]}))
     echo ""
     echo "    mm mkdir <name> [parent_id]    - Create folder (default parent: root)"
     echo "    mm delete <doc_id>             - Delete document"
+    echo ""
+    echo "  Visibility (Phase 0 default-private):"
+    echo "    mm share <folder-path|id>      - Mark folder shared (visible to peers)"
+    echo "    mm unshare <folder-path|id>    - Mark folder private (peer-invisible)"
     echo ""
     echo "  System:"
     echo "    mm health                      - Health check"

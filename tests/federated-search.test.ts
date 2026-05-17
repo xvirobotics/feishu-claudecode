@@ -64,9 +64,12 @@ describe('fanOutFederatedSearch (Stage 3)', () => {
 
   async function seedDoc(memoryUrl: string, adminToken: string, title: string, content: string) {
     const adminHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` };
+    // Phase 0 default-private: peer-token readers can only see folders explicitly
+    // marked `shared`. Federated search tests need cross-instance visibility,
+    // so opt in here.
     const folderResp = await fetch(`${memoryUrl}/api/folders`, {
       method: 'POST', headers: adminHeaders,
-      body: JSON.stringify({ name: `f-${title}` }),
+      body: JSON.stringify({ name: `f-${title}`, visibility: 'shared' }),
     });
     const folder = await folderResp.json() as { id: string };
     await fetch(`${memoryUrl}/api/documents`, {
