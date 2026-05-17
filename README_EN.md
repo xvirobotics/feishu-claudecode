@@ -233,6 +233,16 @@ under /projects/deployment.
 Search MetaMemory for our API design conventions.
 ```
 
+> ⚠️ **Breaking semantic change — Phase 0 default-private folders.** Newly created folders now default to `visibility=private`, meaning **other instances' peer-token readers cannot see them** until you explicitly `mm share` them. Local admin / instance-token reads are **unchanged**, and existing folders are **not** migrated (the SQLite migration keeps them at `visibility=shared`).
+>
+> ```bash
+> mm share /projects/our-team          # opt in: peer instances can read
+> mm unshare /projects/our-team        # revoke
+> # or PUT /api/folders/<id>  body: { "visibility": "shared" | "private" }
+> ```
+>
+> This is the safer default in the P2P-federation era while the centralized architecture (Phase 2–3) is being built — new folders no longer become visible to every MetaBot on the LAN the instant they're created.
+
 ### Scheduling (Claude Code native)
 
 Use CC's built-in `CronCreate` and `/loop` — zero setup, runs inside the session:
