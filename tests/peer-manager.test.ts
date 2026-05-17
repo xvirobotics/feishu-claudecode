@@ -433,6 +433,97 @@ describe('PeerManager', () => {
     });
   });
 
+  it('addDynamicPeer registers an mDNS-sourced peer and refreshes it', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ bots: [{ name: 'bob-bot', platform: 'feishu', workingDirectory: '/w' }] }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    manager = new PeerManager([], createLogger());
+    const added = manager.addDynamicPeer({
+      name: 'bob',
+      url: 'http://192.168.1.42:9100',
+      source: 'mdns',
+      instanceId: 'bob-xyz',
+    });
+    expect(added).toBe(true);
+
+    // Wait a microtask for the async refresh kicked off in addDynamicPeer.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const statuses = manager.getPeerStatuses();
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0]).toMatchObject({
+      name: 'bob',
+      source: 'mdns',
+      instanceId: 'bob-xyz',
+      healthy: true,
+    });
+    expect(manager.getPeerBots()[0].name).toBe('bob-bot');
+  });
+
+  it('addDynamicPeer skips when URL already exists as a static peer', () => {
+    manager = new PeerManager([
+      { name: 'alice', url: 'http://192.168.1.42:9100', secret: 'sec' },
+    ], createLogger());
+    const added = manager.addDynamicPeer({
+      name: 'alice-mdns',
+      url: 'http://192.168.1.42:9100',
+      source: 'mdns',
+      instanceId: 'alice-id',
+    });
+    expect(added).toBe(false);
+    const statuses = manager.getPeerStatuses();
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0].source).toBe('static');
+  });
+
+  it('addDynamicPeer suffixes name on collision', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ bots: [] }),
+    }));
+
+    manager = new PeerManager([
+      { name: 'bob', url: 'http://10.0.0.1:9100' },
+    ], createLogger());
+    const added = manager.addDynamicPeer({
+      name: 'bob',
+      url: 'http://192.168.1.42:9100',
+      source: 'mdns',
+      instanceId: 'bob-id',
+    });
+    expect(added).toBe(true);
+    const names = manager.getPeerStatuses().map((s) => s.name);
+    expect(names).toContain('bob');
+    expect(names.some((n) => n.startsWith('bob-') && n !== 'bob')).toBe(true);
+  });
+
+  it('removeDynamicPeer removes by instanceId but keeps static peers', () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ bots: [] }),
+    }));
+    manager = new PeerManager([
+      { name: 'staticPeer', url: 'http://10.0.0.1:9100' },
+    ], createLogger());
+    manager.addDynamicPeer({
+      name: 'bob',
+      url: 'http://192.168.1.42:9100',
+      source: 'mdns',
+      instanceId: 'bob-id',
+    });
+
+    expect(manager.removeDynamicPeer({ instanceId: 'bob-id' })).toBe(true);
+    const statuses = manager.getPeerStatuses();
+    expect(statuses).toHaveLength(1);
+    expect(statuses[0].name).toBe('staticPeer');
+
+    // Static peer cannot be removed by removeDynamicPeer.
+    expect(manager.removeDynamicPeer({ url: 'http://10.0.0.1:9100' })).toBe(false);
+  });
+
   it('returns cached peer memory documents by peer and document id', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
       if (url.includes('/api/bots')) {

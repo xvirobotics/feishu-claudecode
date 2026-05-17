@@ -60,6 +60,8 @@ export interface PeerMemorySearchResult {
   lastSeenAt: number;
 }
 
+export type PeerSource = 'static' | 'cluster' | 'mdns' | 'manual';
+
 export interface PeerStatus {
   name: string;
   url: string;
@@ -67,11 +69,15 @@ export interface PeerStatus {
   lastChecked: number;
   lastHealthy: number;
   botCount: number;
+  source: PeerSource;
+  instanceId?: string;
   error?: string;
 }
 
 interface PeerState {
   config: PeerConfig;
+  source: PeerSource;
+  instanceId?: string;
   healthy: boolean;
   lastChecked: number;
   lastHealthy: number;
@@ -128,6 +134,7 @@ const TASK_FORWARD_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 export class PeerManager {
   private peers: Map<string, PeerState> = new Map();
   private pollTimer: ReturnType<typeof setInterval> | undefined;
+  private pollIntervalMs: number = DEFAULT_POLL_INTERVAL_MS;
   private logger: Logger;
   private cachePath: string;
   private cache: PeerCacheFile;
@@ -142,6 +149,7 @@ export class PeerManager {
       const normalizedUrl = config.url.replace(/\/+$/, '');
       this.peers.set(config.name, {
         config: { ...config, url: normalizedUrl },
+        source: 'static',
         healthy: false,
         lastChecked: 0,
         lastHealthy: 0,
@@ -150,18 +158,23 @@ export class PeerManager {
       });
     }
 
-    const interval = process.env.METABOT_PEER_POLL_INTERVAL_MS
+    this.pollIntervalMs = process.env.METABOT_PEER_POLL_INTERVAL_MS
       ? parseInt(process.env.METABOT_PEER_POLL_INTERVAL_MS, 10)
       : DEFAULT_POLL_INTERVAL_MS;
 
     if (this.peers.size > 0) {
-      this.pollTimer = setInterval(() => {
-        this.refreshAll().catch((err) => {
-          this.logger.error({ err }, 'Peer refresh cycle failed');
-        });
-      }, interval);
-      this.pollTimer.unref();
+      this.ensurePollTimer();
     }
+  }
+
+  private ensurePollTimer(): void {
+    if (this.pollTimer) return;
+    this.pollTimer = setInterval(() => {
+      this.refreshAll().catch((err) => {
+        this.logger.error({ err }, 'Peer refresh cycle failed');
+      });
+    }, this.pollIntervalMs);
+    this.pollTimer.unref();
   }
 
   async refreshAll(): Promise<void> {
@@ -650,8 +663,84 @@ export class PeerManager {
       lastChecked: state.lastChecked,
       lastHealthy: state.lastHealthy,
       botCount: state.bots.length,
+      source: state.source,
+      ...(state.instanceId ? { instanceId: state.instanceId } : {}),
       ...(state.error ? { error: state.error } : {}),
     }));
+  }
+
+  /**
+   * Register a peer discovered at runtime (e.g. via mDNS). Static peers that
+   * point at the same URL take precedence — the dynamic record is dropped on
+   * URL collision so that pre-configured secrets keep working. Returns true
+   * when the peer was newly added, false when ignored (duplicate or self).
+   */
+  addDynamicPeer(input: {
+    name: string;
+    url: string;
+    source: PeerSource;
+    instanceId?: string;
+    secret?: string;
+  }): boolean {
+    const normalizedUrl = input.url.replace(/\/+$/, '');
+    // Skip self / duplicates by URL.
+    for (const state of this.peers.values()) {
+      if (state.config.url === normalizedUrl) {
+        return false;
+      }
+    }
+    // Avoid name collisions — suffix with a short fragment of the URL.
+    let name = input.name;
+    if (this.peers.has(name)) {
+      const suffix = normalizedUrl.replace(/^https?:\/\//, '').replace(/[:.]/g, '-');
+      name = `${name}-${suffix}`;
+    }
+    this.peers.set(name, {
+      config: {
+        name,
+        url: normalizedUrl,
+        ...(input.secret ? { secret: input.secret } : {}),
+      },
+      source: input.source,
+      ...(input.instanceId ? { instanceId: input.instanceId } : {}),
+      healthy: false,
+      lastChecked: 0,
+      lastHealthy: 0,
+      bots: [],
+      skills: [],
+    });
+    this.logger.info(
+      { peerName: name, peerUrl: normalizedUrl, source: input.source, instanceId: input.instanceId },
+      'Peer added dynamically',
+    );
+    this.ensurePollTimer();
+    // Refresh asynchronously so the caller doesn't have to wait.
+    const state = this.peers.get(name);
+    if (state) {
+      this.refreshPeer(state).catch((err) => {
+        this.logger.warn({ err: err?.message || err, peerName: name }, 'Initial refresh of dynamic peer failed');
+      });
+    }
+    return true;
+  }
+
+  /**
+   * Remove a previously-added dynamic peer. Static peers are never removed by
+   * this method. Returns true when a record was removed.
+   */
+  removeDynamicPeer(match: { instanceId?: string; url?: string }): boolean {
+    const normalizedUrl = match.url ? match.url.replace(/\/+$/, '') : undefined;
+    for (const [name, state] of this.peers.entries()) {
+      if (state.source === 'static') continue;
+      const matchesInstance = match.instanceId && state.instanceId === match.instanceId;
+      const matchesUrl = normalizedUrl && state.config.url === normalizedUrl;
+      if (matchesInstance || matchesUrl) {
+        this.peers.delete(name);
+        this.logger.info({ peerName: name, source: state.source }, 'Dynamic peer removed');
+        return true;
+      }
+    }
+    return false;
   }
 
   destroy(): void {

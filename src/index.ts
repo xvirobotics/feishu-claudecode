@@ -13,6 +13,7 @@ import { startWechatBot } from './wechat/wechat-bot.js';
 import { BotRegistry } from './api/bot-registry.js';
 import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
+import { startMdns, type MdnsHandle } from './cluster/mdns.js';
 import { TaskScheduler } from './scheduler/task-scheduler.js';
 import { startApiServer } from './api/http-server.js';
 import { startMemoryServer } from './memory/memory-server.js';
@@ -199,14 +200,43 @@ async function main() {
   // Create task scheduler
   const scheduler = new TaskScheduler(registry, logger);
 
-  // Initialize peer manager for cross-instance bot discovery
-  let peerManager: PeerManager | undefined;
+  // Initialize peer manager for cross-instance bot discovery. We always
+  // construct it (even with zero static peers) so mDNS-discovered peers
+  // have somewhere to land.
+  const peerManager = new PeerManager(appConfig.peers, logger);
   if (appConfig.peers.length > 0) {
-    peerManager = new PeerManager(appConfig.peers, logger);
     await peerManager.refreshAll();
     const statuses = peerManager.getPeerStatuses();
     const healthyCount = statuses.filter((s) => s.healthy).length;
     logger.info({ peerCount: statuses.length, healthyPeers: healthyCount }, 'Peer manager initialized');
+  }
+
+  // Start mDNS LAN auto-discovery. No-op when discoveryMode is off/standalone.
+  let mdnsHandle: MdnsHandle | undefined;
+  if (process.env.METABOT_MDNS_ENABLED !== 'false') {
+    try {
+      mdnsHandle = await startMdns({
+        identity: appConfig.instance,
+        port: appConfig.api.port,
+        logger,
+        ...(appConfig.instance.clusterId ? { clusterFilter: appConfig.instance.clusterId } : {}),
+        onPeerDiscovered: (peer) => {
+          peerManager.addDynamicPeer({
+            name: peer.instanceName || peer.instanceId,
+            url: peer.url,
+            source: 'mdns',
+            instanceId: peer.instanceId,
+          });
+        },
+        onPeerLost: (info) => {
+          if (info.instanceId) {
+            peerManager.removeDynamicPeer({ instanceId: info.instanceId });
+          }
+        },
+      });
+    } catch (err: any) {
+      logger.warn({ err: err?.message || err }, 'mDNS startup failed; LAN auto-discovery disabled');
+    }
   }
 
   // Start embedded MetaMemory server
@@ -301,9 +331,12 @@ async function main() {
   const shutdown = () => {
     logger.info('Shutting down...');
     scheduler.destroy();
-    if (peerManager) {
-      peerManager.destroy();
+    if (mdnsHandle) {
+      mdnsHandle.stop().catch((err) => {
+        logger.warn({ err: err?.message || err }, 'mDNS shutdown failed');
+      });
     }
+    peerManager.destroy();
     apiServer.close();
     if (docSync) {
       docSync.destroy();

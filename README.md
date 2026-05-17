@@ -195,7 +195,7 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 | **MetaSkill（可选）** | Agent 工厂。`/metaskill` 一键生成可迁移的 Agent 团队。默认不装，按需 `cp src/skills/metaskill/` 启用 |
 | **飞书 Lark CLI** | 200+ 命令覆盖文档、消息、日历、任务等 11 大业务域，19 个 AI Agent Skills |
 | **Skill Hub** | 跨实例技能共享注册中心。Skill 带 owner/hash/visibility 元数据，`mb skills` 发布、发现、安装，FTS5 全文搜索 |
-| **Peers 联邦** | 跨实例 Bot/Skill 发现和任务路由，支持 `METABOT_CLUSTER_URL` 内网 bootstrap，`mb talk alice/backend-bot` 自动路由 |
+| **Peers 联邦** | 跨实例 Bot/Skill 发现和任务路由。同内网通过 mDNS 自动发现（零配置），也支持 `METABOT_CLUSTER_URL` 内网 bootstrap 和静态 `METABOT_PEERS`。`mb talk alice/backend-bot` 自动路由 |
 | **语音助手** | Jarvis 模式 — AirPods 说 "Hey Siri, Jarvis" 语音控制 Agent |
 
 ## 快速开始
@@ -402,6 +402,8 @@ MEMORY_INSTANCE_TOKEN=instance-scoped-token
 | `MEMORY_INSTANCE_TOKEN` | — | 实例级 Token（可写实例兜底 namespace 和配置的 bot/project namespace，可读共享内容） |
 | `METABOT_INSTANCE_ID` | 自动生成 | 当前 MetaBot 实例 ID，用于联邦发现和 memory namespace |
 | `METABOT_CLUSTER_URL` | — | 可选的内网 cluster/registry 引导地址，当前会自动作为 peer 加入 |
+| `METABOT_DISCOVERY_MODE` | `auto` | mDNS 局域网自动发现：`auto`（广播+浏览）、`static`（仅浏览）、`standalone`/`off`（关闭） |
+| `METABOT_MDNS_ENABLED` | true | 单独关闭 mDNS（不影响其它发现模式） |
 | `METABOT_CLUSTER_SECRET` | — | `METABOT_CLUSTER_URL` 的可选 Token |
 | `METABOT_MEMORY_NAMESPACE` | `/instances/<instanceId>` | 当前实例兜底 memory namespace |
 | `METABOT_BOT_MEMORY_NAMESPACE` | `/bots/default` | 单 Bot 稳定写入 namespace 覆盖 |

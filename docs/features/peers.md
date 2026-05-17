@@ -13,11 +13,35 @@ Peers enables a **federated architecture** where multiple MetaBot instances disc
 ## How It Works
 
 1. **Identity** — Each instance has a stable identity in `~/.metabot/identity.json`
-2. **Discovery** — Each instance periodically polls its peers' `GET /api/bots` and `GET /api/skills` endpoints (every 30 seconds)
-3. **Caching** — Bot and skill lists are cached locally for fast lookups
-4. **Routing** — When a bot name isn't found locally, the request is forwarded to the peer that has it
-5. **Anti-loop** — Forwarded requests carry `X-MetaBot-Origin` header to prevent circular delegation
-6. **Anti-transitive** — Bots and skills that are themselves from a peer are filtered out (no transitive forwarding)
+2. **LAN auto-discovery** — Two instances on the same LAN find each other automatically via mDNS (`_metabot._tcp.local`). No configuration needed.
+3. **Discovery polling** — Each instance periodically polls its peers' `GET /api/bots` and `GET /api/skills` endpoints (every 30 seconds)
+4. **Caching** — Bot and skill lists are cached locally for fast lookups
+5. **Routing** — When a bot name isn't found locally, the request is forwarded to the peer that has it
+6. **Anti-loop** — Forwarded requests carry `X-MetaBot-Origin` header to prevent circular delegation
+7. **Anti-transitive** — Bots and skills that are themselves from a peer are filtered out (no transitive forwarding)
+
+## LAN Auto-Discovery (mDNS)
+
+Two MetaBot instances on the same local network find each other within ~30 seconds of startup with **zero `.env` configuration**. Each instance advertises an `_metabot._tcp.local` service whose TXT record carries `instanceId`, `instanceName`, optional `clusterId`, and a short SHA-256 fingerprint (`pubkeyFp`) of the instance's Ed25519 public key. No secrets are broadcast.
+
+Auto-discovered peers appear in `GET /api/peers` with `source: "mdns"`. They participate in the existing handshake — Static peers configured via `METABOT_PEERS` or `bots.json` are merged in and **take precedence on URL collision** (so any pre-configured secret keeps working).
+
+### Controlling discovery
+
+`METABOT_DISCOVERY_MODE` (defaults to `auto`):
+
+- `auto` — advertise + browse (default)
+- `static` — browse only; do not advertise this instance
+- `standalone` — do not advertise and do not browse
+- `off` — same as `standalone`
+
+To disable mDNS without touching `discoveryMode`, set `METABOT_MDNS_ENABLED=false`.
+
+### Manual verification on two LAN machines
+
+1. Install MetaBot on both machines and start each with the install-default `.env` (no `METABOT_PEERS`).
+2. On either machine, wait ~30 seconds, then `curl http://localhost:9100/api/peers`.
+3. The other instance appears with `"source": "mdns"` and `"healthy": true`.
 
 ## Configuration
 
@@ -133,9 +157,13 @@ Each peer is polled every 30 seconds. The `GET /api/peers` endpoint returns heal
     "healthy": true,
     "lastChecked": 1710000000000,
     "lastHealthy": 1710000000000,
-    "botCount": 3
+    "botCount": 3,
+    "source": "mdns",
+    "instanceId": "alice-laptop-3f9a12"
   }
 ]
 ```
+
+The `source` field is one of `static` (from `METABOT_PEERS` or `bots.json`), `cluster` (from `METABOT_CLUSTER_URL`), `mdns` (auto-discovered on the LAN), or `manual` (added at runtime via API).
 
 Unhealthy peers are retried on the next poll cycle. Their cached bot lists are cleared when they become unreachable.
