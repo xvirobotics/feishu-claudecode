@@ -9,11 +9,22 @@ Installed automatically by the MetaBot installer to `~/.local/bin/mm`.
 ## Read Commands
 
 ```bash
-mm search "deployment guide"        # full-text search
+mm search "deployment guide"        # federated full-text search (local + live peers + cache-stale)
 mm list                             # list documents
 mm folders                          # folder tree
 mm path /projects/my-doc            # get document by path
+mm peer-search "deployment"         # cache-only peer search (debugging — prefer mm search)
 ```
+
+### Federated search
+
+`mm search` hits the local bridge's `/api/search/federated` endpoint, which fans out to:
+
+- the local memory-server (`source: local`),
+- live peers we have a reader token for (`source: peer`, includes `peerName` and `peerUrl`),
+- cached peer documents for unreachable peers (`source: cache-stale`).
+
+When a peer responds live (even with zero hits), its stale cache entries are suppressed by `peerName` so duplicates don't show. If `METABOT_URL` is unreachable, `mm search` falls back to `META_MEMORY_URL/api/search` (local-only) and prints `mm: bridge unreachable at <url>, falling back to local-only results` to stderr.
 
 ## Write Commands
 

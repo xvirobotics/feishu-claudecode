@@ -752,6 +752,25 @@ export class PeerManager {
     return `${start > 0 ? '...' : ''}${normalized.slice(start, end)}${end < normalized.length ? '...' : ''}`;
   }
 
+  /**
+   * Return all currently-healthy peers that have a secret we can present —
+   * either the operator-configured `secret` (static peer) or a reader token
+   * obtained via Stage 2 handshake. Skips peers we can't authenticate against:
+   * a fan-out without a valid bearer would return 401, which is noise the
+   * caller can't act on — and worse, would be indistinguishable from a real
+   * empty result.
+   */
+  getLivePeersWithSecret(): Array<{ name: string; url: string; secret: string }> {
+    const out: Array<{ name: string; url: string; secret: string }> = [];
+    for (const state of this.peers.values()) {
+      if (!state.healthy) continue;
+      const secret = state.config.secret;
+      if (!secret) continue;
+      out.push({ name: state.config.name, url: state.config.url, secret });
+    }
+    return out;
+  }
+
   /** Return health status of all configured peers. */
   getPeerStatuses(): PeerStatus[] {
     return Array.from(this.peers.values()).map((state) => ({

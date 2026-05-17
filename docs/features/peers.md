@@ -42,7 +42,7 @@ To disable mDNS without touching `discoveryMode`, set `METABOT_MDNS_ENABLED=fals
 1. Install MetaBot on both machines and start each with the install-default `.env` (no `METABOT_PEERS`).
 2. On either machine, wait ~30 seconds, then `curl http://localhost:9100/api/peers`.
 3. The other instance appears with `"source": "mdns"` and `"healthy": true`.
-4. `mm peer-search "<query>"` returns results from the other machine — no manual secret exchange.
+4. `mm search "<query>"` returns results from both machines — local hits tagged `source: local`, peer hits tagged `source: peer`, with cached-only fallbacks tagged `source: cache-stale`. No manual secret exchange.
 
 ## Auto Token Handshake
 

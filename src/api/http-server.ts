@@ -34,6 +34,7 @@ import {
   handleManifestRoutes,
   handleExecutorRoutes,
   handlePeerMemoryRoutes,
+  handleSearchRoutes,
 } from './routes/index.js';
 import type { RouteContext } from './routes/index.js';
 import type { InstanceIdentity } from '../cluster/identity.js';
@@ -110,6 +111,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     handlePeerMemoryRoutes,
     handleSkillHubRoutes,
     handleExecutorRoutes,
+    handleSearchRoutes,
   ];
 
   const server = http.createServer(async (req, res) => {

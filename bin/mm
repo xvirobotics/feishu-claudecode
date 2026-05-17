@@ -82,10 +82,23 @@ shift 2>/dev/null || true
 
 case "$cmd" in
   search|s)
+    # Federated search: hit the bridge so it fans out to local + live peers
+    # + cache-stale, returning hits tagged `source: local|peer|cache-stale`.
+    # If the bridge is unreachable, fall back to local-only via memory-server
+    # and warn on stderr (same UX rule as archive-unreachable).
     query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(' '.join(sys.argv[1:])))" "$@" 2>/dev/null || echo "$*")
-    _curl "$META_MEMORY_URL/api/search?q=$query" | _json
+    fed_resp=$(_metabot_curl --fail --max-time 5 "$METABOT_URL/api/search/federated?q=$query" 2>/dev/null || true)
+    if [[ -n "$fed_resp" ]]; then
+      echo "$fed_resp" | _json
+    else
+      echo "mm: bridge unreachable at $METABOT_URL, falling back to local-only results" >&2
+      _curl "$META_MEMORY_URL/api/search?q=$query" | _json
+    fi
     ;;
   peer-search|ps)
+    # Cached-only peer search: returns just the cache-stale layer (live peer
+    # hits and local results are excluded). Useful for inspecting what the
+    # mesh cache has; for normal "search across everything" use `mm search`.
     query=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(' '.join(sys.argv[1:])))" "$@" 2>/dev/null || echo "$*")
     _metabot_curl "$METABOT_URL/api/peer-memory/search?q=$query" | _json
     ;;

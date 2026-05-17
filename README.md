@@ -195,7 +195,7 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 | **MetaSkill（可选）** | Agent 工厂。`/metaskill` 一键生成可迁移的 Agent 团队。默认不装，按需 `cp src/skills/metaskill/` 启用 |
 | **飞书 Lark CLI** | 200+ 命令覆盖文档、消息、日历、任务等 11 大业务域，19 个 AI Agent Skills |
 | **Skill Hub** | 跨实例技能共享注册中心。Skill 带 owner/hash/visibility 元数据，`mb skills` 发布、发现、安装，FTS5 全文搜索 |
-| **Peers 联邦** | 跨实例 Bot/Skill 发现和任务路由。同内网通过 mDNS 自动发现（零配置）+ 自动握手交换 reader token，`mm peer-search` 直接互读；也支持 `METABOT_CLUSTER_URL` 内网 bootstrap 和静态 `METABOT_PEERS`。`mb talk alice/backend-bot` 自动路由 |
+| **Peers 联邦** | 跨实例 Bot/Skill 发现和任务路由。同内网通过 mDNS 自动发现（零配置）+ 自动握手交换 reader token，`mm search` 即可联邦读（本地 + 在线 peer + 缓存兜底，按 `source` 标签合并）；也支持 `METABOT_CLUSTER_URL` 内网 bootstrap 和静态 `METABOT_PEERS`。`mb talk alice/backend-bot` 自动路由 |
 | **语音助手** | Jarvis 模式 — AirPods 说 "Hey Siri, Jarvis" 语音控制 Agent |
 
 ## 快速开始
@@ -523,7 +523,7 @@ metabot start / stop / restart      # PM2 管理
 metabot logs                        # 查看实时日志
 
 # MetaMemory
-mm search "部署指南"                 # 全文搜索
+mm search "部署指南"                 # 全文搜索（联邦：本地 + 在线 peer + 缓存兜底）
 mm list                             # 列出文档
 mm folders                          # 文件夹树
 
