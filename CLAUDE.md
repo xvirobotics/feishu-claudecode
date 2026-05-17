@@ -102,6 +102,7 @@ Slim summary only — see [docs/internal/architecture.md](docs/internal/architec
 - **Single-bot mode** (default): `.env` with `FEISHU_APP_ID` + `FEISHU_APP_SECRET` (see `.env.example`).
 - **Multi-bot mode**: `BOTS_CONFIG=./bots.json` runs multiple bots in one process (see `bots.example.json`). When set, the `FEISHU_APP_*` env vars are ignored.
 - **PersistentClaudeExecutor** (opt-in): `METABOT_PERSISTENT_EXECUTOR=true` keeps one long-lived `query()` per `chatId` so subagents / Agent Teams / `/background` / `/goal` survive across turns. Per-bot override via `persistentExecutor` in `bots.json`. Observability at `GET /api/executors`.
+- **Per-user context** (opt-in): `perUserContext: true` in `bots.json` scopes conversation state (session, executor, queue, running task) per `chatId:userId` instead of per `chatId`. In group chats each member gets their own thread; `/reset` only clears the caller's context. p2p chats are unaffected (already 1:1). Default false.
 - **MetaMemory**: embedded SQLite document server at `META_MEMORY_URL` (default `http://localhost:8100`). Claude reads/writes via the `metamemory` skill; `/memory list|search|status` query directly. In federated/LAN mode, each instance has a stable fallback `METABOT_MEMORY_NAMESPACE=/instances/<instanceId>`, while bots can use stable project namespaces via `memoryProject` (`/projects/<slug>`) or explicit `memoryNamespace`; `MEMORY_INSTANCE_TOKEN` can write the instance fallback plus configured bot/project namespaces while reading shared folders.
 
 ## Branching Strategy
