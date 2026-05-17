@@ -1,26 +1,47 @@
 ---
 name: metabot
-description: "MetaBot HTTP API for agent collaboration: talk to other bots, manage bots and peers, share skills, run voice calls. Use when the user wants to delegate work to another bot, create/remove bots, publish skills, or check peer status."
+description: "Talk to other MetaBot bots (`mb talk` — send a message to another bot, including cross-instance peers). Use when you want to delegate to or message another bot, e.g. 'talk to bot X', '跟其他 bot 说话', 'send message to peer bot', 'ask the deploy-bot', 'delegate to bot'. Also covers bot/peer management, skill hub, voice calls."
 ---
 
-## MetaBot API
+## Quickstart — Talk to another bot
 
-MetaBot exposes an HTTP API for agent-to-agent collaboration, bot management, and skill sharing.
+Use this skill whenever you want to send a message to another MetaBot bot. The `mb` CLI is pre-installed and handles auth automatically.
 
-Your bot name and chat ID are provided in the system prompt (look for "You are running as bot ... in chat ..."). Use those values for `botName` and `chatId` in the commands below.
+```bash
+# Talk to a local bot
+mb talk <botName> <chatId> "<message>"
 
-### Quick Commands (mb shortcut)
+# Talk to a bot on a federated peer instance
+mb talk <peerName>/<botName> <chatId> "<message>"
+```
 
-The `mb` shell function is pre-installed and handles auth automatically. **Prefer `mb` over raw curl:**
+**Semantics:**
+- **Asynchronous.** The target bot receives the message in its own chat/session and processes the turn there. Its reply lands in the target bot's chat (not as the return value of this command).
+- **Cross-instance auto-routing.** If `<botName>` isn't on this instance, MetaBot transparently forwards to the peer that hosts it. Use `<peerName>/<botName>` to target a specific peer directly.
+- **Discovery.** Run `mb bots` to list all reachable bots (local + peer). Use `mb peers` to see federated instances.
+
+**Not the same as Agent Teams `SendMessage`:** `SendMessage` addresses teammates inside your current Agent Team session. `mb talk` addresses other bots — separate sessions, separate chats, separate users on the other side.
+
+Your own bot name and chat ID are in the system prompt ("You are running as bot ... in chat ...") — pass those as needed.
+
+### Examples
+
+```bash
+# Ask backend-bot to deploy something
+mb talk backend-bot chat_AAA "Please deploy the latest dev branch and report when green."
+
+# Ask a peer's research-bot to look something up
+mb talk alice/research-bot chat_BBB "What does our retention dashboard say for last week?"
+```
+
+## Other `mb` Commands
+
+The `mb` shell function wraps the MetaBot HTTP API. Talk is the headline; the rest below covers management, peers, and observability.
 
 ```bash
 # Bots
 mb bots                                    # List all bots (local + peer)
 mb bot <name>                              # Get bot details
-
-# Agent Talk (cross-instance auto-routing)
-mb talk <botName> <chatId> <prompt>        # Talk to a bot
-mb talk alice/backend-bot <chatId> <prompt> # Talk to a specific peer's bot
 
 # Peers
 mb peers                                   # List peers and their status
@@ -57,14 +78,6 @@ For ad-hoc scheduling within this session, prefer Claude Code's native schedulin
 These run inside the current Claude session, with no MetaBot server involvement, and stop when the session ends.
 
 If you need **persistent server-side scheduling** that survives Claude restarts and lives in MetaBot's scheduler (so other bots / your future self can list and cancel them via `mb`), invoke the optional `/metaschedule` skill — it documents the `mb schedule` / `/api/schedule` surface. The skill ships with the MetaBot source tree but is **not installed by default**; copy `src/skills/metaschedule/` into `~/.claude/skills/` (or the bot's `.claude/skills/`) to enable it.
-
-### Cross-Instance Agent Talk
-
-When you talk to a bot that isn't on the local instance, MetaBot automatically routes the request to the peer instance that hosts that bot. No special syntax is needed — just use `mb talk <botName> <chatId> <prompt>` as usual.
-
-Use qualified names to target a specific peer: `mb talk <peerName>/<botName> <chatId> <prompt>`.
-
-Use `mb bots` to see all available bots including those on peer instances (they will have `peerName` and `peerUrl` fields indicating which instance hosts them).
 
 ### API Reference (for complex operations)
 
