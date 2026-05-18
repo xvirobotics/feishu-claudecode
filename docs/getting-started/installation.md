@@ -18,11 +18,13 @@ The installer walks you through: working directory → Claude auth → IM creden
 
 ## Update
 
-Already installed? One command to pull, rebuild, and restart:
+Already installed? One command to pull, rebuild, update skills, and restart:
 
 ```bash
 metabot update
 ```
+
+If `lark-cli` or Feishu/Lark skills were already installed, `metabot update` updates them too and syncs them into the bot workspace.
 
 ## Manual Install
 

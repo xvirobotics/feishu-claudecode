@@ -21,11 +21,13 @@ fi
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
 info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
 success() { echo -e "${GREEN}[OK]${NC} $*"; }
+warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 error()   { echo -e "${RED}[ERROR]${NC} $*"; }
 
 cmd_update() {
@@ -77,9 +79,31 @@ cmd_update() {
   # Update skills in ~/.claude/skills and ~/.codex/skills
   SKILLS_DIR="$HOME/.claude/skills"
   CODEX_SKILLS_DIR="$HOME/.codex/skills"
+  AGENTS_SKILLS_DIR="$HOME/.agents/skills"
   mkdir -p "$SKILLS_DIR" "$CODEX_SKILLS_DIR"
   info "Updating skills..."
   local src=""
+  local -a lark_skill_names=(
+    lark-base
+    lark-calendar
+    lark-contact
+    lark-doc
+    lark-drive
+    lark-event
+    lark-im
+    lark-mail
+    lark-minutes
+    lark-openapi-explorer
+    lark-shared
+    lark-sheets
+    lark-skill-maker
+    lark-task
+    lark-vc
+    lark-whiteboard
+    lark-wiki
+    lark-workflow-meeting-summary
+    lark-workflow-standup-report
+  )
   # metaskill / metaschedule are opt-in (not in the default list); CC native
   # CronCreate / /loop already cover ad-hoc scheduling. Sources still ship in
   # src/skills/* — users who want them can copy manually.
@@ -115,10 +139,52 @@ cmd_update() {
     rm -rf "$CODEX_SKILLS_DIR/metaskill"
   fi
 
-  # Update lark-cli skills only if previously installed (opt-in via install.sh)
+  # Update lark-cli and its AI Agent skills only if previously installed.
+  # New installs still opt in via install.sh; updates keep existing setups fresh.
   local has_lark_skills=false
-  if [[ -d "$SKILLS_DIR/lark-doc" ]]; then
+  local skill_root
+  for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+    if [[ -d "$skill_root/lark-doc" ]]; then
+      has_lark_skills=true
+      break
+    fi
+  done
+  if command -v lark-cli &>/dev/null; then
+    info "Updating lark-cli..."
+    if npm install -g @larksuite/cli@latest 2>/dev/null || npm install -g --prefix "$HOME/.local" @larksuite/cli@latest 2>/dev/null; then
+      success "lark-cli updated ($(lark-cli --version 2>/dev/null || echo 'version unknown'))"
+    else
+      warn "lark-cli update failed; MetaBot update will continue"
+    fi
     has_lark_skills=true
+  fi
+  if [[ "$has_lark_skills" == "true" ]]; then
+    info "Updating lark-cli AI Agent skills..."
+    if npx skills add larksuite/cli --all -y -g 2>/dev/null; then
+      success "lark-cli AI Agent skills updated"
+    else
+      warn "lark-cli skills update failed; keeping existing installed copies"
+    fi
+    # Mirror lark-cli skills into Claude/Codex skill roots. Recent lark-cli
+    # installs use ~/.agents/skills, while older installs may use ~/.claude.
+    local lark_skill
+    for lark_skill in "${lark_skill_names[@]}"; do
+      local lark_src=""
+      for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+        if [[ -d "$skill_root/$lark_skill" ]]; then
+          lark_src="$skill_root/$lark_skill"
+          break
+        fi
+      done
+      if [[ -n "$lark_src" ]]; then
+        for dst_root in "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+          mkdir -p "$dst_root/$lark_skill"
+          if [[ "$lark_src" != "$dst_root/$lark_skill" ]]; then
+            cp -r "$lark_src/." "$dst_root/$lark_skill/"
+          fi
+        done
+      fi
+    done
   fi
   success "Skills updated"
 
@@ -155,11 +221,19 @@ cmd_update() {
       done
       # Copy lark-cli skills if previously installed
       if [[ "$has_lark_skills" == "true" ]]; then
-        for lark_skill in lark-base lark-calendar lark-contact lark-doc lark-drive lark-event lark-im lark-mail lark-minutes lark-openapi-explorer lark-shared lark-sheets lark-skill-maker lark-task lark-vc lark-whiteboard lark-wiki lark-workflow-meeting-summary lark-workflow-standup-report; do
-          if [[ -d "$SKILLS_DIR/$lark_skill" ]]; then
+        local lark_skill
+        for lark_skill in "${lark_skill_names[@]}"; do
+          local lark_src=""
+          for skill_root in "$AGENTS_SKILLS_DIR" "$SKILLS_DIR" "$CODEX_SKILLS_DIR"; do
+            if [[ -d "$skill_root/$lark_skill" ]]; then
+              lark_src="$skill_root/$lark_skill"
+              break
+            fi
+          done
+          if [[ -n "$lark_src" ]]; then
             for dst_root in "$ws_skills_dir" "$ws_codex_skills_dir"; do
               mkdir -p "$dst_root/$lark_skill"
-              cp -r "$SKILLS_DIR/$lark_skill/." "$dst_root/$lark_skill/"
+              cp -r "$lark_src/." "$dst_root/$lark_skill/"
             done
           fi
         done

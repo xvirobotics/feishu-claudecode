@@ -505,7 +505,7 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 
 ```bash
 # MetaBot 管理
-metabot update                      # 拉取最新代码，重新构建，重启
+metabot update                      # 拉取最新代码，重新构建，更新 skills，重启
 metabot start / stop / restart      # PM2 管理
 metabot logs                        # 查看实时日志
 
@@ -538,6 +538,8 @@ mb skills install <skill> <bot>       # 安装技能到 Bot
 # 文字转语音
 mb voice "你好世界" --play
 ```
+
+`metabot update` 会自动更新已安装的 `lark-cli` 和飞书/Lark skills，并同步到 bot 工作目录；新机器首次安装时仍由安装器引导是否启用飞书 skills。
 
 CLI 支持连接远程 MetaBot/MetaMemory 服务器，在 `~/.metabot/.env` 配置 `METABOT_URL` 和 `META_MEMORY_URL` 即可。
 

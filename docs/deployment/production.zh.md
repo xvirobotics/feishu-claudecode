@@ -4,7 +4,7 @@
 
 ```bash
 metabot start                       # 用 PM2 启动
-metabot update                      # 拉取 + 构建 + 重启
+metabot update                      # 拉取 + 构建 + 更新 skills + 重启
 ```
 
 ## PM2 开机自启
