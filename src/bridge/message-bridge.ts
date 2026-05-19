@@ -25,6 +25,7 @@ import { OutputHandler } from './output-handler.js';
 import { CostTracker } from '../utils/cost-tracker.js';
 import { metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
+import type { TaskScheduler } from '../scheduler/task-scheduler.js';
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
@@ -351,6 +352,14 @@ export class MessageBridge {
   /** Inject the session registry for cross-platform session sync. */
   setSessionRegistry(registry: SessionRegistry): void {
     this.sessionRegistry = registry;
+  }
+
+  /** Inject the task scheduler so the slash-command layer can queue
+   *  per-chat deferred sends (`/<N>` / `/0`). The scheduler is a
+   *  process-singleton built in index.ts after every bot is registered,
+   *  hence setter injection (mirrors {@link setSessionRegistry}). */
+  setScheduler(scheduler: TaskScheduler): void {
+    this.commandHandler.setScheduler(scheduler);
   }
 
   /** Expose session manager for cross-platform session linking. */

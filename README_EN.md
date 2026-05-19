@@ -435,7 +435,9 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 |---------|-------------|
 | `/reset` | Clear session |
 | `/stop` | Abort current task |
-| `/status` | Session info (includes current model) |
+| `/status` | Session info (current model + pending deferred message) |
+| `/<N> <message>` | Queue `<message>` to fire **N minutes** from now (one slot per chat, max 7 days) |
+| `/0` | Drop the chat's pending deferred message (no ID needed; numeric namespace, zero collision) |
 | `/goal <condition>` | Set a goal the agent keeps pursuing across turns. `/goal clear` to stop |
 | `/model` | Show current engine/model; `/model list` — available engines/models; `/model claude`, `/model kimi`, or `/model codex` — switch engine; `/model <name>` — set model; `/model reset` — restore default |
 | `/memory list` | Browse knowledge tree |
