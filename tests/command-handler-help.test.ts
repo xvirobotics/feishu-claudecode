@@ -78,6 +78,10 @@ describe('CommandHandler /help', () => {
     for (const cmd of ['/reset', '/stop', '/status', '/model', '/memory', '/sync', '/help']) {
       expect(body, `help body missing ${cmd}`).toContain(cmd);
     }
+    // Defer-send lives in the numeric namespace: `/<N> <message>` to queue,
+    // `/0` to cancel. Surface enough for users to discover both.
+    expect(body, 'help body missing /<N> defer-send pattern').toMatch(/\/<N>/);
+    expect(body, 'help body missing /0 cancel command').toContain('/0');
   });
 
   // Regression — /goal and /background are Claude Code built-ins that pass

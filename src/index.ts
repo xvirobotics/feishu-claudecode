@@ -270,10 +270,16 @@ async function main() {
 
   // Initialize cross-platform session registry
   const sessionRegistry = new SessionRegistry(logger);
-  // Inject into all bot bridges
+  // Inject session registry + scheduler into all bot bridges so the
+  // slash-command layer (`/<N>`, `/0`) can queue per-chat deferred
+  // sends. Setter injection, because both objects are process-singletons
+  // built after the bot registry is populated.
   for (const info of registry.list()) {
     const bot = registry.get(info.name);
-    if (bot) bot.bridge.setSessionRegistry(sessionRegistry);
+    if (bot) {
+      bot.bridge.setSessionRegistry(sessionRegistry);
+      bot.bridge.setScheduler(scheduler);
+    }
   }
 
   // Resolve bots config path for API-driven bot CRUD

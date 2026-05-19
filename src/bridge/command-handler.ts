@@ -7,9 +7,13 @@ import type { EngineName } from '../engines/index.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
+import type { TaskScheduler } from '../scheduler/task-scheduler.js';
+
+const MAX_DEFER_MINUTES = 7 * 24 * 60; // 7 days — beyond this use `mb schedule cron`
 
 export class CommandHandler {
   private docSync: DocSync | null = null;
+  private scheduler: TaskScheduler | null = null;
 
   constructor(
     private config: BotConfigBase,
@@ -42,6 +46,14 @@ export class CommandHandler {
     this.docSync = docSync;
   }
 
+  /** Inject the task scheduler used by `/<N>` and `/0` (cancel). Until this
+   *  is called, those commands report a clear "scheduler unavailable" notice
+   *  instead of crashing — keeps unit tests and bots without a registered
+   *  scheduler working. */
+  setScheduler(scheduler: TaskScheduler): void {
+    this.scheduler = scheduler;
+  }
+
   /** Returns true if the message was handled as a command, false otherwise. */
   async handle(msg: IncomingMessage): Promise<boolean> {
     const { text } = msg;
@@ -49,6 +61,27 @@ export class CommandHandler {
 
     const { userId, chatId } = msg;
     const [cmd] = text.split(/\s+/);
+
+    // Defer-send lives entirely in the numeric `/<digits>` namespace so it
+    // can never collide with a word command:
+    //   `/<N> <message>` — queue the message to run N minutes from now.
+    //   `/0`             — cancel the chat's pending deferred message.
+    // Per-chat single-slot — a second `/<N>` while one is pending is
+    // rejected with the existing entry's details (use `/0` to drop it).
+    // Match the WHOLE command token to avoid colliding with other commands
+    // that happen to start with a digit later (currently none).
+    const deferMatch = cmd.match(/^\/(\d+)$/);
+    if (deferMatch) {
+      this.audit.log({ event: 'command', botName: this.config.name, chatId, userId, prompt: cmd });
+      const minutes = Number(deferMatch[1]);
+      if (minutes === 0) {
+        await this.handleCancelDeferred(chatId);
+        return true;
+      }
+      const prompt = text.slice(cmd.length).trim();
+      await this.handleDeferredSend(chatId, userId, minutes, prompt);
+      return true;
+    }
 
     this.audit.log({ event: 'command', botName: this.config.name, chatId, userId, prompt: cmd });
 
@@ -64,6 +97,10 @@ export class CommandHandler {
           '`/model <name>` - Set model for current engine',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
+          '',
+          '**Deferred Send** (one slot per chat — execute, then queue the next):',
+          '`/<N> <message>` - Queue `<message>` to run **N minutes** from now (e.g. `/60 写个总结`)',
+          '`/0` - Cancel the pending deferred message (no ID needed — only one slot)',
           '',
           '**Agent Commands** (pass through to the agent — Claude only):',
           '`/goal <description>` - Set a goal the agent keeps pursuing across turns',
@@ -133,6 +170,7 @@ export class CommandHandler {
         const activeEngine = session.engine ?? botEngine;
         const defaultModel = this.defaultModelForEngine(activeEngine) || '_default_';
         const activeModel = session.model || defaultModel;
+        const deferredLine = this.formatDeferredStatusLine(chatId);
         await this.sender.sendTextNotice(chatId, '📊 Status', [
           `**User:** \`${userId}\``,
           `**Engine:** \`${activeEngine}\`${session.engine ? ' (session override)' : ''}`,
@@ -140,6 +178,7 @@ export class CommandHandler {
           `**Session:** ${session.sessionId ? `\`${session.sessionId.slice(0, 8)}...\`` : '_None_'}`,
           `**Model:** \`${activeModel}\`${session.model ? ' (session override)' : ''}`,
           `**Running:** ${isRunning ? 'Yes ⏳' : 'No'}`,
+          `**Deferred:** ${deferredLine}`,
         ].join('\n'));
         return true;
       }
@@ -431,6 +470,149 @@ export class CommandHandler {
     }
   }
 
+  /** Handle `/<N> <message>` — queue the message N minutes from now. */
+  private async handleDeferredSend(
+    chatId: string,
+    _userId: string,
+    minutes: number,
+    prompt: string,
+  ): Promise<void> {
+    if (!this.scheduler) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ Defer Unavailable',
+        'The scheduler is not wired up for this bot — `/defer` cannot be used here.',
+        'red',
+      );
+      return;
+    }
+
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ Invalid Delay',
+        'The delay (in minutes) must be a positive integer. Example: `/60 写个总结`.',
+        'red',
+      );
+      return;
+    }
+
+    if (minutes > MAX_DEFER_MINUTES) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ Delay Too Long',
+        `Maximum defer is **${MAX_DEFER_MINUTES} minutes** (7 days). For longer schedules use the recurring scheduler API.`,
+        'red',
+      );
+      return;
+    }
+
+    if (!prompt) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ Missing Message',
+        `Usage: \`/${minutes} <message>\` — the message to send ${minutes} minutes from now.`,
+        'red',
+      );
+      return;
+    }
+
+    // Per-chat single-slot — refuse a second `/<N>` while one is pending.
+    const existing = this.scheduler.getChatTask(this.config.name, chatId);
+    if (existing) {
+      const remaining = Math.max(0, Math.round((existing.executeAt - Date.now()) / 60_000));
+      await this.sender.sendTextNotice(
+        chatId,
+        '⛔ Deferred Slot Taken',
+        [
+          `This chat already has a pending deferred message (one slot per chat).`,
+          `**Fires in:** ~${remaining} min`,
+          `**Message:** ${truncatePrompt(existing.prompt)}`,
+          '',
+          'Use `/0` to drop it, then queue a new one.',
+        ].join('\n'),
+        'orange',
+      );
+      return;
+    }
+
+    const task = this.scheduler.scheduleTask({
+      botName: this.config.name,
+      chatId,
+      prompt,
+      delaySeconds: minutes * 60,
+      sendCards: true,
+      label: 'slash-defer',
+    });
+
+    const fireAt = new Date(task.executeAt).toLocaleString('zh-CN', { hour12: false });
+    await this.sender.sendTextNotice(
+      chatId,
+      '⏱ Deferred Queued',
+      [
+        `Will run in **${minutes} min** (≈ ${fireAt}).`,
+        `**Message:** ${truncatePrompt(prompt)}`,
+        '',
+        'Use `/0` to drop it, or `/status` to inspect.',
+      ].join('\n'),
+      'green',
+    );
+  }
+
+  /** Handle `/0` — drop the chat's pending deferred message. */
+  private async handleCancelDeferred(chatId: string): Promise<void> {
+    if (!this.scheduler) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ Defer Unavailable',
+        'The scheduler is not wired up for this bot — nothing to cancel.',
+        'red',
+      );
+      return;
+    }
+
+    const existing = this.scheduler.getChatTask(this.config.name, chatId);
+    if (!existing) {
+      // No-op fallback: `/0` with nothing queued is harmless — just a
+      // gentle reminder, never an error.
+      await this.sender.sendTextNotice(
+        chatId,
+        'ℹ️ Nothing to Cancel',
+        'No deferred message is pending in this chat — nothing to do. Use `/<N> <message>` to queue one (e.g. `/60 写个总结`).',
+        'blue',
+      );
+      return;
+    }
+
+    const ok = this.scheduler.cancelTask(existing.id);
+    if (!ok) {
+      // Race: the task fired between getChatTask() and cancelTask().
+      await this.sender.sendTextNotice(
+        chatId,
+        'ℹ️ Already Fired',
+        'The deferred message already started — nothing to cancel.',
+        'blue',
+      );
+      return;
+    }
+
+    await this.sender.sendTextNotice(
+      chatId,
+      '🗑 Deferred Cancelled',
+      `Dropped: ${truncatePrompt(existing.prompt)}`,
+      'green',
+    );
+  }
+
+  /** Build the `/status` "Deferred" line — minutes remaining + preview, or `_None_`. */
+  private formatDeferredStatusLine(chatId: string): string {
+    if (!this.scheduler) return '_n/a_';
+    const task = this.scheduler.getChatTask(this.config.name, chatId);
+    if (!task) return '_None_';
+    const remaining = Math.max(0, Math.round((task.executeAt - Date.now()) / 60_000));
+    return `~${remaining} min — ${truncatePrompt(task.prompt)}`;
+  }
+
   private authTipForEngine(engine: EngineName): string {
     switch (engine) {
       case 'claude':
@@ -445,4 +627,10 @@ export class CommandHandler {
 
 function isEngineName(value: string): value is EngineName {
   return value === 'claude' || value === 'kimi' || value === 'codex';
+}
+
+/** Trim a queued prompt to a single-line preview suitable for status / notice cards. */
+function truncatePrompt(prompt: string, max = 60): string {
+  const oneLine = prompt.replace(/\s+/g, ' ').trim();
+  return oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
 }

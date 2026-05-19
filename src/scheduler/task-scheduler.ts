@@ -185,6 +185,28 @@ export class TaskScheduler {
     return this.listTasks().length;
   }
 
+  /**
+   * Look up the most recently created pending one-shot task for a given
+   * bot+chat. Returns undefined if none. Drives the slash-command
+   * defer-send flow (`/<N>` and `/0`), which enforces a per-chat
+   * single-slot rule: a second `/<N>` rejects with the existing entry's
+   * details, and `/0` drops it without needing an ID.
+   *
+   * HTTP/CLI callers can still create multiple pending tasks per chat —
+   * this helper just exposes "which one would the slash UI surface?" and
+   * makes the latest visible to that UI.
+   */
+  getChatTask(botName: string, chatId: string): ScheduledTask | undefined {
+    let latest: ScheduledTask | undefined;
+    for (const t of this.tasks.values()) {
+      if (t.status !== 'pending') continue;
+      if (t.botName !== botName) continue;
+      if (t.chatId !== chatId) continue;
+      if (!latest || t.createdAt > latest.createdAt) latest = t;
+    }
+    return latest;
+  }
+
   // ===== Recurring task methods =====
 
   scheduleRecurring(input: RecurringScheduleInput): RecurringTask {
