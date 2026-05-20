@@ -215,7 +215,20 @@ export function buildCardV2(state: CardState): string {
 
   // Response content (parsed into blocks)
   if (state.responseText) {
-    elements.push(...responseToElements(state.responseText));
+    let responseText = state.responseText;
+
+    // Prepend user question prefix if userPrompt contains actual user input
+    const placeholderPrefixes = ['Question', '(agent activity)', '(agent continuation', '(between-turn question)'];
+    const isRealUserPrompt = state.userPrompt && !placeholderPrefixes.some(p => state.userPrompt.startsWith(p));
+
+    if (isRealUserPrompt) {
+      const truncated = state.userPrompt.length > 100
+        ? state.userPrompt.slice(0, 100) + '......'
+        : state.userPrompt;
+      responseText = `针对你提出的问题：${truncated}\n\n---\n\n${responseText}`;
+    }
+
+    elements.push(...responseToElements(responseText));
   } else if (state.status === 'thinking') {
     elements.push({
       tag:     'markdown',

@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type { Logger } from '../utils/logger.js';
 import type { CardState } from '../types.js';
 import type { IMessageSender } from './message-sender.interface.js';
@@ -66,8 +67,17 @@ export class OutputHandler {
           // but were dropped — silently logging warn was the original bug.
           this.logger.warn({ filePath: file.filePath, sizeBytes: file.sizeBytes }, 'Output file too large to send');
           oversized.push({ fileName: file.fileName, sizeBytes: file.sizeBytes, isImage: file.isImage });
+          continue;
         }
         sentPaths.add(file.filePath);
+        // Move successfully sent file to sent/ subdirectory for audit trail
+        const sentDir = path.join(outputsDir, 'sent');
+        if (!fs.existsSync(sentDir)) {
+          fs.mkdirSync(sentDir, { recursive: true });
+        }
+        const sentFilePath = path.join(sentDir, file.fileName);
+        fs.renameSync(file.filePath, sentFilePath);
+        this.logger.info({ from: file.filePath, to: sentFilePath }, 'Moved sent file to sent/');
       } catch (err) {
         this.logger.warn({ err, filePath: file.filePath }, 'Failed to send output file');
       }
