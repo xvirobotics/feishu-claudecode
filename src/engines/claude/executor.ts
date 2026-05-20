@@ -169,6 +169,41 @@ export interface ApiContext {
 }
 
 /**
+ * Load CLAUDE.md files from standard locations and return their contents
+ * as an array of sections. Mirrors the CLI's default loading order:
+ *   1. ~/.claude/CLAUDE.md (user-level)
+ *   2. <cwd>/CLAUDE.md (project-level)
+ *   3. <cwd>/.claude/CLAUDE.md (project subdirectory-level)
+ *
+ * MetaBot explicitly sets `settingSources: ['user', 'project']`, but the
+ * SDK's `'user'` source only loads `~/.claude/settings.json`, NOT
+ * `~/.claude/CLAUDE.md`. Project-level CLAUDE.md files are loaded when
+ * `'project'` is present, but we read them here as well to guarantee
+ * they appear in the system prompt regardless of CLI auto-loading quirks.
+ */
+export function loadClaudeMdSections(cwd: string): string[] {
+  const sections: string[] = [];
+  const candidates = [
+    path.join(os.homedir(), '.claude', 'CLAUDE.md'),
+    path.join(cwd, 'CLAUDE.md'),
+    path.join(cwd, '.claude', 'CLAUDE.md'),
+  ];
+  for (const filePath of candidates) {
+    try {
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf-8').trim();
+        if (content) {
+          sections.push(content);
+        }
+      }
+    } catch {
+      // ignore read errors
+    }
+  }
+  return sections;
+}
+
+/**
  * Apply 1M-context settings based on the effective model name in `queryOptions.model`:
  *
  *   - With `[1m]` suffix (e.g. `claude-opus-4-7[1m]`): set the matching
@@ -312,6 +347,10 @@ export class ClaudeExecutor {
       includePartialMessages: true,
       // Load MCP servers and settings from user/project config files
       settingSources: ['user', 'project'],
+      // Enable every discovered skill (from ~/.claude/skills/ and project
+      // .claude/skills/). The SDK loads their SKILL.md listings into the
+      // system prompt so the model knows when to invoke /commands.
+      skills: 'all',
       // Custom spawn filters CLAUDE* env vars (prevents nested session errors)
       // and injects an explicit ANTHROPIC_API_KEY when configured. The SDK
       // (>= 0.2.140) supplies the correct command in spawn options — for the
@@ -332,6 +371,10 @@ export class ClaudeExecutor {
 
     // Build system prompt appendix from sections
     const appendSections: string[] = [];
+
+    // Inject CLAUDE.md content ahead of MetaBot runtime sections so user
+    // instructions (coding style, output format, etc.) are authoritative.
+    appendSections.push(...loadClaudeMdSections(cwd));
 
     if (outputsDir) {
       appendSections.push(`## Output Files\nWhen producing output files for the user (images, PDFs, documents, archives, code files, etc.), copy them to: ${outputsDir}\nUse \`cp\` via the Bash tool. The bridge will automatically send files placed there to the user.`);

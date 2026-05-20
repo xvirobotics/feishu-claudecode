@@ -103,6 +103,7 @@ Slim summary only — see [docs/internal/architecture.md](docs/internal/architec
 - **Multi-bot mode**: `BOTS_CONFIG=./bots.json` runs multiple bots in one process (see `bots.example.json`). When set, the `FEISHU_APP_*` env vars are ignored.
 - **PersistentClaudeExecutor** (opt-in): `METABOT_PERSISTENT_EXECUTOR=true` keeps one long-lived `query()` per `chatId` so subagents / Agent Teams / `/background` / `/goal` survive across turns. Per-bot override via `persistentExecutor` in `bots.json`. Observability at `GET /api/executors`.
 - **MetaMemory**: embedded SQLite document server at `META_MEMORY_URL` (default `http://localhost:8100`). Claude reads/writes via the `metamemory` skill; `/memory list|search|status` query directly. In federated/LAN mode, each instance has a stable fallback `METABOT_MEMORY_NAMESPACE=/instances/<instanceId>`, while bots can use stable project namespaces via `memoryProject` (`/projects/<slug>`) or explicit `memoryNamespace`; `MEMORY_INSTANCE_TOKEN` can write the instance fallback plus configured bot/project namespaces while reading shared folders.
+- **CLAUDE.md & Skills injection**: MetaBot reads `~/.claude/CLAUDE.md`, `<cwd>/CLAUDE.md`, and `<cwd>/.claude/CLAUDE.md` into the system prompt ahead of its own runtime sections, and passes `skills: 'all'` to the SDK so every discovered skill under `~/.claude/skills/` is available for `/command` invocation. This guarantees user-level instructions and skills work even when the SDK's `settingSources` auto-loading is incomplete.
 
 ## Branching Strategy
 

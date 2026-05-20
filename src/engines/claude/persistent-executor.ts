@@ -35,7 +35,7 @@ import type { SDKUserMessage, SpawnOptions, SpawnedProcess, Query } from '@anthr
 import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import type { SDKMessage, TeamEvent, ApiContext } from './executor.js';
-import { apply1MContextSettings } from './executor.js';
+import { apply1MContextSettings, loadClaudeMdSections } from './executor.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -350,6 +350,8 @@ export class PersistentClaudeExecutor extends EventEmitter {
       cwd: this.options.cwd,
       includePartialMessages: true,
       settingSources: ['user', 'project'],
+      // Enable every discovered skill so the model can invoke /commands.
+      skills: 'all',
       spawnClaudeCodeProcess: createSpawnFn(this.options.apiKey),
       pathToClaudeCodeExecutable: CLAUDE_EXECUTABLE,
       settings: { teammateMode: 'in-process' },
@@ -366,6 +368,10 @@ export class PersistentClaudeExecutor extends EventEmitter {
     // guidance. Stable for the lifetime of this executor (this differs from
     // the legacy executor which rebuilds per turn).
     const appendSections: string[] = [];
+
+    // Inject CLAUDE.md content ahead of MetaBot runtime sections.
+    appendSections.push(...loadClaudeMdSections(this.options.cwd));
+
     if (this.options.outputsDir) {
       appendSections.push(
         `## Output Files\nWhen producing output files for the user (images, PDFs, documents, archives, code files, etc.), copy them to: ${this.options.outputsDir}\nUse \`cp\` via the Bash tool. The bridge will automatically send files placed there to the user.`,
