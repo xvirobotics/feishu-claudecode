@@ -196,11 +196,31 @@
   color:        var(--accent-text);
 }
 
-/* ── Assistant 文字版本 + 横线 ──────────────────────────────── */
+/* ── Assistant 文字版本 + 分段绿色横线 ────────────────────────
+ * Why: 一次响应可能分多段 stream 写出来，段之间要有明显的"换段"提示，
+ *      否则用户分不清是同一段连续输出还是后追加的修正。
+ *      用户明确："带一点特殊的颜色,比如说绿色"——选 mint-green，浅底配色舒服。
+ */
 .textBlock + .textBlock {
-  margin-top:    10px;
-  padding-top:   10px;
-  border-top:    1px solid var(--glass-border);
+  margin-top:    22px;
+  padding-top:   22px;
+  border-top:    2px solid #10b981;
+  position:      relative;
+}
+.textBlock + .textBlock::before {
+  content:       '续';
+  position:      absolute;
+  top:           -11px;
+  left:          50%;
+  transform:     translateX(-50%);
+  padding:       1px 8px;
+  background:    var(--surface-1);
+  color:         #10b981;
+  font-size:     11px;
+  font-family:   var(--font-mono);
+  font-weight:   600;
+  letter-spacing: 2px;
+  border-radius: 999px;
 }
 
 .textBlock :global(p)  { margin: 0 0 8px; }
@@ -238,6 +258,38 @@
   color:         var(--text-3);
   font-size:     12.5px;
   font-style:    italic;
+}
+
+/* ── 超长 assistant 内容默认折叠 ──────────────────────────
+ * 阈值 2000px (≈100 行)。collapsed 时 max-height 截断，
+ * 底部用 mask-image 做渐隐过渡，下面跟一个"展开剩余内容"按钮。
+ * 用户明确：展开后不再支持收起。
+ */
+.collapsedWrap {
+  position: relative;
+}
+.collapsedInner {
+  max-height:          2000px;
+  overflow:            hidden;
+  -webkit-mask-image:  linear-gradient(to bottom, #000 calc(100% - 80px), transparent 100%);
+          mask-image:  linear-gradient(to bottom, #000 calc(100% - 80px), transparent 100%);
+}
+.expandBtn {
+  display:       block;
+  width:         100%;
+  margin-top:    8px;
+  padding:       8px 12px;
+  background:    var(--accent-soft);
+  color:         var(--accent-text);
+  border:        1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  font-size:     13px;
+  font-family:   var(--font-sans);
+  font-weight:   600;
+  cursor:        pointer;
+}
+.expandBtn:hover {
+  filter: brightness(1.05);
 }
 
 /* ── 浮窗 Modal ──────────────────────────────────────────── */

@@ -12,7 +12,7 @@
    - 鉴权走 Feishu OAuth + HttpOnly cookie；非白名单 403。
 ============================================================ */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -59,36 +59,23 @@ type ErrorState =
   | { kind: 'notFound' }
   | { kind: 'server';    message: string };
 
-/* ── 工具调用 input/result 缩成单行 ── */
-
+/* ── 工具调用 input 缩成严格单行 ──
+ * 设计：用户只要看到「工具名 + 它在做什么」的一句话提要，
+ *      多行参数（command 里的 heredoc 之类）、嵌套字段、大对象都剥掉。
+ *      不显示 result —— 历史回放阶段 result 几乎总比 input 长一个量级，
+ *      留着会把整个 strip 撑得很乱。
+ */
 function flattenInput(input: unknown): string {
   if (input == null) return '';
-  if (typeof input === 'string') return input;
-  try {
-    const s = JSON.stringify(input);
-    return s.length > 200 ? `${s.slice(0, 200)}…` : s;
-  } catch {
-    return String(input);
-  }
-}
-
-function flattenResult(result: TranscriptToolCall['result']): { text: string; isError: boolean } {
-  if (!result) return { text: '', isError: false };
-  const { content, isError } = result;
-  let text: string;
-  if (typeof content === 'string') {
-    text = content;
-  } else if (Array.isArray(content)) {
-    text = content
-      .map((b) =>
-        b && typeof b === 'object' && 'text' in b ? String((b as { text: unknown }).text ?? '') : ''
-      )
-      .filter(Boolean)
-      .join('\n');
+  let raw: string;
+  if (typeof input === 'string') {
+    raw = input;
   } else {
-    try { text = JSON.stringify(content); } catch { text = String(content); }
+    try { raw = JSON.stringify(input); } catch { raw = String(input); }
   }
-  return { text, isError: !!isError };
+  // 强制单行：所有 \r \n \t 折叠成空格，连续空白压成一个
+  const oneLine = raw.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  return oneLine.length > 140 ? `${oneLine.slice(0, 140)}…` : oneLine;
 }
 
 /* ── 把 TranscriptMessage[] 折成 turn 块结构 ── */
@@ -154,26 +141,63 @@ function ToolModal({
           <button className={styles.modalClose} onClick={onClose} aria-label="关闭">×</button>
         </div>
         <div className={styles.modalBody}>
-          {calls.map((c, i) => {
-            const { text: resultText, isError } = flattenResult(c.result);
-            return (
-              <div key={c.id || i} className={styles.modalToolItem}>
-                <div className={styles.modalToolName}>#{i + 1} {c.name}</div>
-                <div className={styles.modalToolLabel}>input:</div>
-                <div className={styles.modalToolBlock}>{flattenInput(c.input) || '(空)'}</div>
-                {c.result && (
-                  <>
-                    <div className={styles.modalToolLabel}>{isError ? 'error:' : 'result:'}</div>
-                    <div className={`${styles.modalToolBlock} ${isError ? styles.modalToolError : ''}`}>
-                      {resultText || '(空)'}
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
+          {calls.map((c, i) => (
+            <div key={c.id || i} className={styles.modalToolItem}>
+              <div className={styles.modalToolName}>#{i + 1} {c.name}</div>
+              <div className={styles.modalToolBlock}>{flattenInput(c.input) || '(空)'}</div>
+            </div>
+          ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── 长内容默认折叠（展开后不再支持收起） ──
+ * Why: 历史回放经常有几千行的 assistant 输出，超长 bubble 会把上下文吞掉。
+ *      Mount 后测量 scrollHeight；超过阈值 → max-height + 底部渐隐 + "展开" 按钮。
+ *      用户明确："展开以后就不支持再收起来了"。
+ */
+const COLLAPSE_THRESHOLD_PX = 2000; // ≈ 100 行 @ line-height 1.55 / 14px
+
+function CollapsibleContent({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [overflow, setOverflow] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  // 测量内容高度（mount + children 变化后）
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // 给浏览器一个 layout 周期；MutationObserver 也能盯到 markdown 后续注入
+    const measure = () => {
+      if (!ref.current) return;
+      setOverflow(ref.current.scrollHeight > COLLAPSE_THRESHOLD_PX);
+    };
+    measure();
+    const mo = new MutationObserver(measure);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => mo.disconnect();
+  }, []);
+
+  const collapsed = overflow && !expanded;
+  return (
+    <div className={collapsed ? styles.collapsedWrap : undefined}>
+      <div
+        ref={ref}
+        className={collapsed ? styles.collapsedInner : undefined}
+      >
+        {children}
+      </div>
+      {collapsed && (
+        <button
+          type="button"
+          className={styles.expandBtn}
+          onClick={() => setExpanded(true)}
+        >
+          展开剩余内容 ↓
+        </button>
+      )}
     </div>
   );
 }
@@ -207,32 +231,29 @@ function TurnBlock({
       {agg.assistant && (
         <div className={`${styles.row} ${styles.rowAssistant}`}>
           <div className={`${styles.bubble} ${styles.bubbleAssistant}`}>
-            {toolCalls.length > 0 && (
-              <div className={styles.toolStrip}>
-                {visibleCalls.map((c, i) => (
-                  <div key={c.id || i} className={styles.toolRow}>
-                    <span className={styles.toolName}>{c.name}</span>
-                    <span className={styles.toolDetail}>{flattenInput(c.input)}</span>
-                  </div>
-                ))}
-                {hiddenCount > 0 && (
-                  <button className={styles.toolMoreBtn} onClick={() => setModalOpen(true)}>
-                    查看全部 {toolCalls.length} 个
-                  </button>
-                )}
-                {hiddenCount <= 0 && toolCalls.length > 0 && (
-                  <button className={styles.toolMoreBtn} onClick={() => setModalOpen(true)}>
-                    查看详情
-                  </button>
-                )}
-              </div>
-            )}
-            {agg.assistant.thinking && (
-              <div className={styles.thinking}>💭 {agg.assistant.thinking}</div>
-            )}
-            {agg.assistant.texts.map((t, i) => (
-              <Markdown key={i}>{t}</Markdown>
-            ))}
+            <CollapsibleContent>
+              {toolCalls.length > 0 && (
+                <div className={styles.toolStrip}>
+                  {visibleCalls.map((c, i) => (
+                    <div key={c.id || i} className={styles.toolRow}>
+                      <span className={styles.toolName}>{c.name}</span>
+                      <span className={styles.toolDetail}>{flattenInput(c.input)}</span>
+                    </div>
+                  ))}
+                  {hiddenCount > 0 && (
+                    <button className={styles.toolMoreBtn} onClick={() => setModalOpen(true)}>
+                      查看全部 {toolCalls.length} 个
+                    </button>
+                  )}
+                </div>
+              )}
+              {agg.assistant.thinking && (
+                <div className={styles.thinking}>💭 {agg.assistant.thinking}</div>
+              )}
+              {agg.assistant.texts.map((t, i) => (
+                <Markdown key={i}>{t}</Markdown>
+              ))}
+            </CollapsibleContent>
           </div>
         </div>
       )}
