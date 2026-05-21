@@ -1074,9 +1074,16 @@ export class MessageBridge {
    * Bump the per-chatId turn counter and return the new value. Called once
    * per {@link runOneTurn} invocation so the value matches the user-message
    * boundary used by the transcript reader.
+   *
+   * On first call after a process restart the in-memory map is empty — seed
+   * it from the JSONL history so the new turn picks up where the file left
+   * off (otherwise the next card link would say `?turn=1` and point at the
+   * very first historical turn instead of the one we're about to write).
    */
   private bumpTurnIndex(chatId: string): number {
-    const next = (this.turnIndexByChat.get(chatId) ?? 0) + 1;
+    const current = this.turnIndexByChat.get(chatId);
+    const base    = current ?? this.countUserTurnsFromJsonl(chatId);
+    const next    = base + 1;
     this.turnIndexByChat.set(chatId, next);
     return next;
   }

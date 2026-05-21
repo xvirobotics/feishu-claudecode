@@ -786,10 +786,24 @@ export function serveStaticFiles(
       const ext = path.extname(fullPath).toLowerCase();
       const contentType = MIME_TYPES[ext] || 'application/octet-stream';
       const content = fs.readFileSync(fullPath);
-      // Hashed assets get long cache; index.html gets no-cache
+      // Hashed assets get long cache; HTML gets the strongest no-cache combo
+      // (some CN mobile webviews — Baidu, certain Feishu configs — silently
+      // ignore plain "no-cache" and keep stale HTML that points at deleted
+      // bundle hashes after a redeploy → white-screen on next visit).
       const isHashed = filePath.startsWith('assets/') && /-[a-zA-Z0-9]{8,}\./.test(filePath);
-      const cacheControl = isHashed ? 'public, max-age=31536000, immutable' : 'no-cache';
-      res.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': cacheControl });
+      if (isHashed) {
+        res.writeHead(200, {
+          'Content-Type':  contentType,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        });
+      } else {
+        res.writeHead(200, {
+          'Content-Type':  contentType,
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          Pragma:          'no-cache',
+          Expires:         '0',
+        });
+      }
       res.end(content);
       return true;
     }
@@ -809,7 +823,12 @@ export function serveStaticFiles(
   try {
     if (fs.existsSync(indexPath)) {
       const content = fs.readFileSync(indexPath);
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.writeHead(200, {
+        'Content-Type':  'text/html; charset=utf-8',
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        Pragma:          'no-cache',
+        Expires:         '0',
+      });
       res.end(content);
       return true;
     }

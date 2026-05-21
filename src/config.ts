@@ -101,6 +101,13 @@ export interface BotConfig extends BotConfigBase {
    * field is missing or empty.
    */
   transcriptAllowOpenIds?: string[];
+  /**
+   * Gray-deploy escape hatch: when true, transcript routes skip OAuth
+   * cookie + whitelist gating entirely. Anyone with the link can read
+   * the chat history. Use ONLY during early evaluation behind a
+   * non-guessable public URL; flip back to false before broad rollout.
+   */
+  transcriptDisableAuth?: boolean;
 }
 
 /** Telegram bot config (extends base with Telegram credentials). */
@@ -230,6 +237,8 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   publicBaseUrl?: string;
   /** Whitelisted Feishu open_ids permitted to view this bot's transcripts. */
   transcriptAllowOpenIds?: string[];
+  /** Gray-deploy: disable OAuth gating on transcript routes (anyone with link). */
+  transcriptDisableAuth?: boolean;
 }
 
 function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
@@ -245,6 +254,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.groupNoMention ? { groupNoMention: true } : {}),
     ...(entry.publicBaseUrl ? { publicBaseUrl: entry.publicBaseUrl } : {}),
     ...(entry.transcriptAllowOpenIds?.length ? { transcriptAllowOpenIds: entry.transcriptAllowOpenIds } : {}),
+    ...(entry.transcriptDisableAuth ? { transcriptDisableAuth: true } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),

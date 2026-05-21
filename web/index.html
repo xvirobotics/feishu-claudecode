@@ -6,12 +6,9 @@
     <meta name="theme-color" content="#050508" />
     <meta name="color-scheme" content="dark" />
     <title>MetaBot</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=JetBrains+Mono:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
+    <!-- No external font/CDN dependency: all assets are self-hosted under
+         /web/assets/. Body CSS falls back to system UI fonts. -->
+
     <style>
       body {
         margin: 0;
@@ -23,14 +20,46 @@
         -moz-osx-font-smoothing: grayscale;
         overflow: hidden;
       }
+      /* Light-theme bootstrap for the standalone transcript page so users
+         don't see a black flash before React mounts and toggles data-theme. */
+      html[data-theme='light'] body,
+      body.bootstrap-light {
+        background: #ffffff;
+        color: #1a1a1a;
+      }
       #root {
         width: 100vw;
         height: 100dvh;
       }
+      #boot-fallback {
+        position: fixed; inset: 0;
+        display: flex; align-items: center; justify-content: center;
+        color: inherit; font-size: 14px; opacity: 0.7;
+        pointer-events: none;
+      }
     </style>
+    <script>
+      // If this page is the public transcript route, switch to light theme
+      // BEFORE React mounts so we don't flash black. The route is hosted under
+      // /web/transcript/* — match prefix to avoid touching the in-app SPA.
+      try {
+        if (location.pathname.indexOf('/web/transcript/') === 0) {
+          document.documentElement.setAttribute('data-theme', 'light');
+          var m = document.querySelector('meta[name="theme-color"]');
+          if (m) m.setAttribute('content', '#ffffff');
+        }
+      } catch (e) {}
+    </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-fallback">
+        <div style="text-align:center;line-height:1.6">
+          <div>正在加载…</div>
+          <div style="margin-top:8px;font-size:12px;opacity:0.6">如果长时间停在这里,请长按链接 → 在外部浏览器打开</div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

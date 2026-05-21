@@ -318,41 +318,57 @@ describe('buildCardV2', () => {
     expect(table.rows[1].col2).toContain('[详情](https://example.com)');
   });
 
-  // Transcript link — surfaced only when `transcriptLink` is set on the
-  // CardState. Graceful degradation: cards omit the link when no public
-  // base URL is configured, so existing single-bot deployments don't see
-  // a half-built URL.
-  it('renders the transcript link line when transcriptLink is set', () => {
+  // Transcript link — inlined into the footer's first row (the
+  // `hostname·project·duration` line) when `transcriptLink` is set, so the
+  // entire footer row becomes tappable. Graceful degradation: no link →
+  // plain text footer, no half-built URLs.
+  function footerMarkdown(json: any): string {
+    for (const el of findElements(json)) {
+      if (el.tag !== 'column_set') continue;
+      const cols = el.columns || [];
+      for (const c of cols) {
+        for (const e of c.elements || []) {
+          if (e.tag === 'markdown' && typeof e.content === 'string') {
+            return e.content;
+          }
+        }
+      }
+    }
+    return '';
+  }
+
+  it('wraps the footer row in a markdown link when transcriptLink is set', () => {
     const state: CardState = {
-      status:         'complete',
-      userPrompt:     'task',
-      responseText:   'done',
-      toolCalls:      [],
-      transcriptLink: 'https://bot.example.com/web/transcript/oc_x?turn=3',
+      status:           'complete',
+      userPrompt:       'task',
+      responseText:     'done',
+      toolCalls:        [],
+      workingDirectory: '/home/u/myproj',
+      durationMs:       3000,
+      transcriptLink:   'https://bot.example.com/web/transcript/oc_x?turn=3',
     };
-    const elements = findElements(JSON.parse(buildCardV2(state)));
-    const link = elements.find(
-      (e) => e.tag === 'markdown' && typeof e.content === 'string'
-        && e.content.includes('查看完整对话'),
-    );
-    expect(link).toBeDefined();
-    expect(link.content).toContain('https://bot.example.com/web/transcript/oc_x?turn=3');
-    expect(link.content).toContain('📜');
+    const content = footerMarkdown(JSON.parse(buildCardV2(state)));
+    expect(content).toContain('myproj');
+    // The hostname·project·duration row is wrapped in a markdown link with
+    // NO emoji prefix — the link is invisible (the entire row text is the
+    // anchor text) so the card looks identical to the pre-feature footer.
+    expect(content).not.toContain('📜');
+    expect(content).toMatch(/\[[^\]]*myproj[^\]]*\]\(https:\/\/bot\.example\.com\/web\/transcript\/oc_x\?turn=3\)/);
   });
 
-  it('omits the transcript link line when transcriptLink is unset (graceful degradation)', () => {
+  it('renders the footer as plain text when transcriptLink is unset (graceful degradation)', () => {
     const state: CardState = {
-      status:       'complete',
-      userPrompt:   'task',
-      responseText: 'done',
-      toolCalls:    [],
+      status:           'complete',
+      userPrompt:       'task',
+      responseText:     'done',
+      toolCalls:        [],
+      workingDirectory: '/home/u/myproj',
+      durationMs:       3000,
     };
-    const elements = findElements(JSON.parse(buildCardV2(state)));
-    const link = elements.find(
-      (e) => e.tag === 'markdown' && typeof e.content === 'string'
-        && /查看完整对话/.test(e.content),
-    );
-    expect(link).toBeUndefined();
+    const content = footerMarkdown(JSON.parse(buildCardV2(state)));
+    expect(content).toContain('myproj');
+    expect(content).not.toContain('📜');
+    expect(content).not.toContain('transcript');
   });
 });
 

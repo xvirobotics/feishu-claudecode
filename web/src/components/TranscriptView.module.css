@@ -1,9 +1,14 @@
 /* ============================================================
    TranscriptView — read-only conversation history page.
 
-   Standalone entry (no Layout, no sidebar). Uses the global
-   design tokens defined in index.css so it picks up the same
-   dark theme as ChatView.
+   IM-style: 用户气泡靠右 / assistant 气泡靠左。
+   - 顶部下拉触发"加载更早 2 个 turn"
+   - 底部下拉触发"加载更晚 2 个 turn"（如果还有）
+   - 每个 turn 顶部一个 "#N" 编号分隔条
+   - assistant 气泡内部：工具调用区（≤10 + 浮窗看全部） + 文字版本（横线分隔）
+
+   Light theme by default —— TranscriptView 入口在 mount 时已经强制
+   `data-theme=light`，所以全部用 light tokens。
 ============================================================ */
 
 .page {
@@ -15,111 +20,313 @@
   font-family:    var(--font-sans);
 }
 
-/* ── Header ───────────────────────────────────────────────── */
-.header {
-  display:         flex;
-  justify-content: space-between;
-  align-items:     center;
-  gap:             16px;
-  padding:         16px 24px;
-  border-bottom:   1px solid var(--glass-border);
-  background:      var(--surface-1);
+/* ── Sticky 顶部徽章 ─────────────────────────────────────── */
+.topBar {
   position:        sticky;
   top:             0;
-  z-index:         10;
+  z-index:         50;
+  display:         flex;
+  justify-content: center;
+  align-items:     center;
+  gap:             10px;
+  padding:         8px 12px;
+  background:      var(--surface-1);
+  border-bottom:   1px solid var(--glass-border);
+  font-family:     var(--font-mono);
+  font-size:       12.5px;
   backdrop-filter: blur(8px);
 }
 
-.headerTitle {
-  font-size:     15px;
-  font-weight:   600;
-  color:         var(--text-0);
-  white-space:   nowrap;
-  overflow:      hidden;
-  text-overflow: ellipsis;
-}
-
-.headerMeta {
-  display:     flex;
-  align-items: center;
-  gap:         12px;
-  font-size:   12px;
-  flex-shrink: 0;
-}
-
-.headerBot {
-  padding:       2px 8px;
+.topBarBadge {
+  padding:       3px 10px;
   background:    var(--accent-soft);
   color:         var(--accent-text);
-  border-radius: var(--r-sm);
-  font-family:   var(--font-mono);
-  font-size:     11px;
+  border-radius: 999px;
+  font-weight:   600;
 }
 
-.dim {
+.topBarTotal {
   color: var(--text-3);
 }
 
-/* ── Turn switcher ───────────────────────────────────────── */
-.turnSwitcher {
-  display:     flex;
-  align-items: center;
-  flex-wrap:   wrap;
-  gap:         6px;
-  padding:     10px 24px;
-  border-bottom: 1px solid var(--glass-border);
-  background:    var(--surface-0);
-  font-size:     12px;
-}
-
-.turnSwitcherLabel {
-  color:        var(--text-3);
-  margin-right: 4px;
-  font-family:  var(--font-mono);
-}
-
-.turnPill {
-  padding:       4px 10px;
-  border:        1px solid var(--glass-border);
-  background:    transparent;
-  color:         var(--text-2);
-  border-radius: var(--r-sm);
-  font-size:     12px;
-  font-family:   var(--font-mono);
-  cursor:        pointer;
-  transition:    background var(--duration-fast) var(--ease-out),
-                 color      var(--duration-fast) var(--ease-out),
-                 border     var(--duration-fast) var(--ease-out);
-}
-
-.turnPill:hover {
-  background: var(--surface-hover);
-  color:      var(--text-0);
-  border:     1px solid var(--glass-border-hover);
-}
-
-.turnPillActive {
-  background: var(--accent);
-  color:      var(--text-on-accent);
-  border:     1px solid var(--accent);
-}
-
-.turnPillActive:hover {
-  background: var(--accent-hover);
-  color:      var(--text-on-accent);
-  border:     1px solid var(--accent-hover);
-}
-
-/* ── Body ────────────────────────────────────────────────── */
-.body {
+/* ── Stream / 容器 ─────────────────────────────────────────── */
+.stream {
   flex:           1;
   display:        flex;
   flex-direction: column;
-  min-height:     0;
-  padding:        16px 0;
+  padding:        12px 12px 32px;
+  gap:            0;
 }
 
-/* ── Status / empty / error blocks ──────────────────────── */
+/* ── Sentinel ─────────────────────────────────────────────── */
+.sentinel {
+  height:    1px;
+  flex-shrink: 0;
+}
+
+.loaderRow {
+  display:         flex;
+  justify-content: center;
+  align-items:     center;
+  padding:         12px 0;
+  color:           var(--text-3);
+  font-size:       12px;
+}
+
+.endHint {
+  text-align: center;
+  padding:    16px 0;
+  color:      var(--text-3);
+  font-size:  12px;
+  opacity:    0.7;
+}
+
+/* ── Turn 分隔条 ──────────────────────────────────────────── */
+.turnDivider {
+  display:        flex;
+  align-items:    center;
+  gap:            8px;
+  margin:         16px 4px 8px;
+  color:          var(--text-3);
+  font-size:      11px;
+  font-family:    var(--font-mono);
+  letter-spacing: 0.3px;
+}
+
+.turnDivider::before,
+.turnDivider::after {
+  content: '';
+  flex:    1;
+  height:  1px;
+  background: var(--glass-border);
+}
+
+.turnDivider .turnLabel {
+  padding:       2px 8px;
+  background:    var(--surface-1);
+  border:        1px solid var(--glass-border);
+  border-radius: 999px;
+  color:         var(--text-2);
+}
+
+/* ── 消息行 ──────────────────────────────────────────────── */
+.row {
+  display:     flex;
+  width:       100%;
+  margin:      4px 0;
+}
+
+.rowUser      { justify-content: flex-end;   }
+.rowAssistant { justify-content: flex-start; }
+
+/* ── 气泡 ────────────────────────────────────────────────── */
+.bubble {
+  max-width:     86%;
+  padding:       10px 14px;
+  border-radius: 14px;
+  font-size:     14px;
+  line-height:   1.55;
+  word-wrap:     break-word;
+  overflow-wrap: anywhere;
+}
+
+.bubbleUser {
+  background:        var(--accent);
+  color:             var(--text-on-accent);
+  border-radius:     14px 14px 4px 14px;
+  white-space:       pre-wrap;
+}
+
+.bubbleAssistant {
+  background:    var(--surface-1);
+  border:        1px solid var(--glass-border);
+  color:         var(--text-1);
+  border-radius: 14px 14px 14px 4px;
+  max-width:     94%;
+}
+
+/* ── Assistant 内部：工具调用区 ─────────────────────────────── */
+.toolStrip {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+  margin-bottom:  8px;
+  padding-bottom: 8px;
+  border-bottom:  1px dashed var(--glass-border);
+}
+
+.toolRow {
+  display:     flex;
+  align-items: baseline;
+  gap:         6px;
+  font-size:   12px;
+  font-family: var(--font-mono);
+  color:       var(--text-2);
+  white-space: nowrap;
+  overflow:    hidden;
+}
+
+.toolName {
+  color:       var(--accent-text);
+  flex-shrink: 0;
+}
+
+.toolDetail {
+  color:         var(--text-3);
+  overflow:      hidden;
+  text-overflow: ellipsis;
+  white-space:   nowrap;
+}
+
+.toolMoreBtn {
+  margin-top:    2px;
+  align-self:    flex-start;
+  padding:       2px 10px;
+  background:    transparent;
+  border:        1px solid var(--glass-border);
+  border-radius: 999px;
+  color:         var(--text-2);
+  font-size:     11px;
+  cursor:        pointer;
+  font-family:   var(--font-mono);
+}
+
+.toolMoreBtn:hover {
+  border-color: var(--accent);
+  color:        var(--accent-text);
+}
+
+/* ── Assistant 文字版本 + 横线 ──────────────────────────────── */
+.textBlock + .textBlock {
+  margin-top:    10px;
+  padding-top:   10px;
+  border-top:    1px solid var(--glass-border);
+}
+
+.textBlock :global(p)  { margin: 0 0 8px; }
+.textBlock :global(p:last-child) { margin-bottom: 0; }
+.textBlock :global(pre) {
+  background:    var(--code-bg);
+  border:        1px solid var(--code-border);
+  border-radius: var(--r-sm);
+  padding:       8px 10px;
+  overflow-x:    auto;
+  font-size:     12px;
+}
+.textBlock :global(code) {
+  font-family: var(--font-mono);
+  font-size:   12.5px;
+}
+.textBlock :global(:not(pre) > code) {
+  padding:       1px 5px;
+  background:    var(--code-bg);
+  border:        1px solid var(--code-border);
+  border-radius: var(--r-xs);
+}
+.textBlock :global(blockquote) {
+  margin:      6px 0;
+  padding:     2px 10px;
+  border-left: 3px solid var(--glass-border);
+  color:       var(--text-2);
+}
+
+.thinking {
+  margin:        0 0 8px;
+  padding:       6px 10px;
+  background:    var(--surface-0);
+  border-left:   3px solid var(--accent-soft);
+  color:         var(--text-3);
+  font-size:     12.5px;
+  font-style:    italic;
+}
+
+/* ── 浮窗 Modal ──────────────────────────────────────────── */
+.modalBackdrop {
+  position:        fixed;
+  inset:           0;
+  background:      rgba(0,0,0,0.45);
+  display:         flex;
+  align-items:     center;
+  justify-content: center;
+  padding:         16px;
+  z-index:         100;
+}
+
+.modalCard {
+  width:        100%;
+  max-width:    640px;
+  max-height:   80vh;
+  display:      flex;
+  flex-direction: column;
+  background:   var(--surface-1);
+  border:       1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  color:        var(--text-1);
+  overflow:     hidden;
+}
+
+.modalHeader {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  padding:         12px 16px;
+  border-bottom:   1px solid var(--glass-border);
+  font-size:       13px;
+  font-weight:     600;
+}
+
+.modalClose {
+  background:    transparent;
+  border:        none;
+  font-size:     20px;
+  line-height:   1;
+  color:         var(--text-2);
+  cursor:        pointer;
+  padding:       0 6px;
+}
+
+.modalBody {
+  padding:    8px 16px 16px;
+  overflow-y: auto;
+  flex:       1;
+}
+
+.modalToolItem {
+  margin:        12px 0;
+  padding:       8px 10px;
+  background:    var(--surface-0);
+  border:        1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  font-size:     12.5px;
+}
+
+.modalToolName {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color:       var(--accent-text);
+  margin-bottom: 4px;
+}
+
+.modalToolBlock {
+  font-family: var(--font-mono);
+  font-size:   12px;
+  color:       var(--text-2);
+  white-space: pre-wrap;
+  word-break:  break-all;
+  margin-top:  4px;
+}
+
+.modalToolLabel {
+  color:        var(--text-3);
+  font-size:    11px;
+  margin-top:   6px;
+}
+
+.modalToolError {
+  color: var(--red, #d33);
+}
+
+/* ── 状态 / 错误块 ───────────────────────────────────────── */
 .statusBlock,
 .emptyBlock {
   margin:      48px auto;
@@ -178,4 +385,8 @@
   word-break:    break-all;
   max-height:    240px;
   overflow:      auto;
+}
+
+.dim {
+  color: var(--text-3);
 }

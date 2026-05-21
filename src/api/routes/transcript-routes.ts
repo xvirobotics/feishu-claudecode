@@ -19,6 +19,8 @@
  * callback URI sent to Feishu. We also accept an explicit Host header (when
  * the bot has no publicBaseUrl) as a best-effort fallback for local dev.
  */
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import type * as http from 'node:http';
 import { jsonResponse } from './helpers.js';
 import type { RouteContext } from './types.js';
@@ -67,6 +69,124 @@ function isAllowed(openId: string, bot: BotConfig): boolean {
   const perBot = bot.transcriptAllowOpenIds ?? [];
   if (perBot.includes(openId)) return true;
   return envAllowList().includes(openId);
+}
+
+/**
+ * Resolve transcript data for `chatId` + `turn`, returning either the data
+ * payload or a structured failure reason. Shared by both the JSON API endpoint
+ * (`/api/transcript/...`) and the SSR HTML endpoint (`/web/transcript/...`) so
+ * mobile webviews that silently drop XHR can still load the page via inlined data.
+ */
+type TranscriptResolveOk = {
+  ok:       true;
+  payload:  {
+    chat:     { chatId: string; totalTurns: number; title?: string; botName?: string; platform?: string };
+    turn:     number | 'all';
+    messages: ReturnType<typeof readTranscript>['messages'];
+  };
+};
+type TranscriptResolveFail =
+  | { ok: false; status: 401; loginUrl: string }
+  | { ok: false; status: 403 }
+  | { ok: false; status: 404; reason: 'session' | 'bot' }
+  | { ok: false; status: 503 };
+
+function resolveTranscript(
+  ctx:      RouteContext,
+  req:      http.IncomingMessage,
+  chatId:   string,
+  turn:     number | 'all',
+  turnRaw:  string,
+): TranscriptResolveOk | TranscriptResolveFail {
+  loadOrCreateSessionSecret();
+
+  if (!ctx.sessionRegistry) return { ok: false, status: 503 };
+
+  const record = ctx.sessionRegistry.findByChatId(chatId);
+  if (!record) return { ok: false, status: 404, reason: 'session' };
+
+  const bot = ctx.registry.get(record.botName);
+  if (!bot) return { ok: false, status: 404, reason: 'bot' };
+
+  const botCfg     = bot.platform === 'feishu' ? (bot.config as BotConfig) : null;
+  const disableAuth = botCfg?.transcriptDisableAuth === true;
+
+  if (!disableAuth) {
+    const cookies = parseCookies(req.headers.cookie);
+    const session = cookies.mb_session ? verifySession(cookies.mb_session) : null;
+    if (!session) {
+      const returnPath = `/web/transcript/${encodeURIComponent(chatId)}${turnRaw ? `?turn=${turnRaw}` : ''}`;
+      return {
+        ok:       false,
+        status:   401,
+        loginUrl: `/api/auth/feishu/login?return=${encodeURIComponent(returnPath)}`,
+      };
+    }
+    if (!botCfg) {
+      if (!envAllowList().includes(session.open_id)) return { ok: false, status: 403 };
+    } else if (!isAllowed(session.open_id, botCfg)) {
+      return { ok: false, status: 403 };
+    }
+  }
+
+  if (!record.claudeSessionId) {
+    return {
+      ok: true,
+      payload: {
+        chat:     { chatId, totalTurns: 0, title: record.title },
+        turn,
+        messages: [],
+      },
+    };
+  }
+  const jsonlPath = sessionJsonlPath(record.workingDirectory, record.claudeSessionId);
+  const result    = readTranscript(jsonlPath, turn);
+  return {
+    ok: true,
+    payload: {
+      chat: {
+        chatId,
+        totalTurns: result.totalTurns,
+        title:      record.title,
+        botName:    record.botName,
+        platform:   record.platform,
+      },
+      turn,
+      messages: result.messages,
+    },
+  };
+}
+
+/** Escape characters that could break out of an HTML <script> embed. */
+function safeJsonForScript(data: unknown): string {
+  return JSON.stringify(data)
+    .replace(/</g,    '\\u003c')
+    .replace(/>/g,    '\\u003e')
+    .replace(/&/g,    '\\u0026')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/**
+ * Read dist/web/index.html and inject `window.__TRANSCRIPT_DATA__ = {...}`
+ * right before the bundle script. Some mobile in-app browsers (notably Baidu
+ * and certain Feishu webview configurations on CN mobile networks) silently
+ * drop XHR/fetch to lesser-known domains while still loading the initial HTML;
+ * inlining the data lets the page render without any subsequent network call.
+ */
+function readIndexHtmlWithData(payload: unknown): string | null {
+  const indexPath = path.resolve(process.cwd(), 'dist', 'web', 'index.html');
+  let html: string;
+  try {
+    html = fs.readFileSync(indexPath, 'utf8');
+  } catch {
+    return null;
+  }
+  const injection = `<script>window.__TRANSCRIPT_DATA__ = ${safeJsonForScript(payload)};</script>`;
+  if (html.includes('<script type="module"')) {
+    return html.replace('<script type="module"', `${injection}\n    <script type="module"`);
+  }
+  return html.replace('</head>', `  ${injection}\n  </head>`);
 }
 
 export async function handleTranscriptRoutes(
@@ -159,81 +279,80 @@ export async function handleTranscriptRoutes(
   }
 
   // ── 3) GET /api/transcript/:chatId ───────────────────────────────────
-  const m = url.match(/^\/api\/transcript\/([^/?#]+)/);
-  if (method === 'GET' && m) {
-    // Touch the secret once so the first request after install bootstraps
-    // .env.local instead of waiting for the first login attempt.
-    loadOrCreateSessionSecret();
-
-    const chatId = decodeURIComponent(m[1]);
-    const parsed = new URL(url, 'http://localhost');
+  const apiM = url.match(/^\/api\/transcript\/([^/?#]+)/);
+  if (method === 'GET' && apiM) {
+    const chatId    = decodeURIComponent(apiM[1]);
+    const parsed    = new URL(url, 'http://localhost');
     const turnParam = parsed.searchParams.get('turn') || 'all';
     const turn: number | 'all' = turnParam === 'all' ? 'all' : Math.max(1, parseInt(turnParam, 10) || 1);
 
-    const cookies = parseCookies(req.headers.cookie);
-    const session = cookies.mb_session ? verifySession(cookies.mb_session) : null;
-    if (!session) {
-      const returnPath = `/web/transcript/${encodeURIComponent(chatId)}${turnParam ? `?turn=${turnParam}` : ''}`;
-      jsonResponse(res, 401, {
-        error:    'unauthenticated',
-        loginUrl: `/api/auth/feishu/login?return=${encodeURIComponent(returnPath)}`,
-      });
-      return true;
-    }
-
-    if (!ctx.sessionRegistry) {
-      jsonResponse(res, 503, { error: 'session registry unavailable' });
-      return true;
-    }
-
-    const record = ctx.sessionRegistry.findByChatId(chatId);
-    if (!record) {
-      jsonResponse(res, 404, { error: 'session not found' });
-      return true;
-    }
-
-    // Resolve owning bot — used for whitelist + (future) per-bot rendering hints.
-    const bot = ctx.registry.get(record.botName);
-    if (!bot) {
-      jsonResponse(res, 404, { error: 'bot not registered' });
-      return true;
-    }
-    if (bot.platform !== 'feishu') {
-      // Non-feishu bots don't have an OAuth flow yet — they remain accessible
-      // only via the same Feishu cookie + the global env allowlist.
-      if (!envAllowList().includes(session.open_id)) {
+    const result = resolveTranscript(ctx, req, chatId, turn, turnParam);
+    if (!result.ok) {
+      if (result.status === 401) {
+        jsonResponse(res, 401, { error: 'unauthenticated', loginUrl: result.loginUrl });
+      } else if (result.status === 403) {
         jsonResponse(res, 403, { error: 'forbidden' });
-        return true;
+      } else if (result.status === 404) {
+        jsonResponse(res, 404, { error: result.reason === 'session' ? 'session not found' : 'bot not registered' });
+      } else {
+        jsonResponse(res, 503, { error: 'session registry unavailable' });
       }
-    } else {
-      if (!isAllowed(session.open_id, bot.config as BotConfig)) {
-        jsonResponse(res, 403, { error: 'forbidden' });
-        return true;
-      }
-    }
-
-    if (!record.claudeSessionId) {
-      jsonResponse(res, 200, {
-        chat:     { chatId, totalTurns: 0, title: record.title },
-        turn,
-        messages: [],
-      });
       return true;
     }
-    const jsonlPath = sessionJsonlPath(record.workingDirectory, record.claudeSessionId);
-    const result    = readTranscript(jsonlPath, turn);
+    jsonResponse(res, 200, result.payload);
+    return true;
+  }
 
-    jsonResponse(res, 200, {
-      chat:     {
-        chatId,
-        totalTurns: result.totalTurns,
-        title:      record.title,
-        botName:    record.botName,
-        platform:   record.platform,
-      },
-      turn,
-      messages: result.messages,
+  // ── 4) GET /web/transcript/:chatId ───────────────────────────────────
+  // Server-rendered HTML with data inlined. Used to survive mobile webviews
+  // (Baidu, some Feishu configurations on CN networks) that drop XHR/fetch.
+  // Returns early so this beats the static-file fallback.
+  const htmlM = url.match(/^\/web\/transcript\/([^/?#]+)/);
+  if (method === 'GET' && htmlM) {
+    const chatId    = decodeURIComponent(htmlM[1]);
+    const parsed    = new URL(url, 'http://localhost');
+    const turnParam = parsed.searchParams.get('turn') || 'all';
+    const turn: number | 'all' = turnParam === 'all' ? 'all' : Math.max(1, parseInt(turnParam, 10) || 1);
+
+    const result = resolveTranscript(ctx, req, chatId, turn, turnParam);
+
+    // For 401 (cookie-gated bots only — disableAuth bots never return this),
+    // redirect the browser to OAuth directly. No XHR needed.
+    if (!result.ok && result.status === 401) {
+      res.writeHead(302, { Location: result.loginUrl });
+      res.end();
+      return true;
+    }
+
+    // Build the inline payload. For non-200 cases we still serve the HTML
+    // shell but tell the frontend what went wrong via the embedded JSON.
+    type InlineData =
+      | { kind: 'ok'; payload: TranscriptResolveOk['payload'] }
+      | { kind: 'forbidden' }
+      | { kind: 'notFound' }
+      | { kind: 'unavailable' };
+    let inline: InlineData;
+    if (result.ok) inline = { kind: 'ok', payload: result.payload };
+    else if (result.status === 403) inline = { kind: 'forbidden' };
+    else if (result.status === 404) inline = { kind: 'notFound' };
+    else inline = { kind: 'unavailable' };
+
+    const html = readIndexHtmlWithData(inline);
+    if (html == null) {
+      res.writeHead(503, { 'Content-Type': 'text/plain' });
+      res.end('Web UI not built. Run `npm run build:web` first.');
+      return true;
+    }
+    // Strongest no-cache combo — Baidu/Feishu webviews on CN networks have
+    // been observed ignoring plain "no-cache" and serving stale HTML that
+    // points at deleted bundle hashes after a redeploy.
+    res.writeHead(200, {
+      'Content-Type':  'text/html; charset=utf-8',
+      'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      Pragma:          'no-cache',
+      Expires:         '0',
     });
+    res.end(html);
     return true;
   }
 
