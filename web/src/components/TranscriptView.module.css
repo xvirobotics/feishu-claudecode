@@ -1,0 +1,181 @@
+/* ============================================================
+   TranscriptView — read-only conversation history page.
+
+   Standalone entry (no Layout, no sidebar). Uses the global
+   design tokens defined in index.css so it picks up the same
+   dark theme as ChatView.
+============================================================ */
+
+.page {
+  display:        flex;
+  flex-direction: column;
+  min-height:     100vh;
+  background:     var(--void);
+  color:          var(--text-1);
+  font-family:    var(--font-sans);
+}
+
+/* ── Header ───────────────────────────────────────────────── */
+.header {
+  display:         flex;
+  justify-content: space-between;
+  align-items:     center;
+  gap:             16px;
+  padding:         16px 24px;
+  border-bottom:   1px solid var(--glass-border);
+  background:      var(--surface-1);
+  position:        sticky;
+  top:             0;
+  z-index:         10;
+  backdrop-filter: blur(8px);
+}
+
+.headerTitle {
+  font-size:     15px;
+  font-weight:   600;
+  color:         var(--text-0);
+  white-space:   nowrap;
+  overflow:      hidden;
+  text-overflow: ellipsis;
+}
+
+.headerMeta {
+  display:     flex;
+  align-items: center;
+  gap:         12px;
+  font-size:   12px;
+  flex-shrink: 0;
+}
+
+.headerBot {
+  padding:       2px 8px;
+  background:    var(--accent-soft);
+  color:         var(--accent-text);
+  border-radius: var(--r-sm);
+  font-family:   var(--font-mono);
+  font-size:     11px;
+}
+
+.dim {
+  color: var(--text-3);
+}
+
+/* ── Turn switcher ───────────────────────────────────────── */
+.turnSwitcher {
+  display:     flex;
+  align-items: center;
+  flex-wrap:   wrap;
+  gap:         6px;
+  padding:     10px 24px;
+  border-bottom: 1px solid var(--glass-border);
+  background:    var(--surface-0);
+  font-size:     12px;
+}
+
+.turnSwitcherLabel {
+  color:        var(--text-3);
+  margin-right: 4px;
+  font-family:  var(--font-mono);
+}
+
+.turnPill {
+  padding:       4px 10px;
+  border:        1px solid var(--glass-border);
+  background:    transparent;
+  color:         var(--text-2);
+  border-radius: var(--r-sm);
+  font-size:     12px;
+  font-family:   var(--font-mono);
+  cursor:        pointer;
+  transition:    background var(--duration-fast) var(--ease-out),
+                 color      var(--duration-fast) var(--ease-out),
+                 border     var(--duration-fast) var(--ease-out);
+}
+
+.turnPill:hover {
+  background: var(--surface-hover);
+  color:      var(--text-0);
+  border:     1px solid var(--glass-border-hover);
+}
+
+.turnPillActive {
+  background: var(--accent);
+  color:      var(--text-on-accent);
+  border:     1px solid var(--accent);
+}
+
+.turnPillActive:hover {
+  background: var(--accent-hover);
+  color:      var(--text-on-accent);
+  border:     1px solid var(--accent-hover);
+}
+
+/* ── Body ────────────────────────────────────────────────── */
+.body {
+  flex:           1;
+  display:        flex;
+  flex-direction: column;
+  min-height:     0;
+  padding:        16px 0;
+}
+
+/* ── Status / empty / error blocks ──────────────────────── */
+.statusBlock,
+.emptyBlock {
+  margin:      48px auto;
+  padding:     24px 32px;
+  max-width:   480px;
+  text-align:  center;
+  color:       var(--text-2);
+  font-size:   14px;
+  background:  var(--surface-1);
+  border:      1px solid var(--glass-border);
+  border-radius: var(--r-md);
+}
+
+.errorBlock {
+  margin:        48px auto;
+  padding:       24px 32px;
+  max-width:     560px;
+  background:    var(--surface-1);
+  border:        1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  color:         var(--text-1);
+  line-height:   1.6;
+}
+
+.errorBlock h2 {
+  margin:        0 0 12px 0;
+  font-size:     18px;
+  color:         var(--text-0);
+}
+
+.errorBlock p {
+  margin:    0 0 8px 0;
+  font-size: 14px;
+}
+
+.errorBlock code {
+  padding:       1px 6px;
+  background:    var(--code-bg);
+  border:        1px solid var(--code-border);
+  border-radius: var(--r-xs);
+  font-family:   var(--font-mono);
+  font-size:     12px;
+  color:         var(--accent-text);
+}
+
+.errorDetail {
+  margin:        12px 0 0 0;
+  padding:       12px;
+  background:    var(--code-bg);
+  border:        1px solid var(--code-border);
+  border-radius: var(--r-sm);
+  font-family:   var(--font-mono);
+  font-size:     12px;
+  color:         var(--red);
+  white-space:   pre-wrap;
+  word-break:    break-all;
+  max-height:    240px;
+  overflow:      auto;
+}
