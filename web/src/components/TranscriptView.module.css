@@ -196,31 +196,14 @@
   color:        var(--accent-text);
 }
 
-/* ── Assistant 文字版本 + 分段绿色横线 ────────────────────────
- * Why: 一次响应可能分多段 stream 写出来，段之间要有明显的"换段"提示，
- *      否则用户分不清是同一段连续输出还是后追加的修正。
- *      用户明确："带一点特殊的颜色,比如说绿色"——选 mint-green，浅底配色舒服。
+/* ── Assistant 文字版本 + 分段隐约绿线 ────────────────────────
+ * Why: 段间分隔要存在，但不能抢内容的视线。用 primary accent 调到
+ *      低饱和度（rgba 35% 透明）→ 灰中带绿，跟整站绿调一致但极克制。
  */
 .textBlock + .textBlock {
-  margin-top:    22px;
-  padding-top:   22px;
-  border-top:    2px solid #10b981;
-  position:      relative;
-}
-.textBlock + .textBlock::before {
-  content:       '续';
-  position:      absolute;
-  top:           -11px;
-  left:          50%;
-  transform:     translateX(-50%);
-  padding:       1px 8px;
-  background:    var(--surface-1);
-  color:         #10b981;
-  font-size:     11px;
-  font-family:   var(--font-mono);
-  font-weight:   600;
-  letter-spacing: 2px;
-  border-radius: 999px;
+  margin-top:    28px;
+  padding-top:   28px;
+  border-top:    1px solid rgba(0, 148, 94, 0.32);
 }
 
 .textBlock :global(p)  { margin: 0 0 8px; }
