@@ -58,20 +58,6 @@ interface MetaEntry {
 type MetaMap = Record<string, MetaEntry>;
 
 /** Same encoder Claude Code SDK uses to derive ~/.claude/projects/<dir>. */
-function encodeWorkdir(workdir: string): string {
-  const sanitized = workdir.replace(/[^a-zA-Z0-9]/g, '-');
-  // SDK truncates + appends a hash beyond 200 chars; we don't replicate the
-  // hash (we'd need the SDK's N16). Workdirs >200 chars are exotic — callers
-  // will just see an empty message list, which is acceptable.
-  return sanitized.length <= 200 ? sanitized : sanitized.slice(0, 200);
-}
-
-/** Project transcript dir for a given workdir. */
-function projectTranscriptDir(workdir: string): string {
-  return path.join(os.homedir(), '.claude', 'projects', encodeWorkdir(workdir));
-}
-
-/** Same encoder Claude Code SDK uses to derive ~/.claude/projects/<dir>. */
 export function encodeWorkdir(workdir: string): string {
   const sanitized = workdir.replace(/[^a-zA-Z0-9]/g, '-');
   // SDK truncates + appends a hash beyond 200 chars; we don't replicate the
