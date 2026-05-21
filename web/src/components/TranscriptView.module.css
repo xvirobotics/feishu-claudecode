@@ -201,8 +201,8 @@
  *      低饱和度（rgba 35% 透明）→ 灰中带绿，跟整站绿调一致但极克制。
  */
 .textBlock + .textBlock {
-  margin-top:    36px;
-  padding-top:   36px;
+  margin-top:    18px;
+  padding-top:   18px;
   border-top:    1px solid var(--accent);
 }
 
@@ -237,7 +237,7 @@
 .textBlock :global(hr) {
   border:      none;
   border-top:  1px solid var(--accent);
-  margin:      36px 0;
+  margin:      18px 0;
 }
 
 .thinking {
