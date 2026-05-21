@@ -43,8 +43,19 @@ export class StreamProcessor {
   private _lastOutputTokens: number | undefined;
   // Live background tasks (Monitor, etc.) — task_id → latest rollup.
   private _backgroundEvents: Map<string, BackgroundEvent> = new Map();
+  /**
+   * Optional transcript-page link surfaced into every card produced by this
+   * processor. Set once per turn from MessageBridge.runOneTurn so the link
+   * stays stable across every streaming update for that turn.
+   */
+  private _transcriptLink: string | undefined;
 
   constructor(private userPrompt: string, private _workingDirectory?: string) {}
+
+  /** Bind a transcript link that will be included in every subsequent card state. */
+  setTranscriptLink(link: string | undefined): void {
+    this._transcriptLink = link;
+  }
 
   processMessage(message: SDKMessage): CardState {
     // Capture session_id from any message
@@ -101,6 +112,7 @@ export class StreamProcessor {
         ? [...this._backgroundEvents.values()]
         : undefined,
       workingDirectory: this._workingDirectory,
+      transcriptLink:   this._transcriptLink,
     };
   }
 
@@ -308,6 +320,7 @@ export class StreamProcessor {
         ? [...this._backgroundEvents.values()]
         : undefined,
       workingDirectory: this._workingDirectory,
+      transcriptLink:   this._transcriptLink,
     };
   }
 
@@ -413,6 +426,7 @@ export class StreamProcessor {
         ? [...this._backgroundEvents.values()]
         : undefined,
       workingDirectory: this._workingDirectory,
+      transcriptLink:   this._transcriptLink,
     };
   }
 

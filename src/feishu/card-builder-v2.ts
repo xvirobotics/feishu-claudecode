@@ -379,6 +379,20 @@ export function buildCardV2(state: CardState): string {
     }
   }
 
+  // Transcript link — rendered as an inline markdown link below the footer
+  // so users on every Feishu surface (desktop, mobile, webview) can tap to
+  // open the public detail page. We deliberately use markdown rather than
+  // a `tag: action` button because mobile silently drops action blocks in
+  // Card v2 (see bug-feishu-v2-mobile-action-buttons).
+  if (state.transcriptLink) {
+    elements.push({
+      tag:        'markdown',
+      content:    `📜 [查看完整对话](${state.transcriptLink})`,
+      text_size:  'notation',
+      text_align: 'left',
+    });
+  }
+
   const card = {
     schema: '2.0',
     config: {
