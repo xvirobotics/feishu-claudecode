@@ -201,9 +201,9 @@
  *      低饱和度（rgba 35% 透明）→ 灰中带绿，跟整站绿调一致但极克制。
  */
 .textBlock + .textBlock {
-  margin-top:    28px;
-  padding-top:   28px;
-  border-top:    1px solid rgba(0, 148, 94, 0.32);
+  margin-top:    36px;
+  padding-top:   36px;
+  border-top:    1px solid var(--accent);
 }
 
 .textBlock :global(p)  { margin: 0 0 8px; }
@@ -231,6 +231,13 @@
   padding:     2px 10px;
   border-left: 3px solid var(--glass-border);
   color:       var(--text-2);
+}
+/* 模型在文字里写 `---` / `***` 时 react-markdown 会渲染 <hr>；
+ * 让它和段间绿线视觉同源，避免一灰一绿两个分隔符并存。 */
+.textBlock :global(hr) {
+  border:      none;
+  border-top:  1px solid var(--accent);
+  margin:      36px 0;
 }
 
 .thinking {
