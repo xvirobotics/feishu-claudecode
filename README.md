@@ -364,6 +364,8 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 | `maxTurns` / `maxBudgetUsd` | 否 | 不限 | 执行限制 |
 | `model` | 否 | SDK 默认 | Claude 模型 |
 | `apiKey` | 否 | — | Anthropic API Key（不设则从 `~/.claude/.credentials.json` 动态读取，兼容 cc-switch） |
+| `publicBaseUrl` | 否 | — | 详情页公网入口（设置后卡片会出现 `📜 查看完整对话` 链接） |
+| `transcriptAllowOpenIds` | 否 | `[]` | 详情页 open_id 白名单（飞书 OAuth 通过后才能访问） |
 
 </details>
 
@@ -386,6 +388,8 @@ MetaBot 支持 4 种方式与你的 Agent 团队交互：
 | `METABOT_URL` | `http://localhost:9100` | MetaBot API 地址 |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory 服务地址 |
 | `METABOT_PEERS` | — | Peer MetaBot 地址（逗号分隔） |
+| `METABOT_SESSION_SECRET` | 首次自动生成 | 详情页 OAuth state + JWT cookie 签名密钥（写入 `.env.local`） |
+| `METABOT_TRANSCRIPT_ALLOW_OPEN_IDS` | — | 详情页 open_id 全局白名单 fallback（逗号分隔，仅当 bot 未配置 `transcriptAllowOpenIds` 时生效） |
 | `LOG_LEVEL` | info | 日志级别 |
 
 </details>

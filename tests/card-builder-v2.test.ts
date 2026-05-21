@@ -317,6 +317,43 @@ describe('buildCardV2', () => {
     expect(table.rows[0].col0).toContain('下装32%');
     expect(table.rows[1].col2).toContain('[详情](https://example.com)');
   });
+
+  // Transcript link — surfaced only when `transcriptLink` is set on the
+  // CardState. Graceful degradation: cards omit the link when no public
+  // base URL is configured, so existing single-bot deployments don't see
+  // a half-built URL.
+  it('renders the transcript link line when transcriptLink is set', () => {
+    const state: CardState = {
+      status:         'complete',
+      userPrompt:     'task',
+      responseText:   'done',
+      toolCalls:      [],
+      transcriptLink: 'https://bot.example.com/web/transcript/oc_x?turn=3',
+    };
+    const elements = findElements(JSON.parse(buildCardV2(state)));
+    const link = elements.find(
+      (e) => e.tag === 'markdown' && typeof e.content === 'string'
+        && e.content.includes('查看完整对话'),
+    );
+    expect(link).toBeDefined();
+    expect(link.content).toContain('https://bot.example.com/web/transcript/oc_x?turn=3');
+    expect(link.content).toContain('📜');
+  });
+
+  it('omits the transcript link line when transcriptLink is unset (graceful degradation)', () => {
+    const state: CardState = {
+      status:       'complete',
+      userPrompt:   'task',
+      responseText: 'done',
+      toolCalls:    [],
+    };
+    const elements = findElements(JSON.parse(buildCardV2(state)));
+    const link = elements.find(
+      (e) => e.tag === 'markdown' && typeof e.content === 'string'
+        && /查看完整对话/.test(e.content),
+    );
+    expect(link).toBeUndefined();
+  });
 });
 
 describe('buildHelpCardV2', () => {

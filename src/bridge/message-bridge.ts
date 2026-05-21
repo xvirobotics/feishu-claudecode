@@ -1,5 +1,6 @@
 import * as fs from 'node:fs';
 import * as fsPromises from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
@@ -202,6 +203,16 @@ export class MessageBridge {
   readonly costTracker: CostTracker;
   private sessionRegistry?: SessionRegistry;
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
+  /**
+   * Per-chatId monotonically-increasing turn counter. Bumped at the start of
+   * every {@link runOneTurn} invocation. Surfaced into the Feishu card as
+   * `transcriptLink=<base>/web/transcript/<chatId>?turn=<N>` so the
+   * "查看完整对话" link opens directly on the turn the card represents.
+   *
+   * Process-local: a restart resets the counter to 0 and the next card link
+   * falls back to the JSONL line count (see {@link computeTranscriptLink}).
+   */
+  private turnIndexByChat = new Map<string, number>();
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-chatId message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches
   /**
@@ -865,12 +876,19 @@ export class MessageBridge {
     const session = this.sessionManager.getSession(chatId);
     const activeGoal = session.activeGoal;
 
+    // Continuation cards reuse the prior turn's index — they belong to the
+    // same logical user turn, not a new one. Bumping would point the link
+    // past the visible turn.
+    const transcriptLink = this.computeTranscriptLink(chatId);
+    processor.setTranscriptLink(transcriptLink);
+
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
       goalCondition: activeGoal,
+      transcriptLink,
     };
 
     const messageId = await this.sender.sendCard(chatId, initialState);
@@ -1038,6 +1056,70 @@ export class MessageBridge {
    * sessionId, so `acquire()` would otherwise hand back the same broken
    * instance.
    */
+  /**
+   * Bump the per-chatId turn counter and return the new value. Called once
+   * per {@link runOneTurn} invocation so the value matches the user-message
+   * boundary used by the transcript reader.
+   */
+  private bumpTurnIndex(chatId: string): number {
+    const next = (this.turnIndexByChat.get(chatId) ?? 0) + 1;
+    this.turnIndexByChat.set(chatId, next);
+    return next;
+  }
+
+  /**
+   * Build the absolute transcript page URL for the current turn of a chat.
+   * Returns `undefined` when:
+   *   - the bot has no `publicBaseUrl` configured (graceful degradation), or
+   *   - the bot config shape doesn't include the field (non-Feishu bots).
+   *
+   * `turnIndex` falls back to the JSONL `type:'user'` count if the in-memory
+   * counter is empty (process restart), so cards sent right after a restart
+   * still point at the right turn.
+   */
+  private computeTranscriptLink(chatId: string, turnIndex?: number): string | undefined {
+    const cfg = this.config as BotConfigBase & { publicBaseUrl?: string };
+    if (!cfg.publicBaseUrl) return undefined;
+    const base = cfg.publicBaseUrl.replace(/\/+$/, '');
+    const t    = turnIndex ?? this.turnIndexByChat.get(chatId) ?? this.countUserTurnsFromJsonl(chatId);
+    return `${base}/web/transcript/${encodeURIComponent(chatId)}?turn=${t || 1}`;
+  }
+
+  /** Fallback: count the user-message lines in the chat's JSONL transcript. */
+  private countUserTurnsFromJsonl(chatId: string): number {
+    if (!this.sessionRegistry) return 0;
+    const rec = this.sessionRegistry.findByChatId(chatId);
+    if (!rec?.claudeSessionId) return 0;
+    try {
+      const raw = fs.readFileSync(
+        path.join(
+          // SessionRegistry encodes workdir identically.
+          os.homedir(),
+          '.claude', 'projects',
+          rec.workingDirectory.replace(/[^a-zA-Z0-9]/g, '-').slice(0, 200),
+          `${rec.claudeSessionId}.jsonl`,
+        ),
+        'utf-8',
+      );
+      let n = 0;
+      for (const line of raw.split('\n')) {
+        if (!line) continue;
+        try {
+          const evt = JSON.parse(line);
+          if (evt.type === 'user' && evt.message?.role === 'user' && typeof evt.message.content !== 'undefined') {
+            // Skip pure tool_result carrier lines.
+            const c = evt.message.content;
+            if (Array.isArray(c) && c.length > 0 && c.every((b: { type?: string }) => b.type === 'tool_result')) continue;
+            n += 1;
+          }
+        } catch { /* ignore */ }
+      }
+      return n;
+    } catch {
+      return 0;
+    }
+  }
+
   private async runOneTurn(
     chatId: string,
     engineName: EngineName,
@@ -1704,12 +1786,19 @@ export class MessageBridge {
     // arrive mid-task (handleMessage rejects them with "Task In Progress"),
     // so this stays stable for the whole run.
     const activeGoal = session.activeGoal;
+    // Bump the per-chat turn counter once per user-driven turn — this is the
+    // canonical turn boundary the transcript reader uses.
+    const turnIndex = this.bumpTurnIndex(chatId);
+    const transcriptLink = this.computeTranscriptLink(chatId, turnIndex);
+    processor.setTranscriptLink(transcriptLink);
+
     const initialState: CardState = {
       status: 'thinking',
       userPrompt: displayPrompt,
       responseText: '',
       toolCalls: [],
       goalCondition: activeGoal,
+      transcriptLink,
     };
 
     const messageId = await this.sender.sendCard(chatId, initialState);
@@ -2181,6 +2270,11 @@ export class MessageBridge {
     const processor = new StreamProcessor(displayPrompt);
     const rateLimiter = new RateLimiter(1500);
     const activeGoal = session.activeGoal;
+    // API-triggered tasks also bump the per-chat turn counter so the
+    // transcript link matches the JSONL boundary.
+    const turnIndex = this.bumpTurnIndex(chatId);
+    const transcriptLink = this.computeTranscriptLink(chatId, turnIndex);
+    processor.setTranscriptLink(transcriptLink);
 
     const initialState: CardState = {
       status: 'thinking',
@@ -2188,6 +2282,7 @@ export class MessageBridge {
       responseText: '',
       toolCalls: [],
       goalCondition: activeGoal,
+      transcriptLink,
     };
 
     let messageId: string | undefined;

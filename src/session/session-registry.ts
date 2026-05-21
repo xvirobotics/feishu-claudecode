@@ -40,6 +40,25 @@ export interface SessionLink {
 
 const MAX_MESSAGES_PER_SESSION = 200;
 
+/** Same encoder Claude Code SDK uses to derive ~/.claude/projects/<dir>. */
+export function encodeWorkdir(workdir: string): string {
+  const sanitized = workdir.replace(/[^a-zA-Z0-9]/g, '-');
+  // SDK truncates + appends a hash beyond 200 chars; we don't replicate the
+  // hash (we'd need the SDK's N16). Workdirs >200 chars are exotic — callers
+  // will just see an empty message list, which is acceptable.
+  return sanitized.length <= 200 ? sanitized : sanitized.slice(0, 200);
+}
+
+/** Project transcript dir for a given workdir. */
+export function projectTranscriptDir(workdir: string): string {
+  return path.join(os.homedir(), '.claude', 'projects', encodeWorkdir(workdir));
+}
+
+/** Resolve the JSONL transcript file path for a session, if known. */
+export function sessionJsonlPath(workdir: string, claudeSessionId: string): string {
+  return path.join(projectTranscriptDir(workdir), `${claudeSessionId}.jsonl`);
+}
+
 export class SessionRegistry {
   private db: Database.Database;
 

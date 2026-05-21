@@ -86,6 +86,20 @@ export interface BotConfig extends BotConfigBase {
   };
   /** When true, respond to all messages in group chats without requiring @mention. */
   groupNoMention?: boolean;
+  /**
+   * Public-facing base URL where this MetaBot instance is reachable
+   * (e.g. `https://metabot.example.com`). Used to:
+   *   - assemble the `查看完整对话` link injected into every Feishu card.
+   *   - build the OAuth `redirect_uri` sent to passport.feishu.cn.
+   * When empty/undefined the link is omitted from cards (graceful degradation).
+   */
+  publicBaseUrl?: string;
+  /**
+   * Allowlist of Feishu open_ids permitted to view this bot's transcript
+   * pages. Falls back to env METABOT_TRANSCRIPT_ALLOW_OPEN_IDS when this
+   * field is missing or empty.
+   */
+  transcriptAllowOpenIds?: string[];
 }
 
 /** Telegram bot config (extends base with Telegram credentials). */
@@ -208,6 +222,10 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   downloadsDir?: string;
   /** When true, respond to all messages in group chats without requiring @mention. */
   groupNoMention?: boolean;
+  /** Public base URL for transcript page links (e.g. `https://bot.example.com`). */
+  publicBaseUrl?: string;
+  /** Whitelisted Feishu open_ids permitted to view this bot's transcripts. */
+  transcriptAllowOpenIds?: string[];
 }
 
 function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
@@ -221,6 +239,8 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
     ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
     ...(entry.groupNoMention ? { groupNoMention: true } : {}),
+    ...(entry.publicBaseUrl ? { publicBaseUrl: entry.publicBaseUrl } : {}),
+    ...(entry.transcriptAllowOpenIds?.length ? { transcriptAllowOpenIds: entry.transcriptAllowOpenIds } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),

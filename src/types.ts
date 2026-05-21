@@ -90,6 +90,14 @@ export interface CardState {
   goalCondition?: string;
   /** Snapshot of the active Agent Team (teammates + tasks), if any. */
   teamState?: TeamState;
+  /**
+   * Pre-built URL to the conversation transcript detail page (e.g.
+   * `https://bot.example.com/web/transcript/<chatId>?turn=3`). When present,
+   * the card renderer appends a `📜 [查看完整对话](...)` line below the
+   * stats footer; when absent the line is omitted (used as graceful
+   * degradation when `publicBaseUrl` is not configured).
+   */
+  transcriptLink?: string;
 }
 
 export interface IncomingMessage {

@@ -367,6 +367,8 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
 | `maxTurns` / `maxBudgetUsd` | No | unlimited | Execution limits |
 | `model` | No | SDK default | Claude model |
 | `apiKey` | No | — | Anthropic API key (leave unset for dynamic auth via cc-switch) |
+| `publicBaseUrl` | No | — | Public ingress for the transcript page. Setting this injects a `📜 View full conversation` link into every card |
+| `transcriptAllowOpenIds` | No | `[]` | Allowlist of Feishu `open_id`s that can view the transcript page (only consulted after a successful Feishu OAuth login) |
 
 </details>
 
@@ -389,6 +391,8 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
 | `METABOT_URL` | `http://localhost:9100` | MetaBot API URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
 | `META_MEMORY_URL` | `http://localhost:8100` | MetaMemory server URL. Default is local HTTP; for remote access prefer HTTPS or a private-network address |
 | `METABOT_PEERS` | — | Peer MetaBot URLs (comma-separated). Prefer HTTPS for internet-reachable peers |
+| `METABOT_SESSION_SECRET` | auto-generated | Signs the transcript-page OAuth `state` and the `mb_session` JWT cookie. Generated on first start and written to `.env.local` |
+| `METABOT_TRANSCRIPT_ALLOW_OPEN_IDS` | — | Global open_id allowlist fallback for the transcript page (comma-separated). Only consulted when a bot has no per-bot `transcriptAllowOpenIds` |
 | `LOG_LEVEL` | info | Log level |
 
 </details>

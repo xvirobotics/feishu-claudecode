@@ -20,7 +20,9 @@
       "feishuAppSecret": "secret2",
       "defaultWorkingDirectory": "/home/user/project-beta",
       "maxTurns": 30,
-      "maxBudgetUsd": 0.5
+      "maxBudgetUsd": 0.5,
+      "publicBaseUrl": "https://example.com:18443",
+      "transcriptAllowOpenIds": ["ou_paste_open_id_after_first_oauth_login"]
     },
     {
       "name": "project-gamma",

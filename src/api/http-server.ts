@@ -32,6 +32,7 @@ import {
   handleSessionRoutes,
   handleSkillHubRoutes,
   handleExecutorRoutes,
+  handleTranscriptRoutes,
 } from './routes/index.js';
 import type { RouteContext } from './routes/index.js';
 
@@ -91,7 +92,9 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     skillHubStore,
   };
 
-  // Route handlers in priority order
+  // Route handlers in priority order. `handleTranscriptRoutes` must come
+  // BEFORE the static file fallback (server falls through to that when none
+  // of these handlers match the URL).
   const routeHandlers = [
     handleVoiceRoutes,
     handleFileRoutes,
@@ -103,14 +106,24 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     handleSessionRoutes,
     handleSkillHubRoutes,
     handleExecutorRoutes,
+    handleTranscriptRoutes,
   ];
 
   const server = http.createServer(async (req, res) => {
     const method = req.method || 'GET';
     const url = req.url || '/';
 
-    // Auth check (exempt /web/, /memory/, /api/files/)
-    if (secret && !url.startsWith('/web') && !url.startsWith('/memory') && !url.startsWith('/api/files/')) {
+    // Auth check (exempt /web/, /memory/, /api/files/, transcript & feishu OAuth)
+    // The transcript/auth routes carry their own cookie-based auth and the
+    // OAuth callback is hit by the user's browser (no Bearer header).
+    if (
+      secret
+      && !url.startsWith('/web')
+      && !url.startsWith('/memory')
+      && !url.startsWith('/api/files/')
+      && !url.startsWith('/api/transcript/')
+      && !url.startsWith('/api/auth/feishu/')
+    ) {
       const auth = req.headers.authorization;
       const urlToken = url.includes('token=') ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token') : null;
       if (auth !== `Bearer ${secret}` && urlToken !== secret) {
