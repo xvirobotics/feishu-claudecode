@@ -61,7 +61,8 @@ export interface JsonlInfo {
 }
 
 export interface AuthMeResponse {
-  username: string;
+  username:     string;
+  disableAuth?: boolean;
 }
 
 export class ApiError extends Error {
@@ -137,6 +138,36 @@ export function listBots() {
 
 export function getBot(name: string) {
   return request<BotDetailResponse>(`/bots/${encodeURIComponent(name)}`);
+}
+
+export interface CreateBotInput {
+  name:                     string;
+  feishuAppId:              string;
+  feishuAppSecret:          string;
+  defaultWorkingDirectory:  string;
+  description?:             string;
+  publicBaseUrl?:           string;
+  transcriptDisableAuth?:   boolean;
+  transcriptAllowOpenIds?:  string[];
+  env?:                     Record<string, string>;
+  insertAtIndex?:           number;
+}
+
+export function createBot(input: CreateBotInput) {
+  return request<{ bot: BotConfig; status: BotSummary }>('/bots', {
+    method: 'POST',
+    body:   JSON.stringify(input),
+  });
+}
+
+export function deleteBot(name: string, opts?: { clearSessions?: boolean }) {
+  return request<{ ok: true; removed: string; sessionsCleared: boolean; dbDeleted: boolean }>(
+    `/bots/${encodeURIComponent(name)}`,
+    {
+      method: 'DELETE',
+      body:   JSON.stringify(opts || {}),
+    },
+  );
 }
 
 export function startBot(name: string) {

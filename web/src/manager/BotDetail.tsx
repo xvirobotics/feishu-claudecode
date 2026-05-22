@@ -6,8 +6,10 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { ChevronLeft, Play, RotateCw, Square, Trash2 } from 'lucide-react';
 import {
   ApiError,
+  deleteBot,
   getBot,
   startBot,
   stopBot,
@@ -65,6 +67,30 @@ export function BotDetail({ onAuthLost }: BotDetailProps) {
   const [loading, setLoading] = useState(true);
   const [tab, setTab]       = useState<Tab>('overview');
   const [actBusy, setActBusy] = useState<null | 'start' | 'stop' | 'restart'>(null);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleteClearSessions, setDeleteClearSessions] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  async function handleDelete() {
+    setDeleteBusy(true);
+    try {
+      const res = await deleteBot(name, { clearSessions: deleteClearSessions });
+      toast.show(
+        `已删除 bot ${res.removed}` + (res.sessionsCleared ? ' (sessions 已清空)' : ''),
+        'success',
+      );
+      navigate('/manager/dashboard');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthLost();
+        return;
+      }
+      toast.show(err instanceof Error ? err.message : '删除失败', 'error');
+    } finally {
+      setDeleteBusy(false);
+      setShowDelete(false);
+    }
+  }
 
   const mountedRef = useRef(true);
 
@@ -153,7 +179,8 @@ export function BotDetail({ onAuthLost }: BotDetailProps) {
           className={styles.topBarBack}
           onClick={() => navigate('/manager/dashboard')}
         >
-          ← 返回
+          <ChevronLeft size={14} strokeWidth={2.25} />
+          <span>返回</span>
         </button>
         <h1>{name}</h1>
         <StatusPill status={status.status} />
@@ -165,7 +192,8 @@ export function BotDetail({ onAuthLost }: BotDetailProps) {
             onClick={() => handleAction('start')}
             disabled={actBusy !== null || status.status === 'online'}
           >
-            {actBusy === 'start' ? '启动中…' : '启动'}
+            <Play size={14} strokeWidth={2.25} />
+            <span>{actBusy === 'start' ? '启动中…' : '启动'}</span>
           </button>
           <button
             type="button"
@@ -173,7 +201,12 @@ export function BotDetail({ onAuthLost }: BotDetailProps) {
             onClick={() => handleAction('restart')}
             disabled={actBusy !== null}
           >
-            {actBusy === 'restart' ? '重启中…' : '重启'}
+            <RotateCw
+              size={14}
+              strokeWidth={2.25}
+              className={actBusy === 'restart' ? styles.iconSpinning : ''}
+            />
+            <span>{actBusy === 'restart' ? '重启中…' : '重启'}</span>
           </button>
           <button
             type="button"
@@ -181,10 +214,67 @@ export function BotDetail({ onAuthLost }: BotDetailProps) {
             onClick={() => handleAction('stop')}
             disabled={actBusy !== null || status.status === 'stopped'}
           >
-            {actBusy === 'stop' ? '停止中…' : '停止'}
+            <Square size={13} strokeWidth={2.25} fill="currentColor" />
+            <span>{actBusy === 'stop' ? '停止中…' : '停止'}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.actionBtn + ' ' + styles.actionBtnDanger}
+            onClick={() => setShowDelete(true)}
+            disabled={actBusy !== null}
+            title="从 bots.json 与 pm2 中彻底移除该 bot"
+          >
+            <Trash2 size={14} strokeWidth={2.25} />
+            <span>删除…</span>
           </button>
         </div>
       </div>
+
+      {showDelete && (
+        <Modal
+          title={`删除 bot: ${name}`}
+          onClose={() => setShowDelete(false)}
+          maxWidth={520}
+          footer={
+            <>
+              <button
+                type="button"
+                className={styles.actionBtn}
+                onClick={() => setShowDelete(false)}
+                disabled={deleteBusy}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className={styles.actionBtn + ' ' + styles.actionBtnDanger}
+                onClick={handleDelete}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? '删除中…' : '确认删除'}
+              </button>
+            </>
+          }
+        >
+          <div className={styles.confirmText}>
+            将从 <code>bots.json</code> 中移除该 bot,并执行 <code>pm2 delete {name}</code>。
+            <br />
+            <strong>该操作不可逆</strong>。
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+            <input
+              type="checkbox"
+              checked={deleteClearSessions}
+              onChange={(e) => setDeleteClearSessions(e.target.checked)}
+              disabled={deleteBusy}
+            />
+            <span>同时清空 sessions(<code>sessions-{name}.json</code> + <code>sessions.db</code>)</span>
+          </label>
+          <div className={styles.confirmWarn}>
+            说明: 数据目录 <code>~/.metabot/{name}/</code> 不会被自动删除,如有需要请手动清理。
+          </div>
+        </Modal>
+      )}
 
       <div className={styles.tabs}>
         {(['overview', 'workdir', 'env', 'sessions', 'logs'] as Tab[]).map((k) => (

@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
+import { Lock, LogOut, User } from 'lucide-react';
 import { authLogout, authMe, ApiError } from './api';
 import { LoginPage } from './LoginPage';
 import { Dashboard } from './Dashboard';
@@ -19,7 +20,7 @@ import styles from './manager.module.css';
 type AuthState =
   | { kind: 'checking' }
   | { kind: 'anon' }
-  | { kind: 'authed'; username: string };
+  | { kind: 'authed'; username: string; disableAuth: boolean };
 
 export function ManagerApp() {
   useBodyScroll();
@@ -42,7 +43,7 @@ function ManagerInner() {
       try {
         const res = await authMe();
         if (cancelled) return;
-        setAuth({ kind: 'authed', username: res.username });
+        setAuth({ kind: 'authed', username: res.username, disableAuth: res.disableAuth === true });
       } catch (err) {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 401) {
@@ -67,7 +68,7 @@ function ManagerInner() {
   }, [location.pathname, location.search, navigate]);
 
   const onAuthed = useCallback((username: string) => {
-    setAuth({ kind: 'authed', username });
+    setAuth({ kind: 'authed', username, disableAuth: false });
   }, []);
 
   if (auth.kind === 'checking') {
@@ -107,7 +108,11 @@ function ManagerInner() {
       <Route
         path="/dashboard"
         element={
-          <ManagerShell username={auth.username} onLoggedOut={() => setAuth({ kind: 'anon' })}>
+          <ManagerShell
+            username={auth.username}
+            disableAuth={auth.disableAuth}
+            onLoggedOut={() => setAuth({ kind: 'anon' })}
+          >
             <Dashboard onAuthLost={onAuthLost} />
           </ManagerShell>
         }
@@ -115,7 +120,11 @@ function ManagerInner() {
       <Route
         path="/bots/:name"
         element={
-          <ManagerShell username={auth.username} onLoggedOut={() => setAuth({ kind: 'anon' })}>
+          <ManagerShell
+            username={auth.username}
+            disableAuth={auth.disableAuth}
+            onLoggedOut={() => setAuth({ kind: 'anon' })}
+          >
             <BotDetail onAuthLost={onAuthLost} />
           </ManagerShell>
         }
@@ -130,11 +139,12 @@ function ManagerInner() {
 
 interface ManagerShellProps {
   username:     string;
+  disableAuth:  boolean;
   onLoggedOut:  () => void;
   children:     React.ReactNode;
 }
 
-function ManagerShell({ username, onLoggedOut, children }: ManagerShellProps) {
+function ManagerShell({ username, disableAuth, onLoggedOut, children }: ManagerShellProps) {
   const toast    = useToast();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
@@ -160,15 +170,29 @@ function ManagerShell({ username, onLoggedOut, children }: ManagerShellProps) {
           MetaBot <span className={styles.topBarTitleAccent}>Manager</span>
         </span>
         <div className={styles.topBarSpacer} />
-        <span className={styles.topBarUser}>👤 {username}</span>
-        <button
-          type="button"
-          className={styles.topBarBtn}
-          onClick={handleLogout}
-          disabled={busy}
-        >
-          {busy ? '登出中…' : '登出'}
-        </button>
+        {disableAuth ? (
+          <span className={styles.topBarUser} title="MANAGER_DISABLE_AUTH=true · 仅限本机访问">
+            <Lock size={14} strokeWidth={2} />
+            <span>本机直连</span>
+          </span>
+        ) : (
+          <>
+            <span className={styles.topBarUser}>
+              <User size={14} strokeWidth={2} />
+              <span>{username}</span>
+            </span>
+            <button
+              type="button"
+              className={styles.topBarBtn}
+              onClick={handleLogout}
+              disabled={busy}
+              title="登出"
+            >
+              <LogOut size={14} strokeWidth={2} />
+              <span className={styles.btnLabel}>{busy ? '登出中…' : '登出'}</span>
+            </button>
+          </>
+        )}
       </header>
       {children}
     </div>

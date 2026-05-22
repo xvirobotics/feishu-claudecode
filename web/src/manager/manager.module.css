@@ -61,7 +61,10 @@
 }
 
 .topBarBack {
-  padding:        4px 10px;
+  display:        inline-flex;
+  align-items:    center;
+  gap:            4px;
+  padding:        4px 10px 4px 8px;
   background:     transparent;
   border:         1px solid var(--glass-border);
   border-radius:  var(--r-sm);
@@ -76,7 +79,10 @@
 }
 
 .topBarBtn {
-  padding:        6px 14px;
+  display:        inline-flex;
+  align-items:    center;
+  gap:            6px;
+  padding:        6px 12px;
   background:     transparent;
   border:         1px solid var(--glass-border);
   border-radius:  var(--r-sm);
@@ -225,6 +231,11 @@
   margin-bottom:   16px;
 }
 
+/* Push the create button to the right end without a JSX spacer */
+.pageHeadingBtn {
+  margin-left: auto;
+}
+
 .pageHeading h1 {
   font-size:      20px;
   font-weight:    600;
@@ -360,6 +371,10 @@
 }
 
 .actionBtn {
+  display:       inline-flex;
+  align-items:   center;
+  justify-content: center;
+  gap:           6px;
   padding:       7px 14px;
   background:    var(--surface-1);
   border:        1px solid var(--glass-border);
@@ -368,7 +383,7 @@
   font-size:     13px;
   font-family:   var(--font-mono);
   cursor:        pointer;
-  transition:    border-color var(--duration-fast), color var(--duration-fast);
+  transition:    border-color var(--duration-fast), color var(--duration-fast), background var(--duration-fast);
 }
 .actionBtn:hover:not(:disabled) {
   border-color: var(--accent);
@@ -536,6 +551,46 @@
   gap:         8px;
   align-items: center;
   margin-top:  12px;
+}
+
+/* ── Create-bot modal form ───────────────────────────────── */
+.createBotForm {
+  display:        flex;
+  flex-direction: column;
+  gap:            12px;
+}
+
+.formField {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+}
+
+.formLabel {
+  font-size:    12px;
+  color:        var(--text-1);
+  font-weight:  500;
+}
+.formLabel em {
+  color:       var(--red);
+  font-style:  normal;
+  margin-left: 2px;
+}
+
+.formHint {
+  font-size: 11px;
+  color:     var(--text-2);
+  line-height: 1.4;
+}
+
+.formError {
+  padding:       8px 12px;
+  background:    var(--red-soft);
+  border:        1px solid var(--red);
+  border-radius: var(--r-sm);
+  color:         var(--red);
+  font-size:     12px;
+  white-space:   pre-wrap;
 }
 
 /* ── Sessions list ───────────────────────────────────────── */
@@ -842,4 +897,417 @@
   .detailGrid.twoCol {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+}
+
+/* ============================================================
+   Mobile card list (Dashboard) — only visible on narrow screens.
+   Desktop hides it via media query below; mobile hides .tableWrap.
+============================================================ */
+.botCards {
+  display: none;     /* default: desktop hides cards, shows table */
+  flex-direction: column;
+  gap: 10px;
+}
+
+.botCard {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+  padding:        14px 14px 12px;
+  background:     var(--surface-1);
+  border:         1px solid var(--glass-border);
+  border-radius:  var(--r-md);
+  cursor:         pointer;
+  transition:     border-color var(--duration-fast), background var(--duration-fast);
+}
+.botCard:hover,
+.botCard:active {
+  border-color: var(--accent);
+  background:   var(--surface-hover);
+}
+
+.botCardHead {
+  display:     flex;
+  align-items: center;
+  gap:         10px;
+  flex-wrap:   wrap;
+}
+
+.botCardName {
+  color:       var(--text-0);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size:   15px;
+  flex:        1;
+  min-width:   0;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.botCardStats {
+  display:        grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap:            4px 14px;
+  font-size:      12px;
+  font-family:    var(--font-mono);
+}
+
+.botCardStats > div {
+  display:     flex;
+  align-items: baseline;
+  gap:         8px;
+  min-width:   0;
+}
+
+.botCardStatLabel {
+  color:        var(--text-3);
+  font-size:    11px;
+  flex:         0 0 auto;
+}
+
+.botCardStatVal {
+  color:         var(--text-1);
+  word-break:    break-all;
+  flex:          1 1 auto;
+  min-width:     0;
+}
+
+.botCardWorkdir {
+  font-family: var(--font-mono);
+  font-size:   11.5px;
+  color:       var(--text-2);
+  word-break:  break-all;
+  padding-top: 6px;
+  border-top:  1px dashed var(--glass-border);
+}
+
+/* ============================================================
+   @media (max-width: 768px) — phone layout
+============================================================ */
+@media (max-width: 768px) {
+  .topBar {
+    padding: 10px 14px;
+    gap:     10px;
+  }
+  .topBarTitle {
+    font-size: 14px;
+  }
+  .topBarUser {
+    font-size: 12px;
+  }
+  .topBarBtn,
+  .topBarBack {
+    padding:   5px 10px;
+    font-size: 12px;
+  }
+
+  .content {
+    padding: 12px 12px 32px;
+  }
+
+  /* Title + create button share row 1, meta wraps to row 2 (full width). */
+  .pageHeading {
+    display:               grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "title button"
+      "meta  meta";
+    column-gap:    12px;
+    row-gap:       4px;
+    align-items:   center;
+    margin-bottom: 12px;
+  }
+  .pageHeading h1 {
+    grid-area: title;
+    font-size: 18px;
+  }
+  .pageHeading .meta {
+    grid-area:  meta;
+    font-size:  11.5px;
+  }
+  .pageHeadingBtn {
+    grid-area:   button;
+    margin-left: 0;
+    /* Smaller / tighter than desktop */
+    padding:     5px 10px 5px 9px;
+    font-size:   12.5px;
+    min-height:  30px;
+  }
+
+  /* Hide the desktop table, show the card list */
+  .tableWrap { display: none; }
+  .botCards  { display: flex; }
+
+  /* BotDetail tabs become horizontally scrollable */
+  .tabs {
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap:  nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex:        0 0 auto;
+    padding:     10px 12px;
+    font-size:   13px;
+    min-height:  40px;
+  }
+
+  .detailHeader h1 {
+    font-size: 17px;
+  }
+
+  .actionBar {
+    width: 100%;
+  }
+  .actionBtn {
+    min-height: 34px;       /* tighter, still touch-friendly */
+    padding:    5px 12px;
+    flex:       1 1 auto;
+    font-size:  13px;
+  }
+  /* Slightly smaller leading icons inside compact mobile buttons */
+  .actionBtn svg {
+    width:  13px;
+    height: 13px;
+  }
+
+  /* Sections collapse to single column. kv list stays 2-col (label | value)
+     with a tighter label column — long URLs wrap inside the value cell. */
+  .section {
+    padding: 14px 14px;
+  }
+  .kvList {
+    grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
+    gap: 6px 12px;
+  }
+  .kvKey {
+    font-size: 12px;
+    color: var(--text-2);
+    align-self: center;
+  }
+  .kvVal {
+    font-size: 13px;
+    align-self: center;
+  }
+
+  /* Env table — let it scroll horizontally rather than crush */
+  .envTable {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .envTable thead,
+  .envTable tbody {
+    display: table;
+    width: 100%;
+    min-width: 480px;
+  }
+  .envKeyInput,
+  .envValueInput {
+    font-size: 13px;       /* avoid iOS auto-zoom-on-focus < 16 isn't enough but 13 vs 12.5 is fine when input-shaped */
+    min-height: 36px;
+  }
+  .formRowInline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Session rows stack so the action buttons drop below the meta */
+  .sessionRow {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .sessionChatId,
+  .sessionSub {
+    white-space: normal;
+    word-break:  break-all;
+  }
+  .sessionBtns {
+    justify-content: flex-end;
+  }
+
+  /* Log panel takes more vertical space + smaller font */
+  .logPanel {
+    height:     65vh;
+    min-height: 320px;
+  }
+  .logBody {
+    font-size:   11.5px;
+    line-height: 1.45;
+    padding:     8px 10px;
+  }
+  .logHeader {
+    flex-wrap: wrap;
+    gap:       6px;
+    padding:   6px 8px;
+  }
+  .logStatus {
+    margin-left: 0;
+    width:       100%;
+    text-align:  right;
+  }
+
+  /* Modals: full-width with a slim margin */
+  .modalBackdrop {
+    padding: 8px;
+    align-items: flex-end;     /* anchor sheet at the bottom — common mobile pattern */
+  }
+  .modalCard {
+    max-width:     none;
+    width:         100%;
+    max-height:    92dvh;
+    border-radius: var(--r-md) var(--r-md) 0 0;
+  }
+  .modalHeader { padding: 10px 12px; }
+  .modalBody   { padding: 12px; }
+  .modalFooter {
+    padding: 10px 12px;
+    flex-wrap: wrap;
+  }
+
+  /* Login card: comfortable padding on mobile */
+  .loginCard {
+    padding: 28px 22px;
+    margin:  0 14px;
+  }
+  .loginTitle    { font-size: 19px; }
+  .loginSubtitle { font-size: 12.5px; margin-bottom: 22px; }
+  .input         { font-size: 16px; }   /* prevent iOS focus auto-zoom */
+  .submitBtn     { font-size: 15px; min-height: 44px; }
+
+  /* Status block (loading) */
+  .statusBlock {
+    margin:  24px 8px;
+    padding: 16px 18px;
+  }
+
+  /* Hide the desktop actions column on mobile — mobile uses card actions row */
+  .actionsCol       { display: none !important; }
+  /* Logout button: hide label on phone, icon-only */
+  .topBarBtn .btnLabel { display: none; }
+  .topBarBtn { padding: 6px 8px; }
+}
+
+/* Very narrow phones */
+@media (max-width: 360px) {
+  .botCardStats {
+    grid-template-columns: 1fr;
+  }
+  /* When cards already gave up the 2-col grid, stack actions compactly too */
+  .cardActionBtn .cardActionBtnLabel { display: none; }
+}
+
+/* ============================================================
+   Row actions (desktop table) + card actions (mobile cards)
+   + FAB + spinning icon util.
+============================================================ */
+
+/* Desktop table action column — keep compact, prevent wrap */
+.actionsCol {
+  width:       1%;       /* shrink to content */
+  white-space: nowrap;
+  text-align:  right;
+  padding-right: 12px !important;
+}
+
+.rowActions {
+  display:     inline-flex;
+  align-items: center;
+  gap:         6px;
+}
+
+.iconActionBtn {
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  width:           28px;
+  height:          28px;
+  padding:         0;
+  background:      transparent;
+  border:          1px solid var(--glass-border);
+  border-radius:   var(--r-xs);
+  color:           var(--text-2);
+  cursor:          pointer;
+  transition:      border-color var(--duration-fast), color var(--duration-fast), background var(--duration-fast);
+}
+.iconActionBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color:        var(--accent-text);
+  background:   var(--surface-hover);
+}
+.iconActionBtn:disabled {
+  opacity: 0.35;
+  cursor:  not-allowed;
+}
+.iconActionBtnDanger:hover:not(:disabled) {
+  border-color: var(--red);
+  color:        var(--red);
+  background:   var(--red-soft);
+}
+
+/* Card actions (mobile) — sit at the bottom of each bot card.
+   Uses border-top to separate from the stats block. */
+.cardActions {
+  display:        flex;
+  align-items:    stretch;
+  gap:            8px;
+  padding-top:    10px;
+  margin-top:     2px;
+  border-top:     1px dashed var(--glass-border);
+}
+
+.cardActionBtn {
+  flex:            1 1 0;
+  display:         inline-flex;
+  align-items:     center;
+  justify-content: center;
+  gap:             5px;
+  min-height:      30px;
+  padding:         4px 10px;
+  background:      var(--surface-2);
+  border:          1px solid var(--glass-border);
+  border-radius:   var(--r-sm);
+  color:           var(--text-1);
+  font-size:       13px;
+  font-family:     var(--font-mono);
+  cursor:          pointer;
+  transition:      border-color var(--duration-fast), color var(--duration-fast), background var(--duration-fast);
+}
+.cardActionBtn svg {
+  width:  13px;
+  height: 13px;
+}
+.cardActionBtn:active:not(:disabled) {
+  background: var(--surface-hover);
+}
+.cardActionBtn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color:        var(--accent-text);
+}
+.cardActionBtn:disabled {
+  opacity: 0.4;
+  cursor:  not-allowed;
+}
+.cardActionBtnDanger {
+  border-color: rgba(239, 68, 68, 0.35);
+  color:        var(--red);
+}
+.cardActionBtnDanger:hover:not(:disabled) {
+  background:   var(--red-soft);
+  border-color: var(--red);
+  color:        var(--red);
+}
+
+/* Spinning icon (used on busy actions) */
+@keyframes mb-mgr-spin {
+  to { transform: rotate(360deg); }
+}
+.iconSpinning {
+  display:           inline-flex;
+  animation:         mb-mgr-spin 0.9s linear infinite;
+  transform-origin:  center;
 }

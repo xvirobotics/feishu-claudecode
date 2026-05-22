@@ -10,6 +10,7 @@
   "dependencies": {
     "@volcengine/rtc": "^4.68.1",
     "docx-preview": "^0.3.7",
+    "lucide-react": "^1.16.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-markdown": "^10.1.0",

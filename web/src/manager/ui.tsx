@@ -3,6 +3,7 @@
 ============================================================ */
 
 import { useEffect, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 import type { BotStatus } from './api';
 import styles from './manager.module.css';
 
@@ -65,7 +66,7 @@ export function Modal({ title, onClose, children, footer, maxWidth }: ModalProps
             onClick={onClose}
             aria-label="关闭"
           >
-            ×
+            <X size={18} strokeWidth={2} />
           </button>
         </div>
         <div className={styles.modalBody}>{children}</div>
