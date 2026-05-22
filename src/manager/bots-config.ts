@@ -22,6 +22,7 @@ export interface BotJsonEntry {
   publicBaseUrl?:           string;
   transcriptAllowOpenIds?:  string[];
   transcriptDisableAuth?:   boolean;
+  accessAllowOpenIds?:      string[];
   env?:                     Record<string, string>;
   engine?:                  string;
   persistentExecutor?:      boolean;

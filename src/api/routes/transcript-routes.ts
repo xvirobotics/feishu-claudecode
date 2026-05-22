@@ -28,19 +28,13 @@ import type { BotConfig } from '../../config.js';
 import {
   buildAuthorizeUrl,
   exchangeCodeForUser,
-  parseCookies,
   signSession,
-  verifySession,
   verifyState,
   loadOrCreateSessionSecret,
 } from '../../feishu/oauth.js';
+import { requireFeishuAuth, unionAllowLists } from '../middleware/feishu-auth.js';
 import { sessionJsonlPath } from '../../session/session-registry.js';
 import { readTranscript } from '../../session/transcript-reader.js';
-
-function envAllowList(): string[] {
-  const v = process.env.METABOT_TRANSCRIPT_ALLOW_OPEN_IDS || '';
-  return v.split(',').map((s) => s.trim()).filter(Boolean);
-}
 
 function pickFeishuBot(ctx: RouteContext, botName?: string): { name: string; cfg: BotConfig } | null {
   const feishuBots = ctx.registry.listByPlatform('feishu');
@@ -63,12 +57,6 @@ function resolveBaseUrl(ctx: RouteContext, req: http.IncomingMessage, bot: BotCo
   const proto = (req.headers['x-forwarded-proto'] as string) || 'http';
   const host  = (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost';
   return `${proto}://${host}`;
-}
-
-function isAllowed(openId: string, bot: BotConfig): boolean {
-  const perBot = bot.transcriptAllowOpenIds ?? [];
-  if (perBot.includes(openId)) return true;
-  return envAllowList().includes(openId);
 }
 
 /**
@@ -112,19 +100,15 @@ function resolveTranscript(
   const disableAuth = botCfg?.transcriptDisableAuth === true;
 
   if (!disableAuth) {
-    const cookies = parseCookies(req.headers.cookie);
-    const session = cookies.mb_session ? verifySession(cookies.mb_session) : null;
-    if (!session) {
-      const returnPath = `/web/transcript/${encodeURIComponent(chatId)}${turnRaw ? `?turn=${turnRaw}` : ''}`;
-      return {
-        ok:       false,
-        status:   401,
-        loginUrl: `/api/auth/feishu/login?return=${encodeURIComponent(returnPath)}`,
-      };
-    }
-    if (!botCfg) {
-      if (!envAllowList().includes(session.open_id)) return { ok: false, status: 403 };
-    } else if (!isAllowed(session.open_id, botCfg)) {
+    const allowList  = unionAllowLists(botCfg, /*forTranscript=*/true);
+    const returnPath = `/web/transcript/${encodeURIComponent(chatId)}${turnRaw ? `?turn=${turnRaw}` : ''}`;
+    const authRes    = requireFeishuAuth(req, {
+      allowOpenIds: allowList,
+      returnPath,
+      botName:      record.botName,
+    });
+    if (!authRes.ok) {
+      if (authRes.status === 401) return { ok: false, status: 401, loginUrl: authRes.loginUrl! };
       return { ok: false, status: 403 };
     }
   }
