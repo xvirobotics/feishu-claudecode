@@ -593,52 +593,105 @@
   white-space:   pre-wrap;
 }
 
-/* ── Sessions list ───────────────────────────────────────── */
-.sessionList {
-  display: flex;
+/* ── Sessions list (ChatGPT-style: title + chatId/lastUsed → opens transcript) */
+.sessionsList {
+  list-style:     none;
+  margin:         0;
+  padding:        0;
+  display:        flex;
   flex-direction: column;
-  gap: 8px;
+  gap:            6px;
 }
 
-.sessionRow {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  padding: 10px 12px;
-  background: var(--surface-0);
-  border: 1px solid var(--glass-border);
-  border-radius: var(--r-sm);
+.sessionsRow {
+  display:         grid;
+  grid-template-columns: auto 1fr auto;
+  align-items:     center;
+  gap:             12px;
+  width:           100%;
+  padding:         10px 12px;
+  background:      var(--surface-0);
+  border:          1px solid var(--glass-border);
+  border-radius:   var(--r-sm);
+  color:           inherit;
+  text-align:      left;
+  cursor:          pointer;
+  font:            inherit;
+  transition:      background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.sessionsRow:hover {
+  background:   var(--surface-2);
+  border-color: var(--accent);
+}
+.sessionsRow:focus-visible {
+  outline:        2px solid var(--accent);
+  outline-offset: 1px;
+}
+.sessionsRow:active {
+  transform: translateY(1px);
 }
 
-.sessionMeta {
-  display: flex;
+.sessionsIcon {
+  display:        flex;
+  align-items:    center;
+  justify-content: center;
+  color:          var(--text-2);
+  flex:           0 0 auto;
+}
+
+.sessionsBody {
+  display:        flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap:            2px;
+  min-width:      0;
 }
 
-.sessionChatId {
-  font-family: var(--font-mono);
-  color: var(--text-0);
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sessionsTitle {
+  font-size:      14px;
+  font-weight:    500;
+  color:          var(--text-0);
+  overflow:       hidden;
+  text-overflow:  ellipsis;
+  white-space:    nowrap;
 }
 
-.sessionSub {
-  font-family: var(--font-mono);
-  color: var(--text-2);
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sessionsSub {
+  display:        flex;
+  align-items:    center;
+  gap:            6px;
+  font-size:      11.5px;
+  color:          var(--text-3);
+  overflow:       hidden;
 }
 
-.sessionBtns {
-  display: flex;
-  gap: 6px;
-  align-items: center;
+.sessionsChatId {
+  font-family:    var(--font-mono);
+  overflow:       hidden;
+  text-overflow:  ellipsis;
+  white-space:    nowrap;
+  min-width:      0;
+}
+
+.sessionsDot {
+  flex:           0 0 auto;
+  opacity:        0.6;
+}
+
+.sessionsLastUsed {
+  flex:           0 0 auto;
+  white-space:    nowrap;
+}
+
+.sessionsChevron {
+  color:          var(--text-3);
+  flex:           0 0 auto;
+}
+
+.sessionsEmpty {
+  text-align:     center;
+  padding:        32px 12px;
+  color:          var(--text-3);
+  font-size:      13px;
 }
 
 /* ── Log panel ────────────────────────────────────────────── */
@@ -1116,18 +1169,19 @@
     align-items: stretch;
   }
 
-  /* Session rows stack so the action buttons drop below the meta */
-  .sessionRow {
-    grid-template-columns: 1fr;
-    gap: 8px;
+  /* Session rows stay compact on mobile; chevron still indicates tappability */
+  .sessionsRow {
+    padding: 12px;
+    gap:     10px;
   }
-  .sessionChatId,
-  .sessionSub {
-    white-space: normal;
-    word-break:  break-all;
+  .sessionsTitle {
+    font-size: 13.5px;
   }
-  .sessionBtns {
-    justify-content: flex-end;
+  .sessionsSub {
+    flex-wrap: wrap;
+  }
+  .sessionsChatId {
+    max-width: 100%;
   }
 
   /* Log panel takes more vertical space + smaller font */
