@@ -393,6 +393,7 @@ Supported: text, images (Claude multimodal), files (PDF/code/docs), rich text (P
 | `METABOT_PEERS` | — | Peer MetaBot URLs (comma-separated). Prefer HTTPS for internet-reachable peers |
 | `METABOT_SESSION_SECRET` | auto-generated | Signs the transcript-page OAuth `state` and the `mb_session` JWT cookie. Generated on first start and written to `.env.local` |
 | `METABOT_TRANSCRIPT_ALLOW_OPEN_IDS` | — | Global open_id allowlist fallback for the transcript page (comma-separated). Only consulted when a bot has no per-bot `transcriptAllowOpenIds` |
+| `MANAGER_PORT` | 11000 | Port for the Manager admin panel HTTP server |
 | `LOG_LEVEL` | info | Log level |
 
 </details>
@@ -430,6 +431,33 @@ MetaBot runs Claude Code in `bypassPermissions` mode — no interactive approval
 - Use `maxBudgetUsd` to cap cost per request
 - `API_SECRET` enables Bearer auth on API server and MetaMemory
 - MetaMemory supports folder-level ACL (Admin/Reader dual-role)
+
+</details>
+
+<details>
+<summary><strong>Manager admin panel</strong></summary>
+
+Separate PM2 app `metabot-manager` (default port `11000`) — a web UI to manage every bot running on this host: start/stop/restart, edit `workingDirectory`, merge env vars, bind/reset sessions, tail PM2 logs. Fully decoupled from the chat-side API server.
+
+**Boot it**:
+
+```bash
+pm2 startOrReload ecosystem.config.cjs --only metabot-manager
+```
+
+**First run** auto-generates `~/.metabot/manager.env` (`chmod 600`) with a random admin password + JWT signing secret. The **first-run admin password is printed to PM2 stderr exactly once**:
+
+```bash
+pm2 logs metabot-manager --err --lines 200 | grep "First-run admin password"
+```
+
+Copy it, then either rotate `MANAGER_ADMIN_PASSWORD_HASH` (bcrypt) manually or wipe `manager.env` to regenerate.
+
+**Access**: locally at `http://127.0.0.1:11000/manager/`. For public access, front it with a Cloudflared anonymous tunnel pointing at `127.0.0.1:11000` — don't expose 11000 directly.
+
+**Auth**: HttpOnly cookie `mb_mgr_session` (HS256 JWT, 7-day TTL). All `/api/manager/*` endpoints require the cookie; failed logins back off exponentially.
+
+**Scope**: start/stop/restart bots, edit `workingDirectory`, merge env vars, change/reset session bindings, tail logs. **It does NOT register new Feishu/Telegram bot credentials** — that still goes through the developer portal + a manual edit of the top-level `feishuAppId`/`feishuAppSecret` in `bots.json`.
 
 </details>
 

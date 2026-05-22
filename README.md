@@ -414,6 +414,7 @@ MEMORY_INSTANCE_TOKEN=instance-scoped-token
 | `METABOT_PEERS` | — | Peer MetaBot 地址（逗号分隔） |
 | `METABOT_SESSION_SECRET` | 首次自动生成 | 详情页 OAuth state + JWT cookie 签名密钥（写入 `.env.local`） |
 | `METABOT_TRANSCRIPT_ALLOW_OPEN_IDS` | — | 详情页 open_id 全局白名单 fallback（逗号分隔，仅当 bot 未配置 `transcriptAllowOpenIds` 时生效） |
+| `MANAGER_PORT` | 11000 | Manager 管理面板 HTTP 端口 |
 | `LOG_LEVEL` | info | 日志级别 |
 
 </details>
@@ -452,6 +453,33 @@ MetaBot 以 `bypassPermissions` 模式运行 Claude Code — 无交互式确认�
 - `API_SECRET` 保护 API 服务器和 MetaMemory
 - MetaMemory 支持 Admin/Reader/Instance scoped token；实例 token 默认只能写自己的 namespace
 - Skill Hub 记录 owner instance、visibility 和 content hash，便于后续来源校验和更新检测
+
+</details>
+
+<details>
+<summary><strong>Manager 管理面板</strong></summary>
+
+独立 PM2 进程 `metabot-manager`（端口默认 `11000`），用于在浏览器里管理本机所有 bot：启停 / 改 `workingDirectory` / 改环境变量 / 重置和绑定 session / 实时看 PM2 日志。和聊天用的 API server 完全解耦。
+
+**启动**：
+
+```bash
+pm2 startOrReload ecosystem.config.cjs --only metabot-manager
+```
+
+**首次运行**会自动生成 `~/.metabot/manager.env`（`chmod 600`），里面是随机管理员密码 + JWT 签名密钥。**首次启动密码会打印到 PM2 stderr 日志一次**：
+
+```bash
+pm2 logs metabot-manager --err --lines 200 | grep "First-run admin password"
+```
+
+抄走后建议手动改 `MANAGER_ADMIN_PASSWORD_HASH`（bcrypt）或重新生成。
+
+**Web 访问**：本地 `http://127.0.0.1:11000/manager/`；公网建议跑一条 Cloudflared anonymous tunnel 指到 `127.0.0.1:11000`（同 Transcript 灰度方案），不要直接把 11000 暴露到公网。
+
+**鉴权**：登录后下发 HttpOnly cookie `mb_mgr_session`（HS256 JWT，7 天）。`/api/manager/*` 全部要求 cookie；登录失败有指数退避。
+
+**权限范围**：可启停 bot、改 `workingDirectory`、合并环境变量、改 session 绑定、reset session、tail 日志。**不能**在飞书侧注册新 bot —— 注册仍走开发者后台 + 手动改 `bots.json` 顶层 `feishuAppId`/`feishuAppSecret`。
 
 </details>
 
