@@ -264,6 +264,10 @@ function TurnBlock({
 
 /* ── 已加载 turn 数据状态 ── */
 
+// anchor 居中 ±3,首屏一次性加载 7 条,之后页面纯静态滚动(无 sentinel 动态加载)。
+// 真正需要看更远的 turn 时用户重新点链接 / 改 URL turn 参数。
+const HALF_WINDOW = 3;
+
 interface LoadedTurn {
   turn:     number;
   messages: TranscriptMessage[];
@@ -272,17 +276,33 @@ interface LoadedTurn {
 /* ── 主组件 ── */
 
 export function TranscriptView() {
-  // 强制 light theme（详情页独立入口，不跟 ChatView 暗主题）；
-  // 同时解除 theme.css 全局 body{overflow:hidden}（SPA 用，详情页要走 window 滚动）。
+  // 强制 light theme（详情页独立入口，不跟 ChatView 暗主题）。
+  // 解除 SPA 默认布局对 window 滚动的限制 —— 三处都要解,缺一不可:
+  //   - theme.css   :  body { overflow: hidden }
+  //   - index.html  :  #root { height: 100dvh }  ← 这条让 documentElement 不可滚
+  //   - html/body   :  默认是 viewport 大小
+  // 解开后 window 才能成为 scroll 容器,scrollTo 定位 anchor 才生效。
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'light');
-    const prevHtml = document.documentElement.style.overflow;
-    const prevBody = document.body.style.overflow;
-    document.documentElement.style.overflow = 'auto';
-    document.body.style.overflow = 'auto';
+    const html = document.documentElement;
+    const body = document.body;
+    const root = document.getElementById('root');
+    const save = (el: HTMLElement | null) => el ? {
+      overflow: el.style.overflow,
+      height:   el.style.height,
+    } : null;
+    const prevHtml = save(html);
+    const prevBody = save(body);
+    const prevRoot = save(root);
+    [html, body, root].forEach((el) => {
+      if (!el) return;
+      el.style.overflow = 'auto';
+      el.style.height   = 'auto';
+    });
     return () => {
-      document.documentElement.style.overflow = prevHtml;
-      document.body.style.overflow = prevBody;
+      if (prevHtml) { html.style.overflow = prevHtml.overflow; html.style.height = prevHtml.height; }
+      if (prevBody) { body.style.overflow = prevBody.overflow; body.style.height = prevBody.height; }
+      if (root && prevRoot) { root.style.overflow = prevRoot.overflow; root.style.height = prevRoot.height; }
     };
   }, []);
 
@@ -300,14 +320,40 @@ export function TranscriptView() {
   const [visibleTurn, setVisibleTurn] = useState<number | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [errorState, setErrorState] = useState<ErrorState | null>(null);
-  const [loadingTop, setLoadingTop] = useState(false);
-  const [loadingBottom, setLoadingBottom] = useState(false);
 
-  const topSentinelRef    = useRef<HTMLDivElement | null>(null);
-  const bottomSentinelRef = useRef<HTMLDivElement | null>(null);
-  const streamRef         = useRef<HTMLDivElement | null>(null);
-  // 每个 turn divider DOM 注册到这个 map，用于 IntersectionObserver
-  const dividerRefs       = useRef<Map<number, HTMLDivElement>>(new Map());
+  const topBarRef   = useRef<HTMLDivElement | null>(null);
+  const streamRef   = useRef<HTMLDivElement | null>(null);
+  // 每个 turn divider DOM 注册到这个 map，用于 IntersectionObserver 跟踪 + 滚动定位。
+  const dividerRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  // 首屏 anchor 锁:打开链接后 visibleTurn 必须停在 anchor turn 上,
+  // IO 不能因为 anchor 上方还有 turn 落入可视区就把 visibleTurn 拉到更早。
+  // 用户首次交互 (wheel / touch / keyboard) → 解锁,IO 接管。
+  const anchorLockedRef = useRef(true);
+
+  /* ── 滚动定位到 anchor turn 的 divider ──
+   * Why: 首屏对称加载 7 条（anchor 居中）后，scrollTop 默认 0，用户看到的是最早的那条，
+   *      而不是他点击进来的那条。这里强行把 anchor 的 divider 滚到 top-bar 下方。
+   * 防 layout 抖动:CollapsibleContent 的 MutationObserver 会在 mount 后异步 collapse
+   *  超长 turn,布局会变。所以多次 schedule —— raf + 多个 setTimeout 兜底。
+   *  anchorLockedRef.current=false (用户已交互) 时立即放弃,不打断手动滚动。
+   */
+  const scrollToAnchorTurn = useCallback((turn: number) => {
+    if (!anchorLockedRef.current) return;
+    const el = dividerRefs.current.get(turn);
+    if (!el) return;
+    const offset = (topBarRef.current?.offsetHeight ?? 0) + 8;
+    const top    = el.getBoundingClientRect().top + window.scrollY - offset;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'auto' });
+  }, []);
+
+  // anchor 多次校准:不同 delay 兜底 collapse 引起的 layout 抖动。
+  const settleScrollToAnchor = useCallback((turn: number) => {
+    const tryScroll = () => scrollToAnchorTurn(turn);
+    requestAnimationFrame(() => requestAnimationFrame(tryScroll));
+    setTimeout(tryScroll, 150);
+    setTimeout(tryScroll, 450);
+    setTimeout(tryScroll, 900);
+  }, [scrollToAnchorTurn]);
 
   /* ── 取单个 turn 的 HTTP 调用 ── */
 
@@ -364,13 +410,52 @@ export function TranscriptView() {
 
     const finalise = (resp: TranscriptResponse) => {
       if (cancelled) return;
-      const turn = typeof resp.turn === 'number'
+      const anchor = typeof resp.turn === 'number'
         ? resp.turn
         : resp.chat.totalTurns;
-      setTotalTurns(resp.chat.totalTurns);
-      setLoaded([{ turn, messages: resp.messages }]);
-      setVisibleTurn(turn);
+      const total  = resp.chat.totalTurns;
+      setTotalTurns(total);
+      setLoaded([{ turn: anchor, messages: resp.messages }]);
+      setVisibleTurn(anchor);
       setInitialLoading(false);
+
+      // 对称窗口:anchor 居中 ±HALF_WINDOW,共 7 条;某边不够把缺口让给对边。
+      // 加载完后 scroll 到 anchor divider —— 这是首屏精准定位的关键。
+      if (!chatId) {
+        settleScrollToAnchor(anchor);
+        return;
+      }
+      let low  = Math.max(1,     anchor - HALF_WINDOW);
+      let high = Math.min(total, anchor + HALF_WINDOW);
+      while (high - low + 1 < 2 * HALF_WINDOW + 1) {
+        const before = high - low + 1;
+        if      (low  > 1)     low--;
+        else if (high < total) high++;
+        if (high - low + 1 === before) break;  // 总数不够 7,停
+      }
+      const others: number[] = [];
+      for (let t = low; t <= high; t++) if (t !== anchor) others.push(t);
+      if (others.length === 0) {
+        settleScrollToAnchor(anchor);
+        return;
+      }
+      Promise.all(others.map((t) => fetchTurn(chatId, t))).then((results) => {
+        if (cancelled) return;
+        const ok = results
+          .map((r, i) => ({ r, t: others[i] }))
+          .filter((x) => !('error' in x.r))
+          .map((x) => ({ turn: x.t, messages: (x.r as TranscriptResponse).messages }));
+        if (ok.length > 0) {
+          setLoaded((prev) => {
+            const merged = [...prev, ...ok].sort((a, b) => a.turn - b.turn);
+            return merged.filter((m, i, arr) => i === 0 || arr[i - 1].turn !== m.turn);
+          });
+        }
+        // 两层 raf 等所有 turn divider 真正布局完成再定位
+        requestAnimationFrame(() => {
+          settleScrollToAnchor(anchor);
+        });
+      });
     };
 
     if (inline) {
@@ -404,95 +489,9 @@ export function TranscriptView() {
     return () => { cancelled = true; };
   }, [chatId, anchorTurn, fetchTurn]);
 
-  /* ── 加载更早 / 更晚 ── */
-
-  const loadEarlier = useCallback(async () => {
-    if (!chatId || loadingTop) return;
-    setLoaded((curr) => {
-      if (curr.length === 0) return curr;
-      const minTurn = curr[0].turn;
-      if (minTurn <= 1) return curr;
-      const targets = [minTurn - 2, minTurn - 1].filter((t) => t >= 1 && !curr.some((x) => x.turn === t));
-      if (targets.length === 0) return curr;
-      setLoadingTop(true);
-      // 记录滚动锚（防止 prepend 跳动）
-      const stream = streamRef.current;
-      const prevScrollHeight = stream?.scrollHeight ?? 0;
-      const prevScrollTop    = window.scrollY;
-
-      Promise.all(targets.map((t) => fetchTurn(chatId, t))).then((results) => {
-        const ok = results
-          .map((r, i) => ({ r, t: targets[i] }))
-          .filter((x) => !('error' in x.r))
-          .map((x) => ({ turn: x.t, messages: (x.r as TranscriptResponse).messages }));
-        if (ok.length > 0) {
-          setLoaded((prev) => {
-            const merged = [...ok, ...prev].sort((a, b) => a.turn - b.turn);
-            return merged.filter((m, i, arr) => i === 0 || arr[i - 1].turn !== m.turn);
-          });
-          requestAnimationFrame(() => {
-            const newStream = streamRef.current;
-            if (newStream) {
-              const delta = newStream.scrollHeight - prevScrollHeight;
-              window.scrollTo({ top: prevScrollTop + delta, behavior: 'instant' as ScrollBehavior });
-            }
-          });
-        }
-        setLoadingTop(false);
-      });
-      return curr;
-    });
-  }, [chatId, loadingTop, fetchTurn]);
-
-  const loadLater = useCallback(async () => {
-    if (!chatId || loadingBottom) return;
-    setLoaded((curr) => {
-      if (curr.length === 0) return curr;
-      const maxTurn = curr[curr.length - 1].turn;
-      if (maxTurn >= totalTurns) return curr;
-      const targets = [maxTurn + 1, maxTurn + 2].filter((t) => t <= totalTurns && !curr.some((x) => x.turn === t));
-      if (targets.length === 0) return curr;
-      setLoadingBottom(true);
-      Promise.all(targets.map((t) => fetchTurn(chatId, t))).then((results) => {
-        const ok = results
-          .map((r, i) => ({ r, t: targets[i] }))
-          .filter((x) => !('error' in x.r))
-          .map((x) => ({ turn: x.t, messages: (x.r as TranscriptResponse).messages }));
-        if (ok.length > 0) {
-          setLoaded((prev) => {
-            const merged = [...prev, ...ok].sort((a, b) => a.turn - b.turn);
-            return merged.filter((m, i, arr) => i === 0 || arr[i - 1].turn !== m.turn);
-          });
-        }
-        setLoadingBottom(false);
-      });
-      return curr;
-    });
-  }, [chatId, loadingBottom, totalTurns, fetchTurn]);
-
-  /* ── IntersectionObserver 触发加载 ── */
-
-  useEffect(() => {
-    if (initialLoading || loaded.length === 0) return;
-    const topEl    = topSentinelRef.current;
-    const bottomEl = bottomSentinelRef.current;
-    if (!topEl || !bottomEl) return;
-
-    const obs = new IntersectionObserver((entries) => {
-      for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        if (e.target === topEl)    loadEarlier();
-        if (e.target === bottomEl) loadLater();
-      }
-    }, { rootMargin: '120px 0px 120px 0px' });
-
-    obs.observe(topEl);
-    obs.observe(bottomEl);
-    return () => obs.disconnect();
-  }, [initialLoading, loaded.length, loadEarlier, loadLater]);
-
-  /* ── IntersectionObserver 跟踪 turnDivider，更新顶栏徽章 + URL ── */
-
+  /* ── IntersectionObserver 跟踪 turnDivider，更新顶栏徽章 + URL ──
+   * 首屏 anchorLockedRef=true 时跳过更新;用户首次手动交互后解锁。
+   */
   useEffect(() => {
     if (initialLoading || loaded.length === 0) return;
     const visible = new Set<number>();
@@ -503,6 +502,7 @@ export function TranscriptView() {
         if (e.isIntersecting) visible.add(t);
         else visible.delete(t);
       }
+      if (anchorLockedRef.current) return;
       if (visible.size === 0) return;
       const top = Math.min(...visible);
       setVisibleTurn(top);
@@ -511,6 +511,19 @@ export function TranscriptView() {
     dividerRefs.current.forEach((el) => obs.observe(el));
     return () => obs.disconnect();
   }, [initialLoading, loaded]);
+
+  /* ── 用户首次手动交互 → 解锁 anchor,IO 接管 visibleTurn ── */
+  useEffect(() => {
+    const unlock = () => { anchorLockedRef.current = false; };
+    window.addEventListener('wheel',     unlock, { passive: true, once: true });
+    window.addEventListener('touchmove', unlock, { passive: true, once: true });
+    window.addEventListener('keydown',   unlock, { once: true });
+    return () => {
+      window.removeEventListener('wheel',     unlock);
+      window.removeEventListener('touchmove', unlock);
+      window.removeEventListener('keydown',   unlock);
+    };
+  }, []);
 
   useEffect(() => {
     if (visibleTurn == null) return;
@@ -586,20 +599,16 @@ export function TranscriptView() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.topBar}>
+      <div ref={topBarRef} className={styles.topBar}>
         <span className={styles.topBarBadge}>#{visibleTurn ?? maxTurn}</span>
         <span className={styles.topBarTotal}>/ 共 {totalTurns} 轮</span>
       </div>
-      <div ref={streamRef} className={styles.stream}>
-        <div ref={topSentinelRef} className={styles.sentinel} />
-        {hasEarlier && (
-          <div className={styles.loaderRow}>
-            {loadingTop ? '加载更早的对话…' : '↓ 下拉加载更早 ↓'}
-          </div>
-        )}
-        {!hasEarlier && (
-          <div className={styles.endHint}>— 对话开头 —</div>
-        )}
+      {/* padding-bottom: 100vh —— 保证页面始终可滚到把 anchor turn 顶到 top-bar 下方;
+          否则短对话整页高度 < viewport,scrollTo 被浏览器 clamp 到 0,anchor 无法定位。*/}
+      <div ref={streamRef} className={styles.stream} style={{ paddingBottom: '100vh' }}>
+        {hasEarlier
+          ? <div className={styles.endHint}>… 更早的对话需要从原链接重新打开 …</div>
+          : <div className={styles.endHint}>— 对话开头 —</div>}
 
         {aggregatedTurns.map((t) => (
           <TurnBlock
@@ -613,15 +622,9 @@ export function TranscriptView() {
           />
         ))}
 
-        {hasLater && (
-          <div className={styles.loaderRow}>
-            {loadingBottom ? '加载更晚的对话…' : '↑ 上拉加载更晚 ↑'}
-          </div>
-        )}
-        {!hasLater && (
-          <div className={styles.endHint}>— 对话末尾 —</div>
-        )}
-        <div ref={bottomSentinelRef} className={styles.sentinel} />
+        {hasLater
+          ? <div className={styles.endHint}>… 更晚的对话需要从原链接重新打开 …</div>
+          : <div className={styles.endHint}>— 对话末尾 —</div>}
       </div>
     </div>
   );
