@@ -33,6 +33,8 @@ export interface BotConfig {
   persistentExecutor?:       boolean;
   transcriptDisableAuth?:    boolean;
   transcriptAllowOpenIds?:   string[];
+  accessAllowOpenIds?:       string[];
+  hubVisible?:               boolean;
 }
 
 export interface SessionMapping {
@@ -193,6 +195,13 @@ export function patchEnv(name: string, env: Record<string, string>, removeKeys?:
   return request<{ status: BotSummary }>(
     `/bots/${encodeURIComponent(name)}/env`,
     { method: 'PATCH', body: JSON.stringify({ env, removeKeys }) },
+  );
+}
+
+export function patchHubVisible(name: string, visible: boolean) {
+  return request<{ config: BotConfig; status: BotSummary }>(
+    `/bots/${encodeURIComponent(name)}/hub-visible`,
+    { method: 'PATCH', body: JSON.stringify({ visible }) },
   );
 }
 

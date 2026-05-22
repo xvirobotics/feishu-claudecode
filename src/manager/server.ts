@@ -474,6 +474,30 @@ async function handleBotsRoutes(ctx: Ctx, req: http.IncomingMessage, res: http.S
     return true;
   }
 
+  // PATCH /api/manager/bots/:name/hub-visible
+  // Toggle Hub UI visibility. Read at request time by /api/hub/*, so no pm2
+  // restart is needed — this is a pure bots.json mutation.
+  if (method === 'PATCH' && subPath === '/hub-visible') {
+    const body    = await parseJsonBody(req);
+    const visible = body.visible;
+    if (typeof visible !== 'boolean') {
+      jsonResponse(res, 422, { error: 'invalid', message: 'visible (boolean) required' });
+      return true;
+    }
+    if (!getBot(name)) {
+      jsonResponse(res, 404, { error: 'not_found' });
+      return true;
+    }
+    patchBot(name, { hubVisible: visible });
+    const updated = getBot(name);
+    const proc    = await findPm2(name);
+    jsonResponse(res, 200, {
+      config: updated ? maskBotForClient(updated) : undefined,
+      status: procToSummary(name, proc, updated),
+    });
+    return true;
+  }
+
   // PATCH /api/manager/bots/:name/session
   if (method === 'PATCH' && subPath === '/session') {
     const body = await parseJsonBody(req);

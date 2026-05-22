@@ -116,6 +116,13 @@ export interface BotConfig extends BotConfigBase {
    * legacy `transcriptAllowOpenIds` + env fallback.
    */
   accessAllowOpenIds?: string[];
+  /**
+   * When true, this bot is exposed in the centralized Hub UI (`/api/hub/*`).
+   * Default false → local-only (Manager admin panel still sees it, but it
+   * doesn't appear in the cross-bot Hub dashboard). Toggled from BotDetail
+   * Overview tab; read at request time, no pm2 restart needed.
+   */
+  hubVisible?: boolean;
 }
 
 /** Telegram bot config (extends base with Telegram credentials). */
@@ -253,6 +260,8 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
    * open_ids here.
    */
   accessAllowOpenIds?: string[];
+  /** Expose this bot in the central Hub UI (`/api/hub/*`). Default false. */
+  hubVisible?: boolean;
 }
 
 function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
@@ -270,6 +279,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.transcriptAllowOpenIds?.length ? { transcriptAllowOpenIds: entry.transcriptAllowOpenIds } : {}),
     ...(entry.transcriptDisableAuth ? { transcriptDisableAuth: true } : {}),
     ...(entry.accessAllowOpenIds?.length ? { accessAllowOpenIds: entry.accessAllowOpenIds } : {}),
+    ...(entry.hubVisible ? { hubVisible: true } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
