@@ -1,0 +1,542 @@
+/* ============================================================
+   hub.module.css — central server (Hub) UI styles.
+
+   Reuses manager.module.css tokens (--void, --accent, ...).
+   Only adds Hub-specific surfaces: privacy banner, stats strip,
+   host card, role/privacy badges.
+============================================================ */
+
+.privacyBanner {
+  display:        flex;
+  align-items:    center;
+  gap:            10px;
+  margin:         16px 20px 0;
+  padding:        10px 14px;
+  background:     rgba(52, 211, 153, 0.06);
+  border:         1px solid rgba(52, 211, 153, 0.28);
+  border-radius:  var(--r-md);
+  color:          var(--text-1);
+  font-size:      12.5px;
+  line-height:    1.55;
+}
+.privacyBanner svg {
+  color:      var(--accent-text);
+  flex:       0 0 auto;
+}
+.privacyBannerStrong {
+  color:       var(--text-0);
+  font-weight: 600;
+}
+
+.statsStrip {
+  display:        grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap:            12px;
+  margin:         16px 20px 0;
+}
+.statBox {
+  padding:       12px 14px;
+  background:    var(--surface-0);
+  border:        1px solid var(--glass-border);
+  border-radius: var(--r-md);
+  display:       flex;
+  flex-direction: column;
+  gap:           4px;
+}
+.statLabel {
+  font-size:   11px;
+  color:       var(--text-2);
+  font-family: var(--font-mono);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.statValue {
+  font-size:   22px;
+  font-weight: 600;
+  color:       var(--text-0);
+  font-family: var(--font-mono);
+  letter-spacing: -0.3px;
+  display:     flex;
+  align-items: baseline;
+  gap:         6px;
+}
+.statValueAccent {
+  color: var(--accent-text);
+}
+.statValueMuted {
+  color:       var(--text-2);
+  font-size:   13px;
+  font-weight: 400;
+}
+.statHint {
+  font-size: 11px;
+  color:     var(--text-2);
+}
+
+.sectionHeading {
+  display:        flex;
+  align-items:    baseline;
+  gap:            12px;
+  margin:         24px 20px 12px;
+}
+.sectionHeading h2 {
+  margin:      0;
+  font-size:   17px;
+  font-weight: 600;
+  color:       var(--text-0);
+}
+.sectionHeading .meta {
+  font-size:   12px;
+  color:       var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.hostGrid {
+  display:        grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap:            12px;
+  margin:         0 20px;
+}
+
+.hostCard {
+  padding:       16px 18px;
+  background:    var(--surface-0);
+  border:        1px solid var(--glass-border);
+  border-radius: var(--r-lg);
+  cursor:        pointer;
+  transition:    border-color 160ms var(--ease-out), transform 160ms var(--ease-out);
+}
+.hostCard:hover {
+  border-color: var(--accent);
+  transform:    translateY(-1px);
+}
+
+.hostHead {
+  display:     flex;
+  align-items: center;
+  gap:         10px;
+  margin-bottom: 6px;
+}
+.hostAvatar {
+  width:       32px;
+  height:      32px;
+  border-radius: 50%;
+  background:  linear-gradient(135deg, rgba(52,211,153,0.25), rgba(52,211,153,0.05));
+  border:      1px solid rgba(52,211,153,0.35);
+  color:       var(--accent-text);
+  display:     flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size:   13px;
+  font-weight: 600;
+}
+.hostNameBlock {
+  display:        flex;
+  flex-direction: column;
+  gap:            1px;
+  min-width:      0;
+  flex:           1;
+}
+.hostMachine {
+  font-size:   14px;
+  font-weight: 600;
+  color:       var(--text-0);
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+}
+.hostOwner {
+  font-size:   12px;
+  color:       var(--text-2);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+}
+.hostStatusPill {
+  flex:          0 0 auto;
+  padding:       2px 8px 2px 7px;
+  border-radius: 999px;
+  font-size:     10.5px;
+  font-family:   var(--font-mono);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  display:       inline-flex;
+  align-items:   center;
+  gap:           5px;
+}
+.hostStatusOnline {
+  background: rgba(52,211,153,0.12);
+  border:     1px solid rgba(52,211,153,0.5);
+  color:      var(--accent-text);
+}
+.hostStatusOffline {
+  background: rgba(120,120,120,0.10);
+  border:     1px solid rgba(120,120,120,0.4);
+  color:      var(--text-2);
+}
+.hostStatusDot {
+  width:         6px;
+  height:        6px;
+  border-radius: 50%;
+  background:    currentColor;
+}
+
+.hostMeta {
+  display:        flex;
+  flex-wrap:      wrap;
+  gap:            10px 14px;
+  font-size:      11.5px;
+  color:          var(--text-2);
+  font-family:    var(--font-mono);
+  margin-top:     8px;
+  padding-top:    8px;
+  border-top:     1px dashed var(--glass-border);
+}
+.hostMetaItem {
+  display:     inline-flex;
+  align-items: center;
+  gap:         4px;
+}
+.hostMetaStrong {
+  color:       var(--text-0);
+  font-weight: 600;
+}
+
+.hostBotChips {
+  display:    flex;
+  flex-wrap:  wrap;
+  gap:        6px;
+  margin-top: 10px;
+}
+.botChip {
+  display:     inline-flex;
+  align-items: center;
+  gap:         5px;
+  padding:     3px 8px 3px 7px;
+  border:      1px solid var(--glass-border);
+  border-radius: 999px;
+  background:  rgba(255,255,255,0.02);
+  font-size:   11.5px;
+  font-family: var(--font-mono);
+  color:       var(--text-1);
+}
+.botChip .botChipDot {
+  width:        6px;
+  height:       6px;
+  border-radius: 50%;
+}
+.botChipOnline .botChipDot    { background: var(--accent); }
+.botChipStopped .botChipDot   { background: #888; }
+.botChipLaunching .botChipDot { background: #facc15; }
+.botChipError .botChipDot     { background: #ef4444; }
+.botChipOnline  { border-color: rgba(52,211,153,0.4); color: var(--text-0); }
+.botChipError   { border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+
+.hiddenChip {
+  display:       inline-flex;
+  align-items:   center;
+  gap:           4px;
+  padding:       3px 8px;
+  border:        1px dashed var(--glass-border);
+  border-radius: 999px;
+  background:    transparent;
+  font-size:     11px;
+  font-family:   var(--font-mono);
+  color:         var(--text-2);
+}
+
+/* ── Host detail page ─────────────────────────────────────── */
+
+.hostDetailHead {
+  display:        flex;
+  flex-direction: column;
+  gap:            10px;
+  margin:         20px 20px 16px;
+}
+.hostDetailTitleRow {
+  display:     flex;
+  align-items: center;
+  gap:         14px;
+}
+.hostDetailAvatar {
+  width:       44px;
+  height:      44px;
+  border-radius: 50%;
+  background:  linear-gradient(135deg, rgba(52,211,153,0.25), rgba(52,211,153,0.05));
+  border:      1px solid rgba(52,211,153,0.35);
+  color:       var(--accent-text);
+  display:     flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size:   16px;
+  font-weight: 600;
+}
+.hostDetailTitleText {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  min-width:      0;
+}
+.hostDetailTitle {
+  font-size:   18px;
+  font-weight: 600;
+  color:       var(--text-0);
+}
+.hostDetailSubtitle {
+  font-size:   12.5px;
+  color:       var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.hostDetailMetaRow {
+  display:        flex;
+  flex-wrap:      wrap;
+  gap:            12px;
+  font-size:      12px;
+  color:          var(--text-1);
+  font-family:    var(--font-mono);
+}
+.hostDetailMetaRow .hostMetaItem {
+  background:    var(--surface-0);
+  border:        1px solid var(--glass-border);
+  padding:       4px 10px;
+  border-radius: var(--r-sm);
+}
+
+.hiddenNotice {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  margin:      0 20px 16px;
+  padding:     8px 12px;
+  background:  transparent;
+  border:      1px dashed var(--glass-border);
+  border-radius: var(--r-md);
+  color:       var(--text-2);
+  font-size:   12px;
+}
+
+/* ── Per-bot detail rows (reuse manager.module.css's card grid) ── */
+
+.botRowList {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+  margin:         0 20px 24px;
+}
+.botRow {
+  display:        flex;
+  align-items:    center;
+  gap:            12px;
+  padding:        12px 14px;
+  background:     var(--surface-0);
+  border:         1px solid var(--glass-border);
+  border-radius:  var(--r-md);
+}
+.botRowName {
+  font-size:   14px;
+  font-weight: 600;
+  color:       var(--text-0);
+  font-family: var(--font-mono);
+  min-width:   80px;
+}
+.botRowStats {
+  display:        grid;
+  grid-template-columns: repeat(4, minmax(70px, 1fr));
+  gap:            6px 16px;
+  flex:           1;
+  font-size:      11.5px;
+  color:          var(--text-2);
+  font-family:    var(--font-mono);
+}
+.botRowStat {
+  display:        flex;
+  flex-direction: column;
+  gap:            1px;
+}
+.botRowStatLabel {
+  font-size:   10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.botRowStatValue {
+  color:    var(--text-0);
+  font-size: 12px;
+}
+
+.botRowWorkdir {
+  font-size:   11px;
+  color:       var(--text-2);
+  font-family: var(--font-mono);
+  flex-basis:  100%;
+  margin-top:  4px;
+  overflow:    hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.privacyBadge {
+  display:     inline-flex;
+  align-items: center;
+  gap:         3px;
+  padding:     1px 6px;
+  border:      1px dashed var(--glass-border);
+  border-radius: var(--r-sm);
+  color:       var(--text-2);
+  font-size:   10.5px;
+  font-family: var(--font-mono);
+  margin-left: 6px;
+}
+
+/* ── Bot row click-through ───────────────────────────────── */
+
+.botRowClickable {
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+.botRowClickable:hover {
+  border-color: rgba(52, 211, 153, 0.5);
+}
+.botRowSelected {
+  border-color: rgba(52, 211, 153, 0.55);
+  background:   rgba(52, 211, 153, 0.05);
+}
+
+/* ── Session side-panel (Hub HostDetail) ─────────────────── */
+
+.sessionPanel {
+  display:        flex;
+  flex-direction: column;
+  gap:            8px;
+  margin:         0 20px 16px;
+  padding:        14px 16px;
+  background:     var(--surface-0);
+  border:         1px solid var(--glass-border);
+  border-radius:  var(--r-md);
+}
+.sessionPanelHead {
+  display:     flex;
+  align-items: center;
+  gap:         8px;
+  color:       var(--text-1);
+  font-size:   13px;
+}
+.sessionPanelTitle {
+  font-weight: 600;
+  color:       var(--text-0);
+  font-family: var(--font-mono);
+}
+.sessionPanelHint {
+  margin-left: auto;
+  color:       var(--text-2);
+  font-size:   11.5px;
+}
+.sessionPanelClose {
+  background:    transparent;
+  border:        1px solid var(--glass-border);
+  color:         var(--text-2);
+  border-radius: var(--r-sm);
+  padding:       2px 8px;
+  font-size:     11px;
+  cursor:        pointer;
+}
+.sessionPanelClose:hover {
+  border-color: rgba(239, 68, 68, 0.4);
+  color:        #fca5a5;
+}
+
+.sessionList {
+  display:        flex;
+  flex-direction: column;
+  gap:            4px;
+  max-height:     320px;
+  overflow:       auto;
+}
+.sessionRow {
+  display:        flex;
+  flex-direction: column;
+  gap:            2px;
+  padding:        8px 10px;
+  border:         1px solid transparent;
+  border-radius:  var(--r-sm);
+  cursor:         pointer;
+  transition:     background 0.12s ease, border-color 0.12s ease;
+}
+.sessionRow:hover {
+  background:   var(--surface-1);
+  border-color: var(--glass-border);
+}
+.sessionRowDisabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.sessionRowDisabled:hover {
+  background:   transparent;
+  border-color: transparent;
+}
+.sessionTitle {
+  font-size:   13px;
+  color:       var(--text-0);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow:    hidden;
+}
+.sessionMeta {
+  display:     flex;
+  gap:         10px;
+  font-size:   11px;
+  color:       var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.sessionStatus {
+  padding:    16px;
+  color:      var(--text-2);
+  font-size:  12.5px;
+  text-align: center;
+}
+
+/* ── Mobile ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .privacyBanner {
+    margin: 12px 12px 0;
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+  .statsStrip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin: 12px 12px 0;
+  }
+  .statBox { padding: 10px 12px; }
+  .statValue { font-size: 19px; }
+  .sectionHeading { margin: 18px 12px 8px; }
+  .sectionHeading h2 { font-size: 15px; }
+  .hostGrid {
+    grid-template-columns: 1fr;
+    margin: 0 12px;
+    gap: 10px;
+  }
+  .hostCard { padding: 14px 14px; }
+  .hostDetailHead { margin: 14px 12px 12px; }
+  .hostDetailAvatar { width: 38px; height: 38px; font-size: 14px; }
+  .hostDetailTitle { font-size: 16px; }
+  .hostDetailMetaRow { gap: 8px; }
+  .hostDetailMetaRow .hostMetaItem { padding: 3px 8px; font-size: 11px; }
+  .botRowList { margin: 0 12px 16px; gap: 8px; }
+  .botRow {
+    flex-wrap: wrap;
+    padding: 11px 12px;
+    gap: 8px 12px;
+  }
+  .botRowName { min-width: auto; font-size: 13.5px; }
+  .botRowStats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 4px 10px;
+    flex-basis: 100%;
+  }
+  .hiddenNotice { margin: 0 12px 12px; }
+}
