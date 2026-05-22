@@ -14,6 +14,7 @@ const VoiceView     = lazy(() => import('./components/VoiceView').then((m) => ({
 const SettingsView  = lazy(() => import('./components/SettingsView').then((m) => ({ default: m.SettingsView })));
 const TeamWorkspace = lazy(() => import('./components/team').then((m) => ({ default: m.TeamWorkspace })));
 const ManagerApp    = lazy(() => import('./manager/ManagerApp').then((m) => ({ default: m.ManagerApp })));
+const HubApp        = lazy(() => import('./hub/HubApp').then((m) => ({ default: m.HubApp })));
 
 function AppFallback() {
   return (
@@ -60,6 +61,22 @@ export function App() {
         <Suspense fallback={<AppFallback />}>
           <Routes>
             <Route path="/manager/*" element={<ManagerApp />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // Hub UI — owner-facing central panoramic view. Auth is its own Feishu
+  // OAuth flow (handled by the API on 401 → loginUrl redirect), NOT the
+  // local-token LoginPage gate.
+  const isHubRoute = location.pathname.startsWith('/hub');
+  if (isHubRoute) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<AppFallback />}>
+          <Routes>
+            <Route path="/hub/*" element={<HubApp />} />
           </Routes>
         </Suspense>
       </ErrorBoundary>

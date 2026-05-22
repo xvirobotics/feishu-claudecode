@@ -42,6 +42,7 @@ import {
   setSession,
 } from './session-control.js';
 import { attachLogStreamUpgrade } from './log-stream.js';
+import { handleHubRoutes } from './routes/hub.js';
 import type { Logger } from '../utils/logger.js';
 
 interface ManagerServerOpts {
@@ -721,6 +722,10 @@ export function startManagerServer(opts: ManagerServerOpts): http.Server {
 
       if (await handleAuthRoutes(ctx, req, res, method, url)) return;
       if (await handleBotsRoutes(ctx, req, res, method, url)) return;
+
+      // Hub routes (`/api/hub/*`) — owner-facing, gated by Feishu OAuth
+      // (NOT mb_mgr_session). Lives outside the /api/manager/ admin namespace.
+      if (await handleHubRoutes(req, res, method, url)) return;
 
       // SPA / static fallback
       if (serveSpa(req, res, url)) return;
