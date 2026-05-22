@@ -130,6 +130,39 @@ function makeApp(bot, index) {
   };
 }
 
+// ── metabot-manager (single-host admin panel) ───────────────────────────────
+// Independent of any bot — controls bots via `pm2` shell-outs. NOT in
+// bots.json. Strip per-bot env (BOT_NAME / API_PORT / MEMORY_PORT /
+// METABOT_DATA_DIR) so a stray pm2 start with --update-env can never pollute
+// it.
+function makeManagerApp() {
+  return {
+    name:             'metabot-manager',
+    script:           'src/manager/index.ts',
+    interpreter:      'node',
+    interpreter_args: '--import tsx',
+    cwd:              ROOT,
+
+    watch: false,
+
+    autorestart:   true,
+    max_restarts:  10,
+    min_uptime:    '10s',
+    restart_delay: 3000,
+
+    error_file:      path.join(LOGS_DIR, 'metabot-manager-error.log'),
+    out_file:        path.join(LOGS_DIR, 'metabot-manager-out.log'),
+    merge_logs:      true,
+    log_date_format: 'YYYY-MM-DD HH:mm:ss',
+
+    env: {
+      NODE_ENV:     'production',
+      MANAGER_PORT: '11000',
+      ...dotenvVars,
+    },
+  };
+}
+
 module.exports = {
-  apps: bots.map((bot, i) => makeApp(bot, i)),
+  apps: [...bots.map((bot, i) => makeApp(bot, i)), makeManagerApp()],
 };
