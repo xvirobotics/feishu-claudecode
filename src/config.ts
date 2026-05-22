@@ -108,6 +108,14 @@ export interface BotConfig extends BotConfigBase {
    * non-guessable public URL; flip back to false before broad rollout.
    */
   transcriptDisableAuth?: boolean;
+  /**
+   * Owner-identity whitelist used by Hub + Manager (and union'd into the
+   * transcript whitelist). open_ids listed here can view this bot from the
+   * cross-bot Hub UI and follow Manager Sessions-tab transcript jumps. Empty
+   * means "no Hub/Manager owner access" — transcript still works via the
+   * legacy `transcriptAllowOpenIds` + env fallback.
+   */
+  accessAllowOpenIds?: string[];
 }
 
 /** Telegram bot config (extends base with Telegram credentials). */
@@ -239,6 +247,12 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   transcriptAllowOpenIds?: string[];
   /** Gray-deploy: disable OAuth gating on transcript routes (anyone with link). */
   transcriptDisableAuth?: boolean;
+  /**
+   * Owner-identity whitelist used by Hub + Manager surfaces; union'd into
+   * the transcript whitelist as well. Owner-only; do not paste random
+   * open_ids here.
+   */
+  accessAllowOpenIds?: string[];
 }
 
 function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
@@ -255,6 +269,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.publicBaseUrl ? { publicBaseUrl: entry.publicBaseUrl } : {}),
     ...(entry.transcriptAllowOpenIds?.length ? { transcriptAllowOpenIds: entry.transcriptAllowOpenIds } : {}),
     ...(entry.transcriptDisableAuth ? { transcriptDisableAuth: true } : {}),
+    ...(entry.accessAllowOpenIds?.length ? { accessAllowOpenIds: entry.accessAllowOpenIds } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),

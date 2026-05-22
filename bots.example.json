@@ -22,7 +22,9 @@
       "maxTurns": 30,
       "maxBudgetUsd": 0.5,
       "publicBaseUrl": "https://example.com:18443",
-      "transcriptAllowOpenIds": ["ou_paste_open_id_after_first_oauth_login"]
+      "transcriptAllowOpenIds": ["ou_paste_open_id_after_first_oauth_login"],
+      "_comment_accessAllowOpenIds": "Owner open_ids that can view this bot from the Hub/Manager UIs. Also union'd into transcript whitelist. Owner-only — do not paste random ids here.",
+      "accessAllowOpenIds": ["ou_paste_owner_open_id_here"]
     },
     {
       "name": "project-gamma",
