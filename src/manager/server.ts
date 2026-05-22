@@ -23,8 +23,17 @@ import {
   verifyPassword,
 } from './auth.js';
 import type { ManagerCredentials } from './credentials.js';
-import { listPm2, findPm2, startOrReloadBot, stopBot, type Pm2ProcInfo } from './pm2-control.js';
-import { botsConfigPath, getBot, loadBotsJson, maskBotForClient, patchBot } from './bots-config.js';
+import { listPm2, findPm2, startOrReloadBot, stopBot, deletePm2, type Pm2ProcInfo } from './pm2-control.js';
+import {
+  appendBot,
+  botsConfigPath,
+  getBot,
+  loadBotsJson,
+  maskBotForClient,
+  patchBot,
+  removeBot,
+  type BotJsonEntry,
+} from './bots-config.js';
 import {
   listJsonls,
   listSessions,
@@ -41,6 +50,7 @@ interface ManagerServerOpts {
   creds:       ManagerCredentials;
   logger:      Logger;
   ecosystemPath: string;
+  disableAuth?:  boolean;
 }
 
 const MIME_TYPES: Record<string, string> = {
@@ -67,6 +77,12 @@ function isAuthRoute(url: string): boolean {
 function pickStatus(proc: Pm2ProcInfo | null): string {
   if (!proc) return 'stopped';
   return proc.status || 'unknown';
+}
+
+/** Wrap jsonResponse so the route handler can do `return jsonResponseAndDone(...)`. */
+function jsonResponseAndDone(res: http.ServerResponse, status: number, body: unknown): true {
+  jsonResponse(res, status, body);
+  return true;
 }
 
 interface BotSummary {
@@ -129,10 +145,15 @@ type Ctx = {
   creds:         ManagerCredentials;
   logger:        Logger;
   ecosystemPath: string;
+  disableAuth:   boolean;
 };
 
 async function handleAuthRoutes(ctx: Ctx, req: http.IncomingMessage, res: http.ServerResponse, method: string, url: string): Promise<boolean> {
   if (method === 'POST' && url === '/api/manager/auth/login') {
+    if (ctx.disableAuth) {
+      jsonResponse(res, 200, { ok: true, username: ctx.creds.username, disableAuth: true });
+      return true;
+    }
     const body = await parseJsonBody(req);
     const username = typeof body.username === 'string' ? body.username : '';
     const password = typeof body.password === 'string' ? body.password : '';
@@ -163,6 +184,10 @@ async function handleAuthRoutes(ctx: Ctx, req: http.IncomingMessage, res: http.S
   }
 
   if (method === 'GET' && url === '/api/manager/auth/me') {
+    if (ctx.disableAuth) {
+      jsonResponse(res, 200, { username: ctx.creds.username, disableAuth: true });
+      return true;
+    }
     const session = requireAuth(req, ctx.creds.sessionSecret);
     if (!session) {
       jsonResponse(res, 401, { error: 'unauthorized' });
@@ -181,6 +206,88 @@ async function handleBotsRoutes(ctx: Ctx, req: http.IncomingMessage, res: http.S
     const bots = await buildBotSummaries();
     jsonResponse(res, 200, { bots });
     return true;
+  }
+
+  // Create bot (append to bots.json + startOrReload).
+  if (method === 'POST' && url === '/api/manager/bots') {
+    const body          = await parseJsonBody(req);
+    const name          = typeof body.name          === 'string' ? body.name.trim()          : '';
+    const feishuAppId   = typeof body.feishuAppId   === 'string' ? body.feishuAppId.trim()   : '';
+    const feishuAppSecret = typeof body.feishuAppSecret === 'string' ? body.feishuAppSecret : '';
+    const workdir       = typeof body.defaultWorkingDirectory === 'string' ? body.defaultWorkingDirectory : '';
+    const description   = typeof body.description   === 'string' ? body.description   : undefined;
+    const icon          = typeof body.icon          === 'string' ? body.icon          : undefined;
+    const publicBaseUrl = typeof body.publicBaseUrl === 'string' ? body.publicBaseUrl : undefined;
+    const insertAtIndex = typeof body.insertAtIndex === 'number' && body.insertAtIndex >= 0 ? body.insertAtIndex : undefined;
+
+    if (!name)            return jsonResponseAndDone(res, 422, { error: 'invalid', message: 'name required' });
+    if (!/^[A-Za-z0-9_一-鿿-]+$/.test(name)) {
+      return jsonResponseAndDone(res, 422, { error: 'invalid', message: 'name must be letters/digits/CJK/underscore/dash' });
+    }
+    if (!feishuAppId)     return jsonResponseAndDone(res, 422, { error: 'invalid', message: 'feishuAppId required' });
+    if (!feishuAppSecret) return jsonResponseAndDone(res, 422, { error: 'invalid', message: 'feishuAppSecret required' });
+    if (!workdir || !path.isAbsolute(workdir)) {
+      return jsonResponseAndDone(res, 422, { error: 'invalid', message: 'defaultWorkingDirectory must be an absolute path' });
+    }
+    try {
+      const stat = fs.statSync(workdir);
+      if (!stat.isDirectory()) {
+        return jsonResponseAndDone(res, 422, { error: 'invalid', message: `workdir is not a directory: ${workdir}` });
+      }
+    } catch {
+      return jsonResponseAndDone(res, 422, { error: 'invalid', message: `workdir does not exist: ${workdir}` });
+    }
+    if (getBot(name)) return jsonResponseAndDone(res, 409, { error: 'conflict', message: `bot already exists: ${name}` });
+
+    // env: optional Record<string,string>
+    let env: Record<string, string> | undefined;
+    if (body.env !== undefined && body.env !== null) {
+      if (typeof body.env !== 'object' || Array.isArray(body.env)) {
+        return jsonResponseAndDone(res, 422, { error: 'invalid', message: 'env must be an object' });
+      }
+      env = {};
+      for (const [k, v] of Object.entries(body.env as Record<string, unknown>)) {
+        if (typeof v !== 'string') {
+          return jsonResponseAndDone(res, 422, { error: 'invalid', message: `env.${k} must be a string` });
+        }
+        env[k] = v;
+      }
+    }
+
+    const entry: BotJsonEntry = {
+      name,
+      feishuAppId,
+      feishuAppSecret,
+      defaultWorkingDirectory: workdir,
+    };
+    if (description)   entry.description   = description;
+    if (icon)          entry.icon          = icon;
+    if (publicBaseUrl) entry.publicBaseUrl = publicBaseUrl;
+    if (typeof body.transcriptDisableAuth === 'boolean') entry.transcriptDisableAuth = body.transcriptDisableAuth;
+    if (Array.isArray(body.transcriptAllowOpenIds)) {
+      entry.transcriptAllowOpenIds = (body.transcriptAllowOpenIds as unknown[]).filter((x): x is string => typeof x === 'string');
+    }
+    if (env && Object.keys(env).length > 0) entry.env = env;
+
+    appendBot(entry, insertAtIndex);
+
+    try {
+      await startOrReloadBot(name, ctx.ecosystemPath);
+    } catch (err: unknown) {
+      ctx.logger.error({ err: (err as Error).message, name }, 'manager create bot: startOrReload failed');
+      // Bot row was created but pm2 failed; surface to client.
+      return jsonResponseAndDone(res, 500, {
+        error:   'partial',
+        message: `bot row created but pm2 startOrReload failed: ${(err as Error).message}`,
+        bot:     maskBotForClient(entry),
+      });
+    }
+    await sleep(500);
+    const proc = await findPm2(name);
+    return jsonResponseAndDone(res, 201, {
+      bot:    maskBotForClient(entry),
+      status: procToSummary(name, proc, getBot(name)),
+    });
   }
 
   // /api/manager/bots/:name(/...) — capture name + subpath
@@ -220,6 +327,45 @@ async function handleBotsRoutes(ctx: Ctx, req: http.IncomingMessage, res: http.S
       errorLogPath: proc?.pmErrLogPath,
     });
     return true;
+  }
+
+  // DELETE /api/manager/bots/:name (?clearSessions=true to also wipe sessions)
+  if (method === 'DELETE' && subPath === '') {
+    const existing = getBot(name);
+    if (!existing) {
+      return jsonResponseAndDone(res, 404, { error: 'not_found' });
+    }
+    // Parse optional body. DELETE may have no body — tolerate both.
+    let clearSessions = false;
+    try {
+      const body = await parseJsonBody(req);
+      clearSessions = body.clearSessions === true;
+    } catch { /* no body or invalid JSON — treat as default flags */ }
+
+    try { await stopBot(name); } catch (err: unknown) {
+      ctx.logger.warn({ err: (err as Error).message, name }, 'manager delete bot: stop non-fatal');
+    }
+    try { await deletePm2(name); } catch (err: unknown) {
+      ctx.logger.warn({ err: (err as Error).message, name }, 'manager delete bot: pm2 delete non-fatal');
+    }
+    let sessionsCleared = false;
+    let dbDeleted       = false;
+    if (clearSessions) {
+      try {
+        const r = resetSessions(name);
+        sessionsCleared = r.cleared;
+        dbDeleted       = r.dbDeleted;
+      } catch (err: unknown) {
+        ctx.logger.warn({ err: (err as Error).message, name }, 'manager delete bot: resetSessions non-fatal');
+      }
+    }
+    removeBot(name);
+    return jsonResponseAndDone(res, 200, {
+      ok:               true,
+      removed:          name,
+      sessionsCleared,
+      dbDeleted,
+    });
   }
 
   // /api/manager/bots/:name/start | stop | restart
@@ -277,6 +423,13 @@ async function handleBotsRoutes(ctx: Ctx, req: http.IncomingMessage, res: http.S
     // CRITICAL: wipe both session maps + sessions.db (see
     // memory/feedback_workdir_change.md). Without this the SDK keeps chasing
     // the old workdir and crashes with "native binary not found".
+    //
+    // Stop before resetSessions: PM2 reload's destroy() flushes the old
+    // process's in-memory session map back to disk, which would overwrite our
+    // reset. Stop first → SDK flushes its state → we overwrite → start clean.
+    try { await stopBot(name); } catch (err: unknown) {
+      ctx.logger.warn({ err: (err as Error).message, name }, 'manager patch workdir: stop non-fatal');
+    }
     resetSessions(name);
     await startOrReloadBot(name, ctx.ecosystemPath);
     await sleep(400);
@@ -343,6 +496,13 @@ async function handleBotsRoutes(ctx: Ctx, req: http.IncomingMessage, res: http.S
       jsonResponse(res, 422, { error: 'invalid', message: `jsonl not found for sessionId=${sessionId} under workdir=${workdir}` });
       return true;
     }
+    // Stop before write: PM2 reload triggers the old process's
+    // SessionManager.destroy() → saveToDisk(), which flushes its in-memory
+    // map (lacking the new chatId) and clobbers our setSession write.
+    // Order must be stop → write → start.
+    try { await stopBot(name); } catch (err: unknown) {
+      ctx.logger.warn({ err: (err as Error).message, name }, 'manager patch session: stop non-fatal');
+    }
     setSession(name, chatId, sessionId, workdir);
     await startOrReloadBot(name, ctx.ecosystemPath);
     await sleep(400);
@@ -358,6 +518,10 @@ async function handleBotsRoutes(ctx: Ctx, req: http.IncomingMessage, res: http.S
     if (!getBot(name)) {
       jsonResponse(res, 404, { error: 'not_found' });
       return true;
+    }
+    // Stop before resetSessions for the same reason as PATCH /session above.
+    try { await stopBot(name); } catch (err: unknown) {
+      ctx.logger.warn({ err: (err as Error).message, name }, 'manager session reset: stop non-fatal');
     }
     const result = resetSessions(name, chatId);
     await startOrReloadBot(name, ctx.ecosystemPath);
@@ -523,7 +687,16 @@ function sendIndex(res: http.ServerResponse, webRoot: string): boolean {
 // ─── server bootstrap ───────────────────────────────────────────────────────
 
 export function startManagerServer(opts: ManagerServerOpts): http.Server {
-  const ctx: Ctx = { creds: opts.creds, logger: opts.logger, ecosystemPath: opts.ecosystemPath };
+  const ctx: Ctx = {
+    creds:         opts.creds,
+    logger:        opts.logger,
+    ecosystemPath: opts.ecosystemPath,
+    disableAuth:   opts.disableAuth === true,
+  };
+
+  if (ctx.disableAuth) {
+    opts.logger.warn({ port: opts.port, host: opts.host }, 'MANAGER_DISABLE_AUTH=true — all /api/manager/* routes accept anonymous access');
+  }
 
   const server = http.createServer(async (req, res) => {
     const method = req.method || 'GET';
@@ -537,8 +710,8 @@ export function startManagerServer(opts: ManagerServerOpts): http.Server {
       }
 
       // Auth gating: everything under /api/manager/* except auth + health
-      // requires a valid session cookie.
-      if (url.startsWith('/api/manager/') && !isAuthRoute(url)) {
+      // requires a valid session cookie. MANAGER_DISABLE_AUTH bypasses this.
+      if (!ctx.disableAuth && url.startsWith('/api/manager/') && !isAuthRoute(url)) {
         const session = requireAuth(req, ctx.creds.sessionSecret);
         if (!session) {
           jsonResponse(res, 401, { error: 'unauthorized' });
@@ -574,7 +747,11 @@ export function startManagerServer(opts: ManagerServerOpts): http.Server {
   });
 
   // Attach WebSocket upgrade for log tailing.
-  attachLogStreamUpgrade(server, { sessionSecret: ctx.creds.sessionSecret, logger: opts.logger });
+  attachLogStreamUpgrade(server, {
+    sessionSecret: ctx.creds.sessionSecret,
+    logger:        opts.logger,
+    disableAuth:   ctx.disableAuth,
+  });
 
   server.listen(opts.port, opts.host, () => {
     opts.logger.info({ host: opts.host, port: opts.port }, 'metabot-manager listening');

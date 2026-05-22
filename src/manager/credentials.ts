@@ -68,6 +68,21 @@ function loudBanner(plainPassword: string, filePath: string): void {
 }
 
 /**
+ * Hydrate process.env from `~/.metabot/manager.env` for any keys that aren't
+ * already set by the shell / PM2 ecosystem. Lets the operator toggle flags
+ * like `MANAGER_DISABLE_AUTH` in the same file that already holds the creds,
+ * without having to rewrite ecosystem.config.cjs.
+ */
+export function loadManagerEnv(): void {
+  const filePath = envFilePath();
+  if (!fs.existsSync(filePath)) return;
+  const parsed = parseEnvFile(fs.readFileSync(filePath, 'utf-8'));
+  for (const [k, v] of Object.entries(parsed)) {
+    if (process.env[k] === undefined) process.env[k] = v;
+  }
+}
+
+/**
  * Read existing credentials or generate-and-persist new ones.
  * Returns the live credentials regardless of which path was taken.
  */

@@ -133,3 +133,19 @@ export async function startOrReloadBot(name: string, ecosystemPath: string): Pro
 export async function stopBot(name: string): Promise<void> {
   await run('pm2', ['stop', name], { timeoutMs: 30_000 });
 }
+
+/**
+ * Remove the bot from PM2 entirely (`pm2 delete <name>`). Tolerates
+ * "process not found" — if the bot was never started or already deleted,
+ * we treat this as success so the caller can sequence stop + delete +
+ * bots.json removal idempotently.
+ */
+export async function deletePm2(name: string): Promise<void> {
+  try {
+    await run('pm2', ['delete', name], { timeoutMs: 30_000 });
+  } catch (err) {
+    const msg = (err as Error).message || '';
+    if (/process or namespace .* not found/i.test(msg) || /doesn't exist/i.test(msg)) return;
+    throw err;
+  }
+}

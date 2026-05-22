@@ -25,6 +25,7 @@ const READ_CHUNK_BYTES   = 64 * 1024;
 interface LogStreamOpts {
   sessionSecret: string;
   logger:        Logger;
+  disableAuth?:  boolean;
 }
 
 /**
@@ -85,11 +86,13 @@ async function handleUpgrade(
     return;
   }
 
-  const session = requireAuth(req, opts.sessionSecret);
-  if (!session) {
-    socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-    socket.destroy();
-    return;
+  if (!opts.disableAuth) {
+    const session = requireAuth(req, opts.sessionSecret);
+    if (!session) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
   }
 
   const botName = decodeURIComponent(m[1]);

@@ -110,6 +110,53 @@ export function patchBot(
   return updated;
 }
 
+/**
+ * Insert a brand-new bot entry. Throws 409 if `entry.name` already exists.
+ * `insertAtIndex` is optional — default behavior is append (so existing bots'
+ * indices never shift). Pass an explicit index to insert at a specific
+ * position; useful when re-creating a bot that previously held a known
+ * port slot (port = `API_PORT_BASE + index*3` in ecosystem.config.cjs).
+ */
+export function appendBot(
+  entry:         BotJsonEntry,
+  insertAtIndex?: number,
+): BotJsonEntry {
+  if (!entry.name) throw Object.assign(new Error('bot name required'), { statusCode: 422 });
+  const loaded = loadBotsJson();
+  if (loaded.feishuBots.some((b) => b.name === entry.name)) {
+    throw Object.assign(new Error(`bot already exists: ${entry.name}`), { statusCode: 409 });
+  }
+
+  const bots = [...loaded.feishuBots];
+  if (typeof insertAtIndex === 'number' && insertAtIndex >= 0 && insertAtIndex <= bots.length) {
+    bots.splice(insertAtIndex, 0, entry);
+  } else {
+    bots.push(entry);
+  }
+
+  loaded.raw.feishuBots = bots;
+  writeAtomically(loaded.raw);
+  return entry;
+}
+
+/**
+ * Remove a bot from `feishuBots` by name. Throws 404 if not found.
+ * Returns the removed entry so the caller can decide what cleanup to do
+ * (data dir, sessions, pm2 process, etc.).
+ */
+export function removeBot(name: string): BotJsonEntry {
+  const loaded = loadBotsJson();
+  const idx    = loaded.feishuBots.findIndex((b) => b.name === name);
+  if (idx < 0) throw Object.assign(new Error(`bot not found: ${name}`), { statusCode: 404 });
+
+  const removed = loaded.feishuBots[idx];
+  const bots    = loaded.feishuBots.filter((_, i) => i !== idx);
+
+  loaded.raw.feishuBots = bots;
+  writeAtomically(loaded.raw);
+  return removed;
+}
+
 function writeAtomically(data: BotsJsonShape): void {
   const dir       = path.dirname(BOTS_CONFIG_PATH);
   const tmpPath   = path.join(dir, '.bots.json.mgr.tmp');
