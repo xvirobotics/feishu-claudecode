@@ -13,6 +13,7 @@ const MemoryView    = lazy(() => import('./components/MemoryView').then((m) => (
 const VoiceView     = lazy(() => import('./components/VoiceView').then((m) => ({ default: m.VoiceView })));
 const SettingsView  = lazy(() => import('./components/SettingsView').then((m) => ({ default: m.SettingsView })));
 const TeamWorkspace = lazy(() => import('./components/team').then((m) => ({ default: m.TeamWorkspace })));
+const ManagerApp    = lazy(() => import('./manager/ManagerApp').then((m) => ({ default: m.ManagerApp })));
 
 function AppFallback() {
   return (
@@ -45,6 +46,22 @@ export function App() {
         <Routes>
           <Route path="/transcript/:chatId" element={<TranscriptView />} />
         </Routes>
+      </ErrorBoundary>
+    );
+  }
+
+  // Manager admin panel has its OWN auth flow (username/password + HttpOnly
+  // cookie). It must NOT be intercepted by the local-token LoginPage gate.
+  const isManagerRoute = location.pathname.startsWith('/manager');
+
+  if (isManagerRoute) {
+    return (
+      <ErrorBoundary>
+        <Suspense fallback={<AppFallback />}>
+          <Routes>
+            <Route path="/manager/*" element={<ManagerApp />} />
+          </Routes>
+        </Suspense>
       </ErrorBoundary>
     );
   }
