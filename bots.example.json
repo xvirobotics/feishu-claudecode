@@ -24,7 +24,9 @@
       "publicBaseUrl": "https://example.com:18443",
       "transcriptAllowOpenIds": ["ou_paste_open_id_after_first_oauth_login"],
       "_comment_accessAllowOpenIds": "Owner open_ids that can view this bot from the Hub/Manager UIs. Also union'd into transcript whitelist. Owner-only — do not paste random ids here.",
-      "accessAllowOpenIds": ["ou_paste_owner_open_id_here"]
+      "accessAllowOpenIds": ["ou_paste_owner_open_id_here"],
+      "_comment_hubVisible": "hubVisible: true 让此 bot 在中心化 Hub UI 中可见(默认 false=仅本地)",
+      "hubVisible": false
     },
     {
       "name": "project-gamma",

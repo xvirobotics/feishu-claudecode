@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Play, RotateCw, Square, Trash2 } from 'lucide-react';
+import { ChevronLeft, Eye, EyeOff, Play, RotateCw, Square, Trash2 } from 'lucide-react';
 import {
   ApiError,
   deleteBot,
@@ -16,13 +16,14 @@ import {
   restartBot,
   patchWorkdir,
   patchEnv,
+  patchHubVisible,
   resetSession,
   type BotConfig,
   type BotDetailResponse,
   type BotSummary,
   type SessionMapping,
 } from './api';
-import { ConfirmModal, Modal, StatusPill } from './ui';
+import { ConfirmModal, Modal, StatusPill, Switch } from './ui';
 import { useToast } from './toast';
 import { LogPanel } from './LogPanel';
 import { SessionPickerModal } from './SessionPickerModal';
@@ -293,7 +294,15 @@ export function BotDetail({ onAuthLost }: BotDetailProps) {
         ))}
       </div>
 
-      {tab === 'overview'   && <OverviewSection status={status} config={config} />}
+      {tab === 'overview'   && (
+        <OverviewSection
+          name={name}
+          status={status}
+          config={config}
+          onUpdated={() => refresh(true)}
+          onAuthLost={onAuthLost}
+        />
+      )}
       {tab === 'workdir'    && (
         <WorkdirSection
           name={name}
@@ -324,7 +333,41 @@ export function BotDetail({ onAuthLost }: BotDetailProps) {
 }
 
 /* ── Overview ────────────────────────────────────────────── */
-function OverviewSection({ status, config }: { status: BotSummary; config: BotConfig }) {
+function OverviewSection({
+  name,
+  status,
+  config,
+  onUpdated,
+  onAuthLost,
+}: {
+  name:       string;
+  status:     BotSummary;
+  config:     BotConfig;
+  onUpdated:  () => void;
+  onAuthLost: () => void;
+}) {
+  const toast                   = useToast();
+  const [hubBusy, setHubBusy]   = useState(false);
+
+  async function toggleHubVisible(next: boolean) {
+    setHubBusy(true);
+    try {
+      await patchHubVisible(name, next);
+      toast.show(next ? '已对 Hub 公开' : '已对 Hub 隐藏', 'success');
+      onUpdated();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthLost();
+        return;
+      }
+      toast.show(err instanceof Error ? err.message : '保存失败', 'error');
+    } finally {
+      setHubBusy(false);
+    }
+  }
+
+  const hubVisible = !!config.hubVisible;
+
   return (
     <div className={styles.detailGrid + ' ' + styles.twoCol}>
       <div className={styles.section}>
@@ -396,6 +439,33 @@ function OverviewSection({ status, config }: { status: BotSummary; config: BotCo
               ? config.transcriptAllowOpenIds.join(', ')
               : '-'}
           </div>
+        </div>
+
+        <div
+          style={{
+            display:      'flex',
+            alignItems:   'flex-start',
+            gap:          10,
+            marginTop:    16,
+            paddingTop:   14,
+            borderTop:    '1px solid var(--border, #e5e7eb)',
+          }}
+        >
+          {hubVisible
+            ? <Eye size={16} style={{ marginTop: 2, flexShrink: 0 }} />
+            : <EyeOff size={16} style={{ marginTop: 2, flexShrink: 0 }} />}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>对 Hub 可见</div>
+            <div className={styles.dim} style={{ fontSize: 12, lineHeight: 1.45 }}>
+              启用后此 bot 出现在中心化 Hub UI 中(仅展示进程状态与会话数;不发送 feishuAppSecret/env 等敏感字段)。
+            </div>
+          </div>
+          <Switch
+            checked={hubVisible}
+            disabled={hubBusy}
+            onChange={toggleHubVisible}
+            ariaLabel="对 Hub 可见"
+          />
         </div>
       </div>
     </div>

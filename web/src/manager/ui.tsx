@@ -2,7 +2,7 @@
    manager/ui.tsx — tiny shared UI bits (status pill, confirm modal).
 ============================================================ */
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, type CSSProperties, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import type { BotStatus } from './api';
 import styles from './manager.module.css';
@@ -73,6 +73,60 @@ export function Modal({ title, onClose, children, footer, maxWidth }: ModalProps
         {footer && <div className={styles.modalFooter}>{footer}</div>}
       </div>
     </div>
+  );
+}
+
+/* ── Switch ────────────────────────────────────────────────
+   Tiny iOS-style toggle. div + transform; no library. Disabled
+   state dims and blocks clicks. Used by hubVisible toggle.
+============================================================ */
+export interface SwitchProps {
+  checked:    boolean;
+  onChange:   (v: boolean) => void;
+  disabled?:  boolean;
+  ariaLabel?: string;
+}
+
+export function Switch({ checked, onChange, disabled = false, ariaLabel }: SwitchProps) {
+  const trackStyle: CSSProperties = {
+    position:        'relative',
+    display:         'inline-block',
+    width:           36,
+    height:          20,
+    borderRadius:    999,
+    background:      checked ? 'var(--accent, #2563eb)' : 'var(--surface-hover, #d1d5db)',
+    transition:      'background 120ms ease',
+    cursor:          disabled ? 'not-allowed' : 'pointer',
+    opacity:         disabled ? 0.5 : 1,
+    flexShrink:      0,
+    verticalAlign:   'middle',
+  };
+  const knobStyle: CSSProperties = {
+    position:        'absolute',
+    top:             2,
+    left:            2,
+    width:           16,
+    height:          16,
+    borderRadius:    '50%',
+    background:      '#fff',
+    boxShadow:       '0 1px 2px rgba(0,0,0,0.25)',
+    transform:       checked ? 'translateX(16px)' : 'translateX(0)',
+    transition:      'transform 140ms ease',
+  };
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={ariaLabel}
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!checked)}
+      style={{ background: 'none', border: 'none', padding: 0, lineHeight: 0 }}
+    >
+      <span style={trackStyle}>
+        <span style={knobStyle} />
+      </span>
+    </button>
   );
 }
 

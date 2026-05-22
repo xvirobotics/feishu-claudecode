@@ -23,6 +23,7 @@ export interface BotJsonEntry {
   transcriptAllowOpenIds?:  string[];
   transcriptDisableAuth?:   boolean;
   accessAllowOpenIds?:      string[];
+  hubVisible?:              boolean;
   env?:                     Record<string, string>;
   engine?:                  string;
   persistentExecutor?:      boolean;
