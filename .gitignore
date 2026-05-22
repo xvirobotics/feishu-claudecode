@@ -43,3 +43,11 @@ tools/feishu-bot-automation/*.mjs
 
 # 一次性 skill 实验目录 —— 实际 skill 在 Skill Hub 里,本地不需要副本
 src/skills/skill-anywhere/
+
+# Cmap 本地索引 —— 明文,不进 git
+.codemap/
+
+# 本机覆盖 env / 临时备份 —— 不进 git
+.env.local
+*.bak
+bots.json.bak
