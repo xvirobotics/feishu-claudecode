@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, Play, RotateCw, Square, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MessageSquare, Play, RotateCw, Square, Trash2 } from 'lucide-react';
 import {
   ApiError,
   deleteBot,
@@ -16,7 +16,6 @@ import {
   restartBot,
   patchWorkdir,
   patchEnv,
-  resetSession,
   type BotConfig,
   type BotDetailResponse,
   type BotSummary,
@@ -25,7 +24,6 @@ import {
 import { ConfirmModal, Modal, StatusPill } from './ui';
 import { useToast } from './toast';
 import { LogPanel } from './LogPanel';
-import { SessionPickerModal } from './SessionPickerModal';
 import styles from './manager.module.css';
 
 const POLL_MS = 3000;
@@ -310,14 +308,7 @@ export function BotDetail({ onAuthLost }: BotDetailProps) {
           onAuthLost={onAuthLost}
         />
       )}
-      {tab === 'sessions'   && (
-        <SessionsSection
-          name={name}
-          sessions={sessions}
-          onUpdated={() => refresh(true)}
-          onAuthLost={onAuthLost}
-        />
-      )}
+      {tab === 'sessions'   && <SessionsSection sessions={sessions} />}
       {tab === 'logs'       && <LogPanel botName={name} />}
     </div>
   );
@@ -686,166 +677,90 @@ function EnvSection({
 }
 
 /* ── Sessions ────────────────────────────────────────────── */
-function SessionsSection({
-  name,
-  sessions,
-  onUpdated,
-  onAuthLost,
-}: {
-  name:       string;
-  sessions:   SessionMapping[];
-  onUpdated:  () => void;
-  onAuthLost: () => void;
-}) {
-  const toast = useToast();
-  const [picker, setPicker]               = useState<{ chatId: string; sessionId: string } | null>(null);
-  const [resetTarget, setResetTarget]     = useState<string | null>(null);
-  const [resetAll, setResetAll]           = useState(false);
-  const [busy, setBusy]                   = useState(false);
-  const [showRaw, setShowRaw]             = useState<SessionMapping | null>(null);
+const TITLE_MAX_LEN = 50;
 
-  async function doReset(chatId?: string) {
-    setBusy(true);
-    try {
-      await resetSession(name, chatId);
-      toast.show(chatId ? '已重置该会话绑定' : '已重置所有会话绑定', 'success');
-      setResetTarget(null);
-      setResetAll(false);
-      onUpdated();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        onAuthLost();
-        return;
-      }
-      toast.show(err instanceof Error ? err.message : '重置失败', 'error');
-    } finally {
-      setBusy(false);
-    }
+function truncateTitle(raw: string | undefined): string {
+  const t = (raw ?? '').trim();
+  if (!t) return '(untitled)';
+  return t.length > TITLE_MAX_LEN ? t.slice(0, TITLE_MAX_LEN) + '…' : t;
+}
+
+/** Format millis as a Chinese relative time (e.g. "2分钟前"). Falls back to locale date for >30 days. */
+function formatRelative(ms: number | undefined): string {
+  if (ms == null) return '';
+  const diff = Date.now() - ms;
+  if (diff < 0)              return '刚刚';
+  const sec  = Math.floor(diff / 1000);
+  if (sec    < 60)           return '刚刚';
+  const min  = Math.floor(sec / 60);
+  if (min    < 60)           return `${min}分钟前`;
+  const hour = Math.floor(min / 60);
+  if (hour   < 24)           return `${hour}小时前`;
+  const day  = Math.floor(hour / 24);
+  if (day    < 30)           return `${day}天前`;
+  return new Date(ms).toLocaleDateString();
+}
+
+function openTranscript(chatId: string) {
+  const url = '/web/transcript/' + encodeURIComponent(chatId) + '?turn=all';
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+function SessionsSection({ sessions }: { sessions: SessionMapping[] | undefined }) {
+  if (sessions === undefined) {
+    return (
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>会话</div>
+        <div className={styles.sessionsEmpty}>正在加载…</div>
+      </div>
+    );
+  }
+
+  if (sessions.length === 0) {
+    return (
+      <div className={styles.section}>
+        <div className={styles.sectionTitle}>会话</div>
+        <div className={styles.sessionsEmpty}>该 bot 暂无会话记录</div>
+      </div>
+    );
   }
 
   return (
     <div className={styles.section}>
-      <div className={styles.sectionTitle}>会话绑定 (chatId → sessionId)</div>
-
-      {sessions.length === 0 ? (
-        <div className={styles.dim} style={{ padding: 8 }}>暂无会话绑定</div>
-      ) : (
-        <div className={styles.sessionList}>
-          {sessions.map((s) => (
-            <div key={s.chatId} className={styles.sessionRow}>
-              <div className={styles.sessionMeta}>
-                <div className={styles.sessionChatId} title={s.chatId}>
-                  {s.chatId}
-                  {s.title && <span className={styles.dim}> · {s.title}</span>}
+      <div className={styles.sectionTitle}>会话</div>
+      <ul className={styles.sessionsList} role="list">
+        {sessions.map((s) => {
+          const title    = truncateTitle(s.title);
+          const subRight = formatRelative(s.lastUsed);
+          return (
+            <li key={s.chatId}>
+              <button
+                type="button"
+                className={styles.sessionsRow}
+                onClick={() => openTranscript(s.chatId)}
+                title={`打开会话 ${s.chatId} 的完整对话`}
+              >
+                <div className={styles.sessionsIcon}>
+                  <MessageSquare size={16} strokeWidth={2} />
                 </div>
-                <div className={styles.sessionSub} title={s.sessionId}>
-                  session: {s.sessionId}
+                <div className={styles.sessionsBody}>
+                  <div className={styles.sessionsTitle}>{title}</div>
+                  <div className={styles.sessionsSub}>
+                    <span className={styles.sessionsChatId}>{s.chatId}</span>
+                    {subRight && (
+                      <>
+                        <span className={styles.sessionsDot}>·</span>
+                        <span className={styles.sessionsLastUsed}>{subRight}</span>
+                      </>
+                    )}
+                  </div>
                 </div>
-                <div className={styles.sessionSub}>
-                  {s.workdir && <>workdir: {s.workdir} · </>}
-                  {s.lastUsed && <>最近使用: {new Date(s.lastUsed).toLocaleString()}</>}
-                  {s.cumulativeTokens != null && <> · tokens: {s.cumulativeTokens}</>}
-                  {s.cumulativeCostUsd != null && <> · ${s.cumulativeCostUsd.toFixed(4)}</>}
-                </div>
-              </div>
-              <div className={styles.sessionBtns}>
-                <button
-                  type="button"
-                  className={styles.iconBtn}
-                  onClick={() => setShowRaw(s)}
-                >
-                  详情
-                </button>
-                <button
-                  type="button"
-                  className={styles.iconBtn}
-                  onClick={() => setPicker({ chatId: s.chatId, sessionId: s.sessionId })}
-                >
-                  切换
-                </button>
-                <button
-                  type="button"
-                  className={styles.iconBtn + ' ' + styles.iconBtnDanger}
-                  onClick={() => setResetTarget(s.chatId)}
-                >
-                  重置
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          type="button"
-          className={styles.actionBtn + ' ' + styles.actionBtnDanger}
-          onClick={() => setResetAll(true)}
-          disabled={sessions.length === 0}
-        >
-          重置全部会话
-        </button>
-      </div>
-
-      {picker && (
-        <SessionPickerModal
-          botName={name}
-          chatId={picker.chatId}
-          currentSessionId={picker.sessionId}
-          onClose={() => setPicker(null)}
-          onPicked={onUpdated}
-          onAuthLost={onAuthLost}
-        />
-      )}
-
-      {resetTarget && (
-        <ConfirmModal
-          title="重置该会话?"
-          message={
-            <>
-              <div>将清除 chatId 的会话绑定:</div>
-              <div className={styles.mono} style={{ marginTop: 6 }}>{resetTarget}</div>
-              <div className={styles.dim} style={{ marginTop: 6, fontSize: 12 }}>
-                下次该 chat 发消息时，会自动开启新会话。
-              </div>
-            </>
-          }
-          confirmText="确认重置"
-          danger
-          busy={busy}
-          onConfirm={() => doReset(resetTarget)}
-          onCancel={() => !busy && setResetTarget(null)}
-        />
-      )}
-
-      {resetAll && (
-        <ConfirmModal
-          title="重置全部会话?"
-          message="此操作会清除该 bot 下所有 chatId 的会话绑定。"
-          warn="不可恢复。所有进行中的对话都会从下一条消息开始新建会话。"
-          confirmText="确认全部重置"
-          danger
-          busy={busy}
-          onConfirm={() => doReset()}
-          onCancel={() => !busy && setResetAll(false)}
-        />
-      )}
-
-      {showRaw && (
-        <Modal
-          title={`会话详情 · ${showRaw.chatId}`}
-          onClose={() => setShowRaw(null)}
-          maxWidth={560}
-        >
-          <pre style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize:   12,
-            color:      'var(--text-1)',
-            whiteSpace: 'pre-wrap',
-            wordBreak:  'break-all',
-          }}>{JSON.stringify(showRaw, null, 2)}</pre>
-        </Modal>
-      )}
+                <ChevronRight size={16} strokeWidth={2} className={styles.sessionsChevron} />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
