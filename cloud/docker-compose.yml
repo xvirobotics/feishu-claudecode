@@ -1,0 +1,28 @@
+# MetaBot cloud — deploys to .191 (172.31.21.191) alongside teamclaude-gateway.
+#
+# IMPORTANT: this stack must NEVER bind :443 — that port belongs to the
+# Anthropic proxy in teamclaude-gateway. The public listener is 18443 and the
+# DNS name is teamclaude.xvirobotics.com.
+#
+# Build the image from the metabot repo root so npm workspaces resolve:
+#   docker compose -f cloud/docker-compose.yml up metabot-cloud -d --build
+
+services:
+  metabot-cloud:
+    build:
+      context: ..
+      dockerfile: cloud/Dockerfile
+    image: metabot-cloud:latest
+    container_name: metabot-cloud
+    restart: unless-stopped
+    ports:
+      - "18443:18443"
+    environment:
+      METABOT_CLOUD_PORT: "18443"
+      METABOT_CLOUD_HOST: "0.0.0.0"
+      METABOT_CLOUD_TLS_CERT: "/certs/fullchain.pem"
+      METABOT_CLOUD_TLS_KEY: "/certs/privkey.pem"
+      METABOT_CLOUD_BASE_URL: "https://teamclaude.xvirobotics.com:18443"
+      METABOT_SESSION_SECRET: "${METABOT_SESSION_SECRET}"
+    volumes:
+      - /etc/letsencrypt/live/teamclaude.xvirobotics.com:/certs:ro
