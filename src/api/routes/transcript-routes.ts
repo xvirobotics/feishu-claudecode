@@ -34,7 +34,11 @@ import {
 } from '../../feishu/oauth.js';
 import { requireFeishuAuth, unionAllowLists } from '../middleware/feishu-auth.js';
 import { sessionJsonlPath } from '../../session/session-registry.js';
-import { readTranscript } from '../../session/transcript-reader.js';
+import {
+  resolveTranscriptCore,
+  type TranscriptPayload,
+  type TranscriptSessionRecord,
+} from '@metabot/shared/transcript';
 
 function pickFeishuBot(ctx: RouteContext, botName?: string): { name: string; cfg: BotConfig } | null {
   const feishuBots = ctx.registry.listByPlatform('feishu');
@@ -65,14 +69,7 @@ function resolveBaseUrl(ctx: RouteContext, req: http.IncomingMessage, bot: BotCo
  * (`/api/transcript/...`) and the SSR HTML endpoint (`/web/transcript/...`) so
  * mobile webviews that silently drop XHR can still load the page via inlined data.
  */
-type TranscriptResolveOk = {
-  ok:       true;
-  payload:  {
-    chat:     { chatId: string; totalTurns: number; title?: string; botName?: string; platform?: string };
-    turn:     number | 'all';
-    messages: ReturnType<typeof readTranscript>['messages'];
-  };
-};
+type TranscriptResolveOk = { ok: true; payload: TranscriptPayload };
 type TranscriptResolveFail =
   | { ok: false; status: 401; loginUrl: string }
   | { ok: false; status: 403 }
@@ -113,32 +110,28 @@ function resolveTranscript(
     }
   }
 
-  if (!record.claudeSessionId) {
-    return {
-      ok: true,
-      payload: {
-        chat:     { chatId, totalTurns: 0, title: record.title },
-        turn,
-        messages: [],
-      },
-    };
-  }
-  const jsonlPath = sessionJsonlPath(record.workingDirectory, record.claudeSessionId);
-  const result    = readTranscript(jsonlPath, turn);
-  return {
-    ok: true,
-    payload: {
-      chat: {
-        chatId,
-        totalTurns: result.totalTurns,
-        title:      record.title,
-        botName:    record.botName,
-        platform:   record.platform,
-      },
-      turn,
-      messages: result.messages,
-    },
+  const sessionRecord: TranscriptSessionRecord = {
+    botName:          record.botName,
+    workingDirectory: record.workingDirectory,
+    ...(record.claudeSessionId ? { claudeSessionId: record.claudeSessionId } : {}),
+    ...(record.title            ? { title:           record.title }           : {}),
+    ...(record.platform         ? { platform:        record.platform }        : {}),
   };
+  const jsonlPath = record.claudeSessionId
+    ? sessionJsonlPath(record.workingDirectory, record.claudeSessionId)
+    : null;
+
+  const core = resolveTranscriptCore({
+    chatId,
+    turn,
+    sessionRecord,
+    botKnown: true,
+    jsonlPath,
+  });
+  if (core.status === 404) {
+    return { ok: false, status: 404, reason: core.body.reason };
+  }
+  return { ok: true, payload: core.body };
 }
 
 /** Escape characters that could break out of an HTML <script> embed. */

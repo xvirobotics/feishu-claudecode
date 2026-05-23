@@ -13,6 +13,14 @@
     "./protocol": {
       "types": "./dist/protocol/index.d.ts",
       "import": "./dist/protocol/index.js"
+    },
+    "./transcript": {
+      "types": "./dist/transcript/index.d.ts",
+      "import": "./dist/transcript/index.js"
+    },
+    "./hub": {
+      "types": "./dist/hub/index.d.ts",
+      "import": "./dist/hub/index.js"
     }
   },
   "scripts": {

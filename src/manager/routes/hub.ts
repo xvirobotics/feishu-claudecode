@@ -25,34 +25,17 @@ import type * as http from 'node:http';
 import { jsonResponse } from '../../api/routes/helpers.js';
 import { requireFeishuAuth, unionAllowLists } from '../../api/middleware/feishu-auth.js';
 import { loadBotsJson, type BotJsonEntry } from '../bots-config.js';
-import { listPm2, type Pm2ProcInfo } from '../pm2-control.js';
+import { listPm2 } from '../pm2-control.js';
 import { listSessions, type SessionMapping } from '../session-control.js';
+import {
+  buildHubHost,
+  hubAccessAllowListUnion,
+  type HubHost,
+  type HubProcInfo,
+} from '@metabot/shared/hub';
 
-// ─── public types ───────────────────────────────────────────────────────────
-
-export interface HubBot {
-  name:               string;
-  status:             'online' | 'stopped' | 'launching' | 'error' | 'unknown';
-  uptimeMs?:          number;
-  cpu?:               number;
-  memMb?:             number;
-  restarts?:          number;
-  sessions?:          number;
-  workdir?:           string;
-  hiddenFields:       string[];
-  transcriptBaseUrl?: string;
-}
-
-export interface HubHost {
-  hostId:         string;
-  hostName:       string;
-  online:         true;     // single-machine Phase 1 — always true if we answer
-  lastSeen:       string;
-  agentVersion:   string;
-  os:             string;
-  visibleBots:    HubBot[];
-  hiddenBotCount: number;
-}
+// Re-export public types so legacy importers keep working unchanged.
+export type { HubBot, HubHost } from '@metabot/shared/hub';
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -85,61 +68,6 @@ function isHubVisible(bot: BotJsonEntry): boolean {
   return bot.hubVisible === true;
 }
 
-function pickStatus(proc: Pm2ProcInfo | null): HubBot['status'] {
-  if (!proc) return 'stopped';
-  const s = proc.status;
-  switch (s) {
-    case 'online':
-    case 'stopped':
-    case 'launching':
-    case 'errored':
-      return s === 'errored' ? 'error' : s;
-    default:
-      return 'unknown';
-  }
-}
-
-function toMb(bytes: number | undefined): number | undefined {
-  if (bytes == null) return undefined;
-  return Math.round(bytes / 1024 / 1024 * 10) / 10;
-}
-
-/** Compose the safe view of a single bot for Hub consumers. */
-function botToHubBot(bot: BotJsonEntry, proc: Pm2ProcInfo | null): HubBot {
-  let sessionCount = 0;
-  try { sessionCount = listSessions(bot.name).length; } catch { /* ignore */ }
-
-  // Phase 1: hardcoded mask — feishuAppSecret + env are NEVER on the wire.
-  // PR D (or follow-up) may add per-bot `hubFields` to opt-out of more fields.
-  const hiddenFields: string[] = ['feishuAppSecret', 'env'];
-
-  const out: HubBot = {
-    name:         bot.name,
-    status:       pickStatus(proc),
-    uptimeMs:     proc?.uptimeMs,
-    cpu:          proc?.cpu,
-    memMb:        toMb(proc?.memoryBytes),
-    restarts:     proc?.restarts,
-    sessions:     sessionCount,
-    hiddenFields,
-  };
-  if (bot.defaultWorkingDirectory) out.workdir = bot.defaultWorkingDirectory;
-  if (typeof bot.publicBaseUrl === 'string' && bot.publicBaseUrl) {
-    out.transcriptBaseUrl = bot.publicBaseUrl.replace(/\/+$/, '');
-  }
-  return out;
-}
-
-/** Collect every hubVisible bot's `accessAllowOpenIds` into a flat union. */
-function hubAllowList(feishuBots: BotJsonEntry[]): string[] {
-  const set = new Set<string>();
-  for (const bot of feishuBots) {
-    if (!isHubVisible(bot)) continue;
-    for (const id of unionAllowLists(bot, /*forTranscript=*/false)) set.add(id);
-  }
-  return Array.from(set);
-}
-
 /**
  * The Hub OAuth driver bot — the first hubVisible feishu bot found. Used to
  * build the loginUrl (Feishu needs an appId + appSecret to drive the dance).
@@ -154,7 +82,7 @@ function pickOAuthDriverBot(feishuBots: BotJsonEntry[]): BotJsonEntry | null {
 }
 
 function build401Or403(req: http.IncomingMessage, feishuBots: BotJsonEntry[], returnPath: string): { status: 401 | 403; body: { error: string; loginUrl?: string } } | null {
-  const allowList = hubAllowList(feishuBots);
+  const allowList = hubAccessAllowListUnion(feishuBots);
   const driver    = pickOAuthDriverBot(feishuBots);
   if (!driver) {
     // No feishu bots at all on this host — nothing to gate, but also nothing
@@ -176,23 +104,31 @@ function build401Or403(req: http.IncomingMessage, feishuBots: BotJsonEntry[], re
 
 async function buildSingleHost(): Promise<HubHost> {
   const { feishuBots } = loadBotsJson();
-  const procs   = await listPm2();
-  const byName  = new Map(procs.map((p) => [p.name, p]));
+  const pm2Procs       = await listPm2();
+  const procs: HubProcInfo[] = pm2Procs.map((p) => ({
+    name:        p.name,
+    status:      p.status,
+    uptimeMs:    p.uptimeMs,
+    cpu:         p.cpu,
+    memoryBytes: p.memoryBytes,
+    restarts:    p.restarts,
+  }));
+  const sessionCountByBot: Record<string, number> = {};
+  for (const b of feishuBots) {
+    try { sessionCountByBot[b.name] = listSessions(b.name).length; }
+    catch { sessionCountByBot[b.name] = 0; }
+  }
 
-  const visibleEntries = feishuBots.filter(isHubVisible);
-  const visibleBots    = visibleEntries.map((b) => botToHubBot(b, byName.get(b.name) || null));
-  const hiddenBotCount = Math.max(0, feishuBots.length - visibleEntries.length);
-
-  return {
-    hostId:         hostId(),
-    hostName:       hostName(),
-    online:         true,
-    lastSeen:       new Date().toISOString(),
-    agentVersion:   readAgentVersion(),
-    os:             osDescription(),
-    visibleBots,
-    hiddenBotCount,
-  };
+  return buildHubHost({
+    hostId:           hostId(),
+    hostName:         hostName(),
+    agentVersion:     readAgentVersion(),
+    osDescription:    osDescription(),
+    feishuBots,
+    procs,
+    sessionCountByBot,
+    lastSeen:         new Date().toISOString(),
+  });
 }
 
 // ─── route handler ──────────────────────────────────────────────────────────
