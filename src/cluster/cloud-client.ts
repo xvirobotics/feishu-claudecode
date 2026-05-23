@@ -28,7 +28,7 @@ import {
   type ResponseFrame,
   type WsFrame,
 } from '@metabot/shared';
-import { dispatchRoute, type RouteHandler, routes as defaultRoutes } from './dispatcher.js';
+import { dispatchRoute, type RouteHandler } from './dispatcher.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface CloudClientOptions {
@@ -39,7 +39,13 @@ export interface CloudClientOptions {
   version: string;
   bots: BotMeta[];
   logger: Logger;
-  /** Override the route table. Defaults to dispatcher.routes. */
+  /**
+   * Route table used to handle inbound `request` frames. Build with
+   * `createRoutes({sessionRegistry, botRegistry})` at the boot site and
+   * pass it in so this module stays decoupled from local registries.
+   * Defaults to an empty table — every route then 404s, which is the
+   * correct behaviour for a no-deps test harness.
+   */
   routes?: Record<string, RouteHandler>;
   /** Ping interval in ms. Default 30_000. */
   pingIntervalMs?: number;
@@ -85,7 +91,7 @@ export class CloudClient {
     this.version = opts.version;
     this.bots = opts.bots;
     this.logger = opts.logger.child({ module: 'cloud-client', instanceId: opts.instanceId });
-    this.routes = opts.routes ?? defaultRoutes;
+    this.routes = opts.routes ?? {};
     this.pingIntervalMs = opts.pingIntervalMs ?? 30_000;
     this.pongTimeoutMs = opts.pongTimeoutMs ?? 60_000;
     this.reconnectInitialMs = opts.reconnectInitialMs ?? 1_000;
@@ -246,7 +252,7 @@ export class CloudClient {
   private async handleRequest(frame: RequestFrame): Promise<void> {
     let result: { status: number; body: unknown };
     try {
-      result = await dispatchRoute(frame.route, frame.params);
+      result = await dispatchRoute(frame.route, frame.params, this.routes);
     } catch (err) {
       result = {
         status: 500,

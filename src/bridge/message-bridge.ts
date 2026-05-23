@@ -115,6 +115,29 @@ export function formatSpontaneousCardBody(snippets: string[]): string {
   return lines.join('\n');
 }
 
+/**
+ * Compose the transcript page URL for a chat + turn.
+ *
+ * Cloud-split priority:
+ *   1. `cloudBaseUrl` (from CloudClient.getPublicBaseUrl() after register_ack)
+ *      wins because the cloud relay is the public entry point. It already
+ *      contains the `/i/<instanceId>` prefix assigned by the cloud — we
+ *      don't add or strip it here.
+ *   2. `localBaseUrl` (per-bot static `publicBaseUrl` from bots.json) is the
+ *      pre-cloud-split fallback for Caddy / Cloudflared tunnel setups.
+ *   3. Neither → `undefined`; the card silently omits the link.
+ */
+export function buildTranscriptUrl(args: {
+  cloudBaseUrl: string | undefined;
+  localBaseUrl: string | undefined;
+  chatId:       string;
+  turn:         number;
+}): string | undefined {
+  const base = (args.cloudBaseUrl || args.localBaseUrl || '').replace(/\/+$/, '');
+  if (!base) return undefined;
+  return `${base}/web/transcript/${encodeURIComponent(args.chatId)}?turn=${args.turn || 1}`;
+}
+
 interface PendingBatch {
   messages: IncomingMessage[];
   timerId: ReturnType<typeof setTimeout>;
@@ -203,6 +226,15 @@ export class MessageBridge {
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
   private sessionRegistry?: SessionRegistry;
+  /**
+   * Optional cloud relay client. When set and `getPublicBaseUrl()` returns a
+   * non-empty URL after `register_ack`, transcript-card links are rewritten
+   * to the cloud-assigned base (e.g. `https://teamclaude.../i/<id>`); the
+   * static per-bot `publicBaseUrl` is the local-only fallback. Injected via
+   * {@link setCloudClient} from `src/index.ts` after the CloudClient has
+   * been instantiated but before any cards go out.
+   */
+  private cloudClient?: { getPublicBaseUrl(): string | undefined };
   private runningTasks = new Map<string, RunningTask>(); // keyed by chatId
   /**
    * Per-chatId monotonically-increasing turn counter. Bumped at the start of
@@ -368,6 +400,15 @@ export class MessageBridge {
   /** Inject the session registry for cross-platform session sync. */
   setSessionRegistry(registry: SessionRegistry): void {
     this.sessionRegistry = registry;
+  }
+
+  /**
+   * Inject the cloud relay client. Once `register_ack` has landed and
+   * `getPublicBaseUrl()` returns a non-empty URL, transcript links written
+   * into cards switch to the cloud-assigned base.
+   */
+  setCloudClient(client: { getPublicBaseUrl(): string | undefined }): void {
+    this.cloudClient = client;
   }
 
   /** Inject the task scheduler so the slash-command layer can queue
@@ -1090,20 +1131,23 @@ export class MessageBridge {
 
   /**
    * Build the absolute transcript page URL for the current turn of a chat.
-   * Returns `undefined` when:
-   *   - the bot has no `publicBaseUrl` configured (graceful degradation), or
-   *   - the bot config shape doesn't include the field (non-Feishu bots).
    *
    * `turnIndex` falls back to the JSONL `type:'user'` count if the in-memory
    * counter is empty (process restart), so cards sent right after a restart
    * still point at the right turn.
+   *
+   * Pure URL composition is delegated to {@link buildTranscriptUrl} so the
+   * cloud-vs-local base URL priority is independently testable.
    */
   private computeTranscriptLink(chatId: string, turnIndex?: number): string | undefined {
     const cfg = this.config as BotConfigBase & { publicBaseUrl?: string };
-    if (!cfg.publicBaseUrl) return undefined;
-    const base = cfg.publicBaseUrl.replace(/\/+$/, '');
-    const t    = turnIndex ?? this.turnIndexByChat.get(chatId) ?? this.countUserTurnsFromJsonl(chatId);
-    return `${base}/web/transcript/${encodeURIComponent(chatId)}?turn=${t || 1}`;
+    const t   = turnIndex ?? this.turnIndexByChat.get(chatId) ?? this.countUserTurnsFromJsonl(chatId);
+    return buildTranscriptUrl({
+      cloudBaseUrl: this.cloudClient?.getPublicBaseUrl(),
+      localBaseUrl: cfg.publicBaseUrl,
+      chatId,
+      turn:         t || 1,
+    });
   }
 
   /** Fallback: count the user-message lines in the chat's JSONL transcript. */

@@ -21,6 +21,7 @@ import { startMemoryServer } from './memory/memory-server.js';
 import { DocSync } from './sync/doc-sync.js';
 import { MemoryClient } from './memory/memory-client.js';
 import { CloudClient } from './cluster/cloud-client.js';
+import { createRoutes as createDispatcherRoutes } from './cluster/dispatcher.js';
 import type { BotMeta } from '@metabot/shared';
 
 import { SessionRegistry } from './session/session-registry.js';
@@ -367,9 +368,15 @@ async function main() {
     }
   }
 
-  // Cloud-split (PR-4): dial out to the cloud relay when any bot has cloudUrl set.
-  // PR-4 ships a single client per process — the first cloudUrl wins. Multi-bot
-  // multi-cloudUrl handling is deferred to a later PR.
+  // Cloud-split (PR-4 + PR-5b): dial out to the cloud relay when any bot has
+  // cloudUrl set. PR-4 ships a single client per process — the first cloudUrl
+  // wins. Multi-bot multi-cloudUrl handling is deferred to a later PR.
+  //
+  // PR-5b wires the dispatcher to the real SessionRegistry + BotRegistry so
+  // inbound `transcript.get` / `sessions.list` request frames return real
+  // payloads instead of 501; and broadcasts the CloudClient to every bridge
+  // so transcript-card links rewrite to the cloud-assigned base after
+  // `register_ack` lands.
   const cloudUrlBot = appConfig.feishuBots.find((b) => b.cloudUrl && b.cloudUrl.trim());
   let cloudClient: CloudClient | undefined;
   if (cloudUrlBot && cloudUrlBot.cloudUrl) {
@@ -381,6 +388,10 @@ async function main() {
     if (!appConfig.instance.publicKey || !appConfig.instance.privateKeyPath) {
       logger.warn('cloud-client: skipping — instance identity has no ed25519 keypair on disk');
     } else {
+      const dispatcherRoutes = createDispatcherRoutes({
+        sessionRegistry,
+        botRegistry: registry,
+      });
       cloudClient = new CloudClient({
         cloudUrl: cloudUrlBot.cloudUrl,
         instanceId: appConfig.instance.instanceId,
@@ -389,8 +400,17 @@ async function main() {
         version: getMetabotVersion(),
         bots: allFeishuBots,
         logger,
+        routes: dispatcherRoutes,
       });
       cloudClient.connect();
+      // Broadcast to every bridge so card links pick up the cloud base URL
+      // once `register_ack` resolves it. Done unconditionally — the bridge
+      // falls back to local `publicBaseUrl` while `getPublicBaseUrl()` is
+      // still undefined.
+      for (const info of registry.list()) {
+        const bot = registry.get(info.name);
+        if (bot) bot.bridge.setCloudClient(cloudClient);
+      }
     }
   } else {
     logger.info('cloud-client: no cloudUrl configured, skipping cloud relay');

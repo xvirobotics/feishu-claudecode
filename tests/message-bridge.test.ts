@@ -5,6 +5,7 @@ import {
   extractSpontaneousSnippet,
   formatSpontaneousCardBody,
   resolvePersistentExecutorEnvDefault,
+  buildTranscriptUrl,
 } from '../src/bridge/message-bridge.js';
 import { classifyBurstSource } from '../src/engines/claude/persistent-executor.js';
 
@@ -342,5 +343,71 @@ describe('resolvePersistentExecutorEnvDefault', () => {
     expect(resolvePersistentExecutorEnvDefault('no')).toBe(true);
     expect(resolvePersistentExecutorEnvDefault('disabled')).toBe(true);
     expect(resolvePersistentExecutorEnvDefault('truee')).toBe(true);
+  });
+});
+
+describe('buildTranscriptUrl', () => {
+  it('returns undefined when neither cloud nor local base is set', () => {
+    expect(
+      buildTranscriptUrl({ cloudBaseUrl: undefined, localBaseUrl: undefined, chatId: 'c1', turn: 1 }),
+    ).toBeUndefined();
+    expect(
+      buildTranscriptUrl({ cloudBaseUrl: '', localBaseUrl: '', chatId: 'c1', turn: 1 }),
+    ).toBeUndefined();
+  });
+
+  it('uses localBaseUrl when cloudBaseUrl is absent', () => {
+    expect(
+      buildTranscriptUrl({
+        cloudBaseUrl: undefined,
+        localBaseUrl: 'https://bot.example.com',
+        chatId: 'oc_abc',
+        turn: 3,
+      }),
+    ).toBe('https://bot.example.com/web/transcript/oc_abc?turn=3');
+  });
+
+  it('prefers cloudBaseUrl over localBaseUrl once register_ack has landed', () => {
+    expect(
+      buildTranscriptUrl({
+        cloudBaseUrl: 'https://teamclaude.xvirobotics.com:18443/i/host-abc',
+        localBaseUrl: 'https://bot.example.com',
+        chatId: 'oc_xyz',
+        turn: 7,
+      }),
+    ).toBe('https://teamclaude.xvirobotics.com:18443/i/host-abc/web/transcript/oc_xyz?turn=7');
+  });
+
+  it('strips trailing slashes from the chosen base', () => {
+    expect(
+      buildTranscriptUrl({
+        cloudBaseUrl: 'https://teamclaude.xvirobotics.com:18443/i/host-abc///',
+        localBaseUrl: undefined,
+        chatId: 'c1',
+        turn: 1,
+      }),
+    ).toBe('https://teamclaude.xvirobotics.com:18443/i/host-abc/web/transcript/c1?turn=1');
+  });
+
+  it('encodes the chatId so colons / slashes in IDs do not break the path', () => {
+    expect(
+      buildTranscriptUrl({
+        cloudBaseUrl: 'https://teamclaude.xvirobotics.com:18443/i/h',
+        localBaseUrl: undefined,
+        chatId: 'oc/abc:def',
+        turn: 1,
+      }),
+    ).toBe('https://teamclaude.xvirobotics.com:18443/i/h/web/transcript/oc%2Fabc%3Adef?turn=1');
+  });
+
+  it('coerces turn=0 to 1 — the "first turn" default', () => {
+    expect(
+      buildTranscriptUrl({
+        cloudBaseUrl: 'https://bot',
+        localBaseUrl: undefined,
+        chatId: 'c1',
+        turn: 0,
+      }),
+    ).toBe('https://bot/web/transcript/c1?turn=1');
   });
 });
