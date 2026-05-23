@@ -1,8 +1,11 @@
+import crypto from 'node:crypto';
 import type { WebSocket } from 'ws';
 import {
   parseFrame,
   type RegisterFrame,
   type RegisterAckFrame,
+  type RequestFrame,
+  type ResponseFrame,
   type BotMeta,
   type WsFrame,
 } from '@metabot/shared';
@@ -15,6 +18,36 @@ export interface InstanceRecord {
   version: string;
   registeredAt: number;
   lastSeen: number;
+}
+
+interface PendingEntry {
+  instanceId: string;
+  resolve: (frame: ResponseFrame) => void;
+  reject: (err: Error) => void;
+  timer: NodeJS.Timeout;
+}
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 2_000;
+
+export class RequestTimeoutError extends Error {
+  constructor(public readonly id: string, public readonly route: string, timeoutMs: number) {
+    super(`request ${id} (${route}) timed out after ${timeoutMs}ms`);
+    this.name = 'RequestTimeoutError';
+  }
+}
+
+export class InstanceOfflineError extends Error {
+  constructor(public readonly instanceId: string) {
+    super(`instance ${instanceId} is not connected`);
+    this.name = 'InstanceOfflineError';
+  }
+}
+
+export class InstanceDisconnectedError extends Error {
+  constructor(public readonly instanceId: string) {
+    super(`instance ${instanceId} disconnected while awaiting response`);
+    this.name = 'InstanceDisconnectedError';
+  }
 }
 
 export interface RegisterResult {
@@ -32,6 +65,7 @@ const DEFAULT_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class InstanceRegistry {
   private readonly records = new Map<string, InstanceRecord>();
+  private readonly pending = new Map<string, PendingEntry>();
   private readonly baseUrl: string;
   private readonly sessionTtlMs: number;
   private readonly now: () => number;
@@ -105,6 +139,7 @@ export class InstanceRegistry {
 
   remove(instanceId: string): void {
     this.records.delete(instanceId);
+    this.failPendingFor(instanceId, new InstanceDisconnectedError(instanceId));
   }
 
   list(): InstanceRecord[] {
@@ -113,6 +148,81 @@ export class InstanceRegistry {
 
   size(): number {
     return this.records.size;
+  }
+
+  /**
+   * Send a `request` frame to `instanceId` and resolve with the matching
+   * `response` frame. The caller supplies `route` + `params`; this method
+   * mints the correlation `id`, registers a pending entry, and arms a
+   * timeout that rejects with `RequestTimeoutError` if no response lands
+   * in time. If the instance is offline or disconnects mid-flight the
+   * promise rejects with `InstanceOfflineError` / `InstanceDisconnectedError`.
+   */
+  async request(
+    instanceId: string,
+    route: string,
+    params: unknown,
+    timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+  ): Promise<ResponseFrame> {
+    const record = this.records.get(instanceId);
+    if (!record) throw new InstanceOfflineError(instanceId);
+
+    const id = crypto.randomUUID();
+    const frame: RequestFrame = {
+      type: 'request',
+      id,
+      route,
+      params,
+      timeoutMs,
+    };
+
+    return new Promise<ResponseFrame>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        if (this.pending.delete(id)) {
+          reject(new RequestTimeoutError(id, route, timeoutMs));
+        }
+      }, timeoutMs);
+      if (typeof timer.unref === 'function') timer.unref();
+
+      this.pending.set(id, { instanceId, resolve, reject, timer });
+
+      try {
+        record.ws.send(JSON.stringify(frame));
+      } catch (err) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(err as Error);
+      }
+    });
+  }
+
+  /**
+   * Hand a freshly-arrived `response` frame to the pending request that
+   * matches its `id`. Returns `true` if the frame was matched and the
+   * pending promise was resolved, `false` if no caller was waiting (the
+   * caller should treat that as a protocol violation / stale id).
+   */
+  resolveResponse(frame: ResponseFrame): boolean {
+    const entry = this.pending.get(frame.id);
+    if (!entry) return false;
+    clearTimeout(entry.timer);
+    this.pending.delete(frame.id);
+    entry.resolve(frame);
+    return true;
+  }
+
+  pendingSize(): number {
+    return this.pending.size;
+  }
+
+  private failPendingFor(instanceId: string, err: Error): void {
+    for (const [id, entry] of this.pending) {
+      if (entry.instanceId === instanceId) {
+        clearTimeout(entry.timer);
+        this.pending.delete(id);
+        entry.reject(err);
+      }
+    }
   }
 }
 

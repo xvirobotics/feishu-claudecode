@@ -126,10 +126,77 @@ docker compose -f cloud/docker-compose.yml up metabot-cloud -d --build
 Connected local instances will reconnect automatically (PR-4 wires the
 reconnect loop on the local side).
 
+## PR-5a additions — transcript relay
+
+`cloud/src/routes/transcript.ts` adds two routes (mounted in
+`buildApp`):
+
+* `GET /i/:instanceId/api/transcript/:chatId` — `requireFeishuAuth` (cloud
+  copy) → look up the bot owning `chatId` on the instance → forward a
+  `request{route:"transcript.get"}` frame down the WS → pipe the
+  `response{status,body}` straight back. Status semantics:
+  * 200 — instance answered, body is the transcript payload.
+  * 401 — no/invalid `mb_session` cookie. `loginUrl` in the body.
+  * 403 — cookie valid but `open_id` not in the bot's `accessAllowOpenIds`.
+  * 404 — chat isn't owned by any bot on this instance.
+  * 503 — instance offline / disconnected mid-request.
+  * 504 — instance didn't answer within the relay timeout (default 2s).
+* `GET /i/:instanceId/web/transcript/*` — serves the transcript SPA build
+  output from `staticDir` (default `cloud/static/transcript-spa/`). The
+  SPA itself is **not** built by this PR; only a placeholder index lands
+  in the repo.
+
+### New environment variables
+
+| Var | Purpose | Default |
+|---|---|---|
+| `METABOT_SESSION_SECRET` | Cookie-signing secret shared with the local OAuth callback (HS256). | *(empty — every request 401s)* |
+| `METABOT_CLOUD_TRANSCRIPT_STATIC_DIR` | Override transcript SPA build root. | `<staticDir>/transcript-spa` |
+| `METABOT_CLOUD_DISABLE_TRANSCRIPT_AUTH` | Skip `requireFeishuAuth` on the transcript route. Grey-launch only — never on a public listener without an external gate. | `false` |
+
+### TODO — transcript SPA build artifact
+
+The SPA build (currently in the main repo's `dist/web/transcript-*`) must
+be copied into `cloud/static/transcript-spa/` before the route serves
+anything useful. Two things still need to land for the SPA to talk to
+the cloud relay:
+
+1. The SPA's `fetch('/api/transcript/...')` calls (currently absolute,
+   see `web/src/components/TranscriptView.tsx`) must become relative
+   to the page, so they resolve against `/i/:instanceId/`. The PR-5b
+   branch owns the SPA change + the build/copy script — PR-5a does
+   not modify `web/` source.
+2. A small `cloud/scripts/sync-spa.mjs` (or a `build:web` script in
+   `cloud/package.json`) to copy `../dist/web/transcript-*` into
+   `cloud/static/transcript-spa/` during Docker build.
+
+Until both are in place, the route serves the placeholder `index.html`
+that ships with this PR — useful for the relay smoke test, not useful
+for a real user.
+
+### Smoke test — transcript relay
+
+With at least one local instance connected and a valid `mb_session`
+cookie minted by that bot's OAuth flow:
+
+```bash
+# placeholder SPA renders
+curl -sS https://teamclaude.xvirobotics.com:18443/i/<instanceId>/web/transcript/<chatId>
+
+# relay returns 503 when no instance is registered
+curl -sS https://teamclaude.xvirobotics.com:18443/i/ghost-host/api/transcript/oc_x
+
+# end-to-end: requires a real cookie + a connected instance
+curl -sS -H "cookie: mb_session=$COOKIE" \
+  https://teamclaude.xvirobotics.com:18443/i/<instanceId>/api/transcript/<chatId>?turn=1
+```
+
 ## What is NOT in this PR
 
-This is PR-3 — the skeleton only. The following still come later:
+This is PR-3 (skeleton) + PR-5a (transcript relay route). The following
+still come later:
 
-* PR-4: local-side `cloudClient` (the other end of the WS, with ed25519 signing).
-* PR-5: `/i/:instanceId/api/transcript/:chatId` routing and the transcript SPA.
+* PR-5b: local-side dispatcher wiring + `computeTranscriptLink` switching
+  the bot's card link base to the cloud-assigned URL + the SPA fetch
+  path change + the SPA build/copy script.
 * PR-6: Hub UI at `/web/hub/` with the real data routes.

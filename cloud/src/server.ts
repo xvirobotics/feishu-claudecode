@@ -11,6 +11,7 @@ import {
   RegisterError,
 } from './ws/instance-registry.js';
 import { PingSupervisor, makePong } from './ws/ping.js';
+import { mountTranscriptRoutes } from './routes/transcript.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -22,6 +23,14 @@ export interface StartServerOptions {
   tlsCertPath?: string;
   tlsKeyPath?: string;
   staticDir?: string;
+  /** Filesystem root for the transcript SPA build, served at `/i/:id/web/transcript/*`. */
+  transcriptStaticDir?: string;
+  /** Cookie-signing secret shared with the local-side OAuth callback. Required for transcript auth. */
+  sessionSecret?: string;
+  /** Per-relay-request timeout in ms (overrides the 2s default). */
+  transcriptRequestTimeoutMs?: number;
+  /** Bypass `requireFeishuAuth` on the transcript route — grey-launch only. */
+  disableTranscriptAuth?: boolean;
   pingIntervalMs?: number;
   pongTimeoutMs?: number;
   logger?: (msg: string) => void;
@@ -42,7 +51,10 @@ const DEFAULT_PORT = 18443;
 const DEFAULT_HOST = '0.0.0.0';
 const DEFAULT_PUBLIC_HOST = 'teamclaude.xvirobotics.com';
 
-function buildApp(staticDir: string): Express {
+function buildApp(
+  staticDir: string,
+  mountExtraRoutes: (app: Express) => void = () => {},
+): Express {
   const app = express();
 
   app.get('/healthz', (_req, res) => {
@@ -52,6 +64,11 @@ function buildApp(staticDir: string): Express {
   app.get('/', (_req, res) => {
     res.redirect(302, '/web/hub/');
   });
+
+  // Cloud relay routes (transcript / hub / ...) — mounted before the catch-all
+  // 404 and before the generic `/web` static handler so per-instance prefixes
+  // (`/i/:instanceId/...`) match first.
+  mountExtraRoutes(app);
 
   app.use('/web', express.static(staticDir, { fallthrough: true }));
 
@@ -87,7 +104,48 @@ export async function startServer(
   const certPath = opts.tlsCertPath ?? process.env.METABOT_CLOUD_TLS_CERT;
   const keyPath = opts.tlsKeyPath ?? process.env.METABOT_CLOUD_TLS_KEY;
 
-  const app = buildApp(staticDir);
+  const transcriptStaticDir =
+    opts.transcriptStaticDir ??
+    process.env.METABOT_CLOUD_TRANSCRIPT_STATIC_DIR ??
+    path.resolve(staticDir, 'transcript-spa');
+
+  const sessionSecret =
+    opts.sessionSecret ?? process.env.METABOT_SESSION_SECRET ?? '';
+
+  const disableTranscriptAuth =
+    opts.disableTranscriptAuth ??
+    process.env.METABOT_CLOUD_DISABLE_TRANSCRIPT_AUTH === 'true';
+
+  if (!sessionSecret && !disableTranscriptAuth) {
+    logger(
+      'warn: METABOT_SESSION_SECRET unset and disableTranscriptAuth=false — transcript route will fail closed (401) on every request',
+    );
+  }
+  if (disableTranscriptAuth) {
+    logger(
+      'warn: transcript auth DISABLED (METABOT_CLOUD_DISABLE_TRANSCRIPT_AUTH=true) — grey-launch only',
+    );
+  }
+
+  // registry is needed by mountExtraRoutes; create it before app.
+  const tempBaseUrl =
+    opts.baseUrl ??
+    process.env.METABOT_CLOUD_BASE_URL ??
+    (certPath && keyPath
+      ? `https://${DEFAULT_PUBLIC_HOST}:${port}`
+      : `http://127.0.0.1:${port}`);
+  const registry = new InstanceRegistry({ baseUrl: tempBaseUrl });
+
+  const app = buildApp(staticDir, (a) => {
+    mountTranscriptRoutes(a, {
+      registry,
+      staticDir: transcriptStaticDir,
+      sessionSecret,
+      requestTimeoutMs: opts.transcriptRequestTimeoutMs,
+      disableAuth: disableTranscriptAuth,
+      logger,
+    });
+  });
 
   let httpServer: http.Server | https.Server;
   let mode: 'http' | 'https';
@@ -103,14 +161,8 @@ export async function startServer(
     logger('tls: disabled (dev mode — set METABOT_CLOUD_TLS_CERT/KEY to enable)');
   }
 
-  const baseUrl =
-    opts.baseUrl ??
-    process.env.METABOT_CLOUD_BASE_URL ??
-    (mode === 'https'
-      ? `https://${DEFAULT_PUBLIC_HOST}:${port}`
-      : `http://127.0.0.1:${port}`);
+  const baseUrl = tempBaseUrl;
 
-  const registry = new InstanceRegistry({ baseUrl });
   const ping = new PingSupervisor({
     registry,
     pingIntervalMs: opts.pingIntervalMs,
@@ -203,15 +255,21 @@ export async function startServer(
             `ws: bots updated instance=${existing.instanceId} bots=${frame.bots.length}`,
           );
           break;
-        case 'response':
-          // PR-3 placeholder: routing/correlation lives in PR-5.
+        case 'response': {
           existing.lastSeen = Date.now();
+          const matched = registry.resolveResponse(frame);
+          if (!matched) {
+            logger(
+              `ws: stale/unknown response id=${frame.id} from instance=${existing.instanceId}`,
+            );
+          }
           break;
+        }
         default:
           sendError(ws, {
             type: 'error',
             code: 'unsupported_frame',
-            message: `frame type ${frame.type} not handled in PR-3`,
+            message: `frame type ${frame.type} not handled by cloud server`,
           });
       }
     });
