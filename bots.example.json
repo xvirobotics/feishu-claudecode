@@ -26,7 +26,9 @@
       "_comment_accessAllowOpenIds": "Owner open_ids that can view this bot from the Hub/Manager UIs. Also union'd into transcript whitelist. Owner-only — do not paste random ids here.",
       "accessAllowOpenIds": ["ou_paste_owner_open_id_here"],
       "_comment_hubVisible": "hubVisible: true 让此 bot 在中心化 Hub UI 中可见(默认 false=仅本地)",
-      "hubVisible": false
+      "hubVisible": false,
+      "_comment_cloudUrl": "cloudUrl: 可选,本机 cloud-client 拨号目标 WSS。设置后 transcript 卡片链接会改写为云端 /i/<instanceId>/...。例如: wss://teamclaude.xvirobotics.com:18443/ws/instance",
+      "_cloudUrl_example": "wss://teamclaude.xvirobotics.com:18443/ws/instance"
     },
     {
       "name": "project-gamma",

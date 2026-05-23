@@ -14,6 +14,7 @@ export interface InstanceIdentity {
   memoryNamespace: string;
   identityPath: string;
   publicKey?: string;
+  privateKeyPath?: string;
 }
 
 interface PersistedIdentity {
@@ -113,6 +114,9 @@ export function loadInstanceIdentity(options: LoadIdentityOptions = {}): Instanc
   const instanceId = env.METABOT_INSTANCE_ID || persisted.instanceId;
   const memoryNamespace = env.METABOT_MEMORY_NAMESPACE || `/instances/${instanceId}`;
 
+  const privateKeyPath =
+    persisted.privateKeyPath || path.join(path.dirname(identityPath), 'identity.key');
+
   return {
     instanceId,
     instanceName,
@@ -122,5 +126,6 @@ export function loadInstanceIdentity(options: LoadIdentityOptions = {}): Instanc
     memoryNamespace,
     identityPath,
     publicKey: persisted.publicKey,
+    privateKeyPath,
   };
 }

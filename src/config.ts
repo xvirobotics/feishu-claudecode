@@ -123,6 +123,14 @@ export interface BotConfig extends BotConfigBase {
    * Overview tab; read at request time, no pm2 restart needed.
    */
   hubVisible?: boolean;
+  /**
+   * Cloud-split (PR-4+): optional WSS URL for the cloud relay this bot's
+   * instance should dial out to (e.g. `wss://teamclaude.xvirobotics.com:18443/ws/instance`).
+   * When set on at least one bot in the process, the cloud-client is enabled
+   * and the assigned base URL is used for transcript card links. Leave unset
+   * to keep this bot fully local (no public cloud exposure).
+   */
+  cloudUrl?: string;
 }
 
 /** Telegram bot config (extends base with Telegram credentials). */
@@ -262,6 +270,13 @@ export interface FeishuBotJsonEntry extends EngineJsonFields {
   accessAllowOpenIds?: string[];
   /** Expose this bot in the central Hub UI (`/api/hub/*`). Default false. */
   hubVisible?: boolean;
+  /**
+   * Cloud-split (PR-4+): optional WSS URL for the cloud relay (e.g.
+   * `wss://teamclaude.xvirobotics.com:18443/ws/instance`). When set the
+   * local cloud-client dials out at startup; transcript card links are then
+   * rewritten to the assigned `/i/<instanceId>` base URL.
+   */
+  cloudUrl?: string;
 }
 
 function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
@@ -280,6 +295,7 @@ function feishuBotFromJson(entry: FeishuBotJsonEntry): BotConfig {
     ...(entry.transcriptDisableAuth ? { transcriptDisableAuth: true } : {}),
     ...(entry.accessAllowOpenIds?.length ? { accessAllowOpenIds: entry.accessAllowOpenIds } : {}),
     ...(entry.hubVisible ? { hubVisible: true } : {}),
+    ...(entry.cloudUrl ? { cloudUrl: entry.cloudUrl } : {}),
     ...(entry.engine ? { engine: entry.engine } : {}),
     ...(entry.kimi ? { kimi: entry.kimi } : {}),
     ...(codex ? { codex } : {}),
