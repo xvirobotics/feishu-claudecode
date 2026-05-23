@@ -43,7 +43,10 @@
       // BEFORE React mounts so we don't flash black. The route is hosted under
       // /web/transcript/* — match prefix to avoid touching the in-app SPA.
       try {
-        if (location.pathname.indexOf('/web/transcript/') === 0) {
+        // Local mount: `/web/transcript/...`; cloud relay mount:
+        // `/i/<instanceId>/web/transcript/...`. Match either prefix so the
+        // standalone transcript page never flashes the dark in-app theme.
+        if (location.pathname.indexOf('/web/transcript/') !== -1) {
           document.documentElement.setAttribute('data-theme', 'light');
           var m = document.querySelector('meta[name="theme-color"]');
           if (m) m.setAttribute('content', '#ffffff');

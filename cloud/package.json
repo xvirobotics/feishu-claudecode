@@ -6,6 +6,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
+    "build:spa": "node scripts/sync-spa.mjs",
     "start": "node dist/server.js",
     "test": "vitest run",
     "lint": "eslint src/"

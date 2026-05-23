@@ -1,0 +1,8 @@
+node_modules/
+dist/
+
+# Transcript SPA build artifact — produced by `npm -w @metabot/cloud run build:spa`
+# (or by the Dockerfile during image build). Only the placeholder index.html
+# is committed so cloud tests pass without first running build:spa.
+static/transcript-spa/*
+!static/transcript-spa/index.html

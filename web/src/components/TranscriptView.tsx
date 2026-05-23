@@ -17,6 +17,7 @@ import { useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import styles from './TranscriptView.module.css';
+import { deriveApiBase } from '../utils/transcriptPath';
 
 /* ── 后端形状（src/session/transcript-reader.ts） ── */
 
@@ -359,7 +360,8 @@ export function TranscriptView() {
 
   const fetchTurn = useCallback(async (chatId: string, turn: number): Promise<TranscriptResponse | { error: ErrorState }> => {
     try {
-      const res = await fetch(`/api/transcript/${encodeURIComponent(chatId)}?turn=${turn}`, {
+      const apiBase = deriveApiBase(window.location.pathname);
+      const res = await fetch(`${apiBase}/api/transcript/${encodeURIComponent(chatId)}?turn=${turn}`, {
         credentials: 'include',
       });
       if (res.status === 401) {

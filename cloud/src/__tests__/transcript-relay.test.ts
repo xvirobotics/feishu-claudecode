@@ -302,7 +302,10 @@ describe('cloud transcript relay', () => {
       );
       expect(res.status).toBe(200);
       const text = await res.text();
-      expect(text).toContain('Transcript SPA placeholder');
+      // Two valid bodies depending on whether `npm run build:spa` has run:
+      // the PR-5a placeholder or the real vite-built SPA shipped by PR-5c.
+      // Both are HTML pages with a <body> tag — assert on that contract.
+      expect(text.toLowerCase()).toContain('<body');
     } finally {
       ws.close();
       await new Promise<void>((r) => ws.once('close', () => r()));

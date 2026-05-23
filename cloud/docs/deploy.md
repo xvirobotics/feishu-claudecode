@@ -154,25 +154,32 @@ reconnect loop on the local side).
 | `METABOT_CLOUD_TRANSCRIPT_STATIC_DIR` | Override transcript SPA build root. | `<staticDir>/transcript-spa` |
 | `METABOT_CLOUD_DISABLE_TRANSCRIPT_AUTH` | Skip `requireFeishuAuth` on the transcript route. Grey-launch only — never on a public listener without an external gate. | `false` |
 
-### TODO — transcript SPA build artifact
+### PR-5c — transcript SPA build artifact (resolved)
 
-The SPA build (currently in the main repo's `dist/web/transcript-*`) must
-be copied into `cloud/static/transcript-spa/` before the route serves
-anything useful. Two things still need to land for the SPA to talk to
-the cloud relay:
+PR-5c replaces the PR-5a placeholder with the real SPA:
 
-1. The SPA's `fetch('/api/transcript/...')` calls (currently absolute,
-   see `web/src/components/TranscriptView.tsx`) must become relative
-   to the page, so they resolve against `/i/:instanceId/`. The PR-5b
-   branch owns the SPA change + the build/copy script — PR-5a does
-   not modify `web/` source.
-2. A small `cloud/scripts/sync-spa.mjs` (or a `build:web` script in
-   `cloud/package.json`) to copy `../dist/web/transcript-*` into
-   `cloud/static/transcript-spa/` during Docker build.
+1. `web/vite.config.ts` builds with `base: './'` so assets resolve
+   relative to wherever the page is mounted. The SPA derives its API
+   prefix + react-router `basename` from `window.location.pathname`
+   at runtime (see `web/src/utils/transcriptPath.ts`), so the same
+   build serves both local `/web/transcript/...` and cloud
+   `/i/<instanceId>/web/transcript/...`.
+2. `cloud/scripts/sync-spa.mjs` (driven by
+   `npm -w @metabot/cloud run build:spa`) copies the main repo's
+   `dist/web/` into `cloud/static/transcript-spa/`. The script fails
+   loudly if `dist/web/index.html` is missing so a stale placeholder
+   never silently ships.
+3. The Dockerfile gained a stage that runs `vite build` on `web/`
+   and invokes `build:spa` before pruning dev deps, so
+   `docker compose up --build` produces an image with the real SPA
+   baked into `/app/cloud/static/transcript-spa/`.
 
-Until both are in place, the route serves the placeholder `index.html`
-that ships with this PR — useful for the relay smoke test, not useful
-for a real user.
+To repackage the SPA outside Docker (local smoke test):
+
+```bash
+npm run build:web              # main repo writes dist/web/
+npm -w @metabot/cloud run build:spa
+```
 
 ### Smoke test — transcript relay
 
@@ -193,10 +200,8 @@ curl -sS -H "cookie: mb_session=$COOKIE" \
 
 ## What is NOT in this PR
 
-This is PR-3 (skeleton) + PR-5a (transcript relay route). The following
-still come later:
+This is PR-3 (skeleton) + PR-5a (transcript relay route) + PR-5b
+(local-side dispatcher + cloud-base link rewrite) + PR-5c (SPA
+relativization + cloud build). The following still come later:
 
-* PR-5b: local-side dispatcher wiring + `computeTranscriptLink` switching
-  the bot's card link base to the cloud-assigned URL + the SPA fetch
-  path change + the SPA build/copy script.
 * PR-6: Hub UI at `/web/hub/` with the real data routes.

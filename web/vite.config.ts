@@ -4,7 +4,11 @@ import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/web/',
+  // Relative base so the built SPA can be served from any mount path —
+  // local `/web/` and cloud `/i/<instanceId>/web/` both work without rebuild.
+  // The runtime derives BrowserRouter basename + API base from
+  // window.location.pathname (see web/src/utils/transcriptPath.ts).
+  base: './',
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),

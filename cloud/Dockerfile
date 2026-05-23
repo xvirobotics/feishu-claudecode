@@ -1,7 +1,10 @@
 ### MetaBot cloud — multi-stage build
 ###
-### Stage 1 builds shared/ and cloud/ workspaces, stage 2 ships only the dist + static.
-### Build context must be the metabot repo root so the npm workspaces resolve correctly.
+### Stage 1 installs deps + builds shared/, cloud/ workspaces AND the
+### transcript SPA (web/), then syncs the SPA output into cloud/static/ via
+### the build:spa script. Stage 2 ships only the runtime bits. Build context
+### must be the metabot repo root so the npm workspaces resolve correctly.
+###
 ###   docker build -f cloud/Dockerfile -t metabot-cloud .
 
 ARG NODE_VERSION=20-alpine
@@ -20,6 +23,16 @@ COPY cloud/ cloud/
 
 RUN npm -w @metabot/shared run build \
  && npm -w @metabot/cloud run build
+
+# Transcript SPA — web/ is not part of the npm workspaces, so install + build
+# it on its own and let `npm -w @metabot/cloud run build:spa` copy the output
+# (dist/web → cloud/static/transcript-spa) before pruning dev deps.
+COPY web/package.json web/package-lock.json* web/
+RUN cd web && npm install --include=dev --no-audit --fund=false
+COPY web/ web/
+RUN cd web && ./node_modules/.bin/vite build \
+ && cd .. \
+ && npm -w @metabot/cloud run build:spa
 
 RUN npm prune --omit=dev
 
