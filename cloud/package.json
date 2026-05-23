@@ -1,0 +1,26 @@
+{
+  "name": "@metabot/cloud",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@metabot/shared": "*",
+    "express": "^4.21.2",
+    "ws": "^8.19.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
