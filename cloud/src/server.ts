@@ -12,6 +12,7 @@ import {
 } from './ws/instance-registry.js';
 import { PingSupervisor, makePong } from './ws/ping.js';
 import { mountTranscriptRoutes } from './routes/transcript.js';
+import { mountHubRoutes } from './routes/hub.js';
 import { mountFeishuAuthRoutes } from './auth/feishu-oauth.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -143,6 +144,12 @@ export async function startServer(
       staticDir: transcriptStaticDir,
       sessionSecret,
       requestTimeoutMs: opts.transcriptRequestTimeoutMs,
+      disableAuth: disableTranscriptAuth,
+      logger,
+    });
+    mountHubRoutes(a, {
+      registry,
+      sessionSecret,
       disableAuth: disableTranscriptAuth,
       logger,
     });

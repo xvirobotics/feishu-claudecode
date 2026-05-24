@@ -1,11 +1,294 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>MetaBot Hub (placeholder)</title>
-  </head>
-  <body>
-    <p>Hub UI placeholder — the real build replaces this in PR-6.</p>
-  </body>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>MetaBot 云端总览 · Hub</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg:          #0d1117;
+      --bg-elev:     #161b22;
+      --bg-row:      #1c2128;
+      --border:      #30363d;
+      --fg:          #e6edf3;
+      --fg-dim:      #8b949e;
+      --accent:      #58a6ff;
+      --accent-bg:   #1f6feb1a;
+      --ok:          #3fb950;
+      --warn:        #d29922;
+      --bad:         #f85149;
+      --mono:        ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+    body { min-height: 100vh; line-height: 1.5; }
+
+    header.topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 24px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; z-index: 10;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 16px; }
+    .brand .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+    .who { color: var(--fg-dim); font-size: 13px; font-family: var(--mono); }
+
+    main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+    .summary { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .stat {
+      background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 16px; min-width: 140px;
+    }
+    .stat .k { color: var(--fg-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat .v { font-size: 22px; font-weight: 600; margin-top: 2px; }
+
+    .instance {
+      background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 16px; overflow: hidden;
+    }
+    .inst-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 14px 18px; background: var(--bg-row); border-bottom: 1px solid var(--border);
+    }
+    .inst-id { font-family: var(--mono); font-size: 14px; color: var(--accent); font-weight: 500; word-break: break-all; }
+    .inst-meta { display: flex; gap: 14px; font-size: 12px; color: var(--fg-dim); flex-wrap: wrap; }
+    .inst-meta span code { font-family: var(--mono); color: var(--fg); }
+
+    .bots { padding: 6px; }
+    .bot {
+      display: grid; grid-template-columns: 220px 1fr auto; gap: 14px;
+      padding: 12px 14px; border-radius: 6px;
+      align-items: start;
+    }
+    .bot + .bot { border-top: 1px solid var(--border); }
+    .bot-name { font-weight: 600; font-size: 15px; }
+    .bot-badges { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+    .badge {
+      display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 10px;
+      border: 1px solid var(--border); color: var(--fg-dim);
+    }
+    .badge.ok   { color: var(--ok);   border-color: #2ea04344; background: #2ea04314; }
+    .badge.warn { color: var(--warn); border-color: #d2992244; background: #d2992214; }
+    .badge.bad  { color: var(--bad);  border-color: #f8514944; background: #f8514914; }
+
+    .chat-list { display: flex; flex-direction: column; gap: 4px; }
+    .chat-item {
+      font-family: var(--mono); font-size: 12px;
+      padding: 4px 8px; border-radius: 4px;
+      background: var(--bg);
+      color: var(--accent);
+      text-decoration: none;
+      border: 1px solid transparent;
+      transition: border-color 0.15s;
+      word-break: break-all;
+    }
+    .chat-item:hover { border-color: var(--accent); background: var(--accent-bg); }
+    .chat-empty { font-size: 12px; color: var(--fg-dim); font-style: italic; padding: 4px 8px; }
+
+    .bot-counts { text-align: right; font-size: 12px; color: var(--fg-dim); white-space: nowrap; }
+    .bot-counts strong { color: var(--fg); font-size: 18px; font-weight: 600; display: block; }
+
+    .status {
+      max-width: 600px; margin: 80px auto; text-align: center;
+      padding: 32px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
+    }
+    .status h1 { margin: 0 0 10px; font-size: 20px; }
+    .status p { margin: 6px 0; color: var(--fg-dim); }
+    .status code { font-family: var(--mono); color: var(--accent); }
+
+    footer { text-align: center; color: var(--fg-dim); font-size: 12px; padding: 24px; }
+
+    @media (max-width: 720px) {
+      .bot { grid-template-columns: 1fr; }
+      .bot-counts { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot" id="status-dot"></span>
+      <span>MetaBot 云端总览 · Hub</span>
+    </div>
+    <div class="who" id="who">…</div>
+  </header>
+
+  <main id="root">
+    <div class="status">
+      <h1>加载中…</h1>
+      <p>正在拉取云端 instance 列表</p>
+    </div>
+  </main>
+
+  <footer>
+    cloud relay · teamclaude.xvirobotics.com:18443
+  </footer>
+
+  <script>
+    (function () {
+      const root = document.getElementById('root');
+      const whoEl = document.getElementById('who');
+      const dotEl = document.getElementById('status-dot');
+
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+          return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        });
+      }
+
+      function fmtTime(ts) {
+        if (!ts) return '—';
+        const d = new Date(ts);
+        const pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+          + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+      }
+
+      function fmtRelative(ts) {
+        if (!ts) return '';
+        const diff = Date.now() - ts;
+        if (diff < 0) return '';
+        const sec = Math.floor(diff / 1000);
+        if (sec < 60) return sec + 's ago';
+        if (sec < 3600) return Math.floor(sec / 60) + 'm ago';
+        if (sec < 86400) return Math.floor(sec / 3600) + 'h ago';
+        return Math.floor(sec / 86400) + 'd ago';
+      }
+
+      function renderStatus(title, message) {
+        root.innerHTML =
+          '<div class="status">' +
+          '<h1>' + escapeHtml(title) + '</h1>' +
+          '<p>' + message + '</p>' +
+          '</div>';
+      }
+
+      function renderHub(data) {
+        if (data.user) {
+          whoEl.textContent = (data.user.name || '(unnamed)') + ' · ' + data.user.openId;
+        }
+
+        if (data.totalInstances === 0) {
+          renderStatus('暂无连接的 instance', '当前没有任何 bot 实例连接到 cloud relay。检查本地 bot 是否设置了 <code>METABOT_CLOUD_URL</code>。');
+          return;
+        }
+
+        const summary =
+          '<section class="summary">' +
+          '<div class="stat"><div class="k">Instances</div><div class="v">' + data.totalInstances + '</div></div>' +
+          '<div class="stat"><div class="k">Hub-visible Bots</div><div class="v">' + data.totalHubVisibleBots + '</div></div>' +
+          (data.totalHiddenBots > 0
+            ? '<div class="stat"><div class="k">Hidden Bots</div><div class="v">' + data.totalHiddenBots + '</div></div>'
+            : '') +
+          '<div class="stat"><div class="k">Cloud Host</div><div class="v" style="font-size:13px;font-family:var(--mono);padding-top:6px;">' + escapeHtml(data.hostId) + '</div></div>' +
+          '</section>';
+
+        const instancesHtml = data.instances.map(function (inst) {
+          if (inst.bots.length === 0 && inst.hiddenBotCount > 0) {
+            return (
+              '<article class="instance">' +
+              '<header class="inst-head">' +
+              '<div class="inst-id">' + escapeHtml(inst.instanceId) + '</div>' +
+              '<div class="inst-meta">' +
+              '<span>v<code>' + escapeHtml(inst.version) + '</code></span>' +
+              '<span>已连接 <code>' + fmtRelative(inst.registeredAt) + '</code></span>' +
+              '<span>last seen <code>' + fmtRelative(inst.lastSeen) + '</code></span>' +
+              '</div>' +
+              '</header>' +
+              '<div class="bots"><div class="chat-empty">本 instance 上的 ' + inst.hiddenBotCount + ' 个 bot 都未开启 hubVisible</div></div>' +
+              '</article>'
+            );
+          }
+
+          const botsHtml = inst.bots.map(function (bot) {
+            const chatItems = bot.chatIds.length === 0
+              ? '<div class="chat-empty">尚未捕获 chatIds(register 帧不带,可能是单 bot 单 chat 模式)</div>'
+              : bot.chatIds.map(function (cid) {
+                  const href = bot.transcriptUrlBase + encodeURIComponent(cid) + '?turn=all';
+                  return '<a class="chat-item" href="' + href + '" target="_blank" rel="noopener">📜 ' + escapeHtml(cid) + '</a>';
+                }).join('');
+
+            const badges =
+              '<span class="badge ' + (bot.hasFeishuCreds ? 'ok' : 'bad') + '">'
+                + (bot.hasFeishuCreds ? 'Feishu ✓' : 'no Feishu creds') + '</span>'
+              + '<span class="badge ' + (bot.allowOpenIdCount > 0 ? 'ok' : 'warn') + '">'
+                + (bot.allowOpenIdCount > 0 ? bot.allowOpenIdCount + ' allowed users' : 'no whitelist (will 403)') + '</span>';
+
+            return (
+              '<div class="bot">' +
+              '<div>' +
+              '<div class="bot-name">' + escapeHtml(bot.name) + '</div>' +
+              '<div class="bot-badges">' + badges + '</div>' +
+              '</div>' +
+              '<div class="chat-list">' + chatItems + '</div>' +
+              '<div class="bot-counts"><strong>' + bot.chatIdCount + '</strong>chats</div>' +
+              '</div>'
+            );
+          }).join('');
+
+          return (
+            '<article class="instance">' +
+            '<header class="inst-head">' +
+            '<div class="inst-id">' + escapeHtml(inst.instanceId) + '</div>' +
+            '<div class="inst-meta">' +
+            '<span>v<code>' + escapeHtml(inst.version) + '</code></span>' +
+            '<span>已连接 <code>' + fmtRelative(inst.registeredAt) + '</code></span>' +
+            '<span>last seen <code>' + fmtRelative(inst.lastSeen) + '</code></span>' +
+            (inst.hiddenBotCount > 0 ? '<span>(+' + inst.hiddenBotCount + ' 个 bot 未对 hub 可见)</span>' : '') +
+            '</div>' +
+            '</header>' +
+            '<div class="bots">' + botsHtml + '</div>' +
+            '</article>'
+          );
+        }).join('');
+
+        root.innerHTML = summary + instancesHtml;
+      }
+
+      fetch('/api/hub/instances', { credentials: 'include' })
+        .then(function (resp) {
+          if (resp.status === 401) {
+            return resp.json().then(function (j) {
+              dotEl.style.background = 'var(--warn)';
+              if (j.loginUrl) {
+                renderStatus('需要登录', '正在跳转飞书授权…');
+                setTimeout(function () { window.location.replace(j.loginUrl); }, 600);
+              } else {
+                renderStatus('需要登录', '未拿到 loginUrl,请检查 cloud relay 配置。');
+              }
+              throw new Error('redirecting');
+            });
+          }
+          if (resp.status === 403) {
+            dotEl.style.background = 'var(--bad)';
+            renderStatus('无权限', '当前飞书账号不在任何 hubVisible bot 的 <code>accessAllowOpenIds</code> 白名单里。');
+            throw new Error('forbidden');
+          }
+          if (resp.status === 503) {
+            dotEl.style.background = 'var(--bad)';
+            return resp.json().then(function (j) {
+              renderStatus('云端未就绪', escapeHtml(j.error || 'service unavailable'));
+              throw new Error('unavailable');
+            });
+          }
+          if (!resp.ok) {
+            dotEl.style.background = 'var(--bad)';
+            renderStatus('请求失败', 'HTTP ' + resp.status);
+            throw new Error('http ' + resp.status);
+          }
+          return resp.json();
+        })
+        .then(function (data) { if (data) renderHub(data); })
+        .catch(function (err) {
+          if (err && err.message === 'redirecting') return;
+          if (err && (err.message === 'forbidden' || err.message === 'unavailable')) return;
+          dotEl.style.background = 'var(--bad)';
+          renderStatus('网络错误', escapeHtml((err && err.message) || String(err)));
+        });
+    })();
+  </script>
+</body>
 </html>
