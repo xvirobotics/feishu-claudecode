@@ -36,6 +36,7 @@ import type { Logger } from '../../utils/logger.js';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import type { SDKMessage, TeamEvent, ApiContext } from './executor.js';
 import { apply1MContextSettings } from './executor.js';
+import { makeCanUseTool } from './exit-plan-mode.js';
 
 const isWindows = process.platform === 'win32';
 
@@ -414,6 +415,14 @@ export class PersistentClaudeExecutor extends EventEmitter {
     // that questions can be answered by users via Feishu cards) + Agent
     // Teams observation hooks for the team panel.
     queryOptions.hooks = this.buildHooks();
+
+    // ExitPlanMode: the native tool's checkPermissions returns
+    // `{behavior: "ask", message: "Exit plan mode?"}` even under
+    // bypassPermissions, and that "ask" routes through the can_use_tool
+    // control_request — NOT through PreToolUse hooks. Auto-allow via
+    // canUseTool; the bridge still ships the plan body to the user as a
+    // separate card (StreamProcessor + sendPlanContent).
+    queryOptions.canUseTool = makeCanUseTool(this.options.logger);
 
     const stream = query({
       prompt: this.inputQueue,
