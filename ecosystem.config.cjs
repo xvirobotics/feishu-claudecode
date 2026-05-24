@@ -121,6 +121,12 @@ function makeApp(bot, index) {
       META_MEMORY_URL:     `http://localhost:${memoryPort}`,
       CLAUDE_MAX_TURNS:    '',
       CARD_SCHEMA_V2:      'true',
+      // Per-bot 唯一 instanceId — shell 导出的 METABOT_INSTANCE_ID 是机器级,
+      // 多个 bot 同时连 cloud relay 会触发 InstanceRegistry 的 replaced_by_new_registration
+      // 互踢 (ping-pong)。这里追加 -<BOT_NAME> 后缀给每个 bot 一个独立身份。
+      ...(process.env.METABOT_INSTANCE_ID
+        ? { METABOT_INSTANCE_ID: `${process.env.METABOT_INSTANCE_ID}-${name}` }
+        : {}),
       // .env 显式注入(铁锤一击 — 顶掉 PM2 daemon 的旧缓存)。
       // per-bot bots.json `env` 块仍可覆盖这里(spread 顺序)。
       ...dotenvVars,
