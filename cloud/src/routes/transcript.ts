@@ -51,8 +51,13 @@ export interface TranscriptRoutesOptions {
 /**
  * Look up the bot record on an instance whose name owns `chatId`. The
  * register frame carries `bots: BotMeta[]` where each entry may declare its
- * `chatIds`. We pick the first match; if no bot lists the chat, we fall back
- * to `null` and the caller surfaces a 404 (better than leaking instance bots).
+ * `chatIds`. Resolution order:
+ *   1. Explicit chatIds match — first bot listing the chat wins.
+ *   2. If a bot omits `chatIds` (undefined / empty), it implicitly owns
+ *      every chat on this instance — pick the first such bot. This handles
+ *      single-bot-per-instance deployments where pushing live chat lists in
+ *      the register frame would be churny.
+ *   3. Otherwise null → caller surfaces 404.
  */
 function findOwningBot(
   bots: { name: string; chatIds?: string[]; accessAllowOpenIds?: string[] }[],
@@ -60,6 +65,11 @@ function findOwningBot(
 ): { name: string; allowOpenIds: string[] } | null {
   for (const bot of bots) {
     if (bot.chatIds?.includes(chatId)) {
+      return { name: bot.name, allowOpenIds: bot.accessAllowOpenIds ?? [] };
+    }
+  }
+  for (const bot of bots) {
+    if (!bot.chatIds || bot.chatIds.length === 0) {
       return { name: bot.name, allowOpenIds: bot.accessAllowOpenIds ?? [] };
     }
   }
@@ -97,6 +107,7 @@ function makeRelayHandler(opts: TranscriptRoutesOptions): RequestHandler {
         returnPath,
         botName,
         sessionSecret: opts.sessionSecret,
+        instanceId,
       });
       if (!authResult.ok) {
         if (authResult.status === 401) {

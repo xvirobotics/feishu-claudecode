@@ -151,6 +151,39 @@ export class InstanceRegistry {
   }
 
   /**
+   * Find a bot by `(instanceId, botName)`. Returns the BotMeta (which carries
+   * `feishuAppId`/`feishuAppSecret`/`accessAllowOpenIds`) plus the owning
+   * instance record. Used by the cloud OAuth routes to look up which Feishu
+   * app's credentials should drive the authorize/callback flow.
+   */
+  findBotOnInstance(
+    instanceId: string,
+    botName: string,
+  ): { record: InstanceRecord; bot: BotMeta } | undefined {
+    const record = this.records.get(instanceId);
+    if (!record) return undefined;
+    const bot = record.bots.find((b) => b.name === botName);
+    if (!bot) return undefined;
+    return { record, bot };
+  }
+
+  /**
+   * Fallback lookup when only the bot name is known: scan every instance and
+   * return the first match. Multi-host deployments where the same bot name
+   * runs on more than one instance will get an arbitrary winner — callers
+   * that care must pass `instanceId` to `findBotOnInstance` instead.
+   */
+  findBotAnywhere(
+    botName: string,
+  ): { record: InstanceRecord; bot: BotMeta } | undefined {
+    for (const record of this.records.values()) {
+      const bot = record.bots.find((b) => b.name === botName);
+      if (bot) return { record, bot };
+    }
+    return undefined;
+  }
+
+  /**
    * Send a `request` frame to `instanceId` and resolve with the matching
    * `response` frame. The caller supplies `route` + `params`; this method
    * mints the correlation `id`, registers a pending entry, and arms a

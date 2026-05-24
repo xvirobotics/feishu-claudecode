@@ -12,6 +12,7 @@ import {
 } from './ws/instance-registry.js';
 import { PingSupervisor, makePong } from './ws/ping.js';
 import { mountTranscriptRoutes } from './routes/transcript.js';
+import { mountFeishuAuthRoutes } from './auth/feishu-oauth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -145,6 +146,19 @@ export async function startServer(
       disableAuth: disableTranscriptAuth,
       logger,
     });
+    // Cloud-side Feishu OAuth: `/api/auth/feishu/{login,callback}`.
+    // No-op when sessionSecret is empty (no way to mint cookies anyway) —
+    // routes return 503 on first hit, surfacing the misconfiguration clearly.
+    if (sessionSecret) {
+      mountFeishuAuthRoutes(a, {
+        registry,
+        sessionSecret,
+        publicBaseUrl: tempBaseUrl,
+        logger,
+      });
+    } else {
+      logger('auth/feishu: routes NOT mounted — METABOT_SESSION_SECRET unset');
+    }
   });
 
   let httpServer: http.Server | https.Server;

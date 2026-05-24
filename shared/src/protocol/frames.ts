@@ -12,6 +12,12 @@ export interface BotMeta {
   hubVisible: boolean;
   accessAllowOpenIds?: string[];
   chatIds?: string[];
+  // Feishu OAuth credentials — bot ships these to cloud so the relay can
+  // host its own /api/auth/feishu/{login,callback} routes without holding
+  // long-lived secrets at rest. Cloud caches them in InstanceRegistry memory
+  // and drops them on disconnect.
+  feishuAppId?: string;
+  feishuAppSecret?: string;
 }
 
 export interface RegisterFrame {

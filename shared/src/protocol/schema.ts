@@ -6,6 +6,8 @@ const botMetaSchema = z.object({
   hubVisible: z.boolean(),
   accessAllowOpenIds: z.array(z.string()).optional(),
   chatIds: z.array(z.string()).optional(),
+  feishuAppId: z.string().min(1).optional(),
+  feishuAppSecret: z.string().min(1).optional(),
 });
 
 const registerSchema = z.object({

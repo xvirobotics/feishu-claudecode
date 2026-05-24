@@ -384,6 +384,10 @@ async function main() {
       name: b.name,
       hubVisible: Boolean(b.hubVisible),
       ...(b.accessAllowOpenIds?.length ? { accessAllowOpenIds: b.accessAllowOpenIds } : {}),
+      // Ship Feishu OAuth credentials to cloud so it can host its own
+      // /api/auth/feishu/{login,callback} routes (memory-only on cloud side).
+      ...(b.feishu?.appId ? { feishuAppId: b.feishu.appId } : {}),
+      ...(b.feishu?.appSecret ? { feishuAppSecret: b.feishu.appSecret } : {}),
     }));
     if (!appConfig.instance.publicKey || !appConfig.instance.privateKeyPath) {
       logger.warn('cloud-client: skipping — instance identity has no ed25519 keypair on disk');

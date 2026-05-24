@@ -33,6 +33,10 @@ export interface RequireFeishuAuthOpts {
   returnPath: string;
   botName: string;
   sessionSecret: string;
+  /** Instance the bot is connected from — included in loginUrl so the OAuth
+   *  callback can unambiguously look up the bot's credentials (a bot name may
+   *  collide across hosts; instanceId pins the exact registry record). */
+  instanceId?: string;
 }
 
 export function requireFeishuAuth(
@@ -44,10 +48,15 @@ export function requireFeishuAuth(
     ? verifySession(cookies.mb_session, opts.sessionSecret)
     : null;
   if (!session) {
+    const params = new URLSearchParams({
+      return: opts.returnPath,
+      bot:    opts.botName,
+    });
+    if (opts.instanceId) params.set('i', opts.instanceId);
     return {
       ok: false,
       status: 401,
-      loginUrl: `/api/auth/feishu/login?return=${encodeURIComponent(opts.returnPath)}&bot=${encodeURIComponent(opts.botName)}`,
+      loginUrl: `/api/auth/feishu/login?${params.toString()}`,
     };
   }
   if (opts.allowOpenIds.length === 0 || !opts.allowOpenIds.includes(session.open_id)) {
