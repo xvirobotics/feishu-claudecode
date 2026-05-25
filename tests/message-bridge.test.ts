@@ -115,13 +115,27 @@ describe('extractSpontaneousSnippet', () => {
     expect(extractSpontaneousSnippet(msg)).toBeNull();
   });
 
-  it('truncates very long text to 400 chars', () => {
-    const long = 'x'.repeat(800);
+  it('truncates very long text at the snippet cap with an ellipsis marker', () => {
+    // The cap is 4000 (raised from 400, which cut off ordinary multi-paragraph
+    // replies mid-sentence — see "经常显示不全" bug). Snippets above the cap
+    // are still tagged with an ellipsis so the reader knows truncation happened.
+    const long = 'x'.repeat(8000);
     const out = extractSpontaneousSnippet({
       type: 'assistant',
       message: { content: [{ type: 'text', text: long }] },
     });
-    expect(out).toHaveLength(400);
+    expect(out).toHaveLength(4001); // 4000 + the trailing ellipsis char
+    expect(out!.endsWith('…')).toBe(true);
+  });
+
+  it('does not touch text shorter than the snippet cap (no ellipsis appended)', () => {
+    const ordinary = 'A two-paragraph reply.\n\nWith another paragraph that is well under 4 KB.';
+    const out = extractSpontaneousSnippet({
+      type: 'assistant',
+      message: { content: [{ type: 'text', text: ordinary }] },
+    });
+    expect(out).toBe(ordinary);
+    expect(out!.endsWith('…')).toBe(false);
   });
 
   // Regression for Bug B (duplicate snippets): result-type messages MUST be
@@ -157,37 +171,59 @@ describe('extractSpontaneousSnippet', () => {
 });
 
 describe('formatSpontaneousCardBody', () => {
-  // After the post-#268 simplification, the card shows ONLY the latest
-  // snippet (the agent's conclusion of the burst). Earlier snippets are
-  // hidden — same UX bet as the main card's single-line tool indicator,
-  // i.e. surface only the final result, not the play-by-play. If the user
-  // wants the intermediate steps, they can read pm2 logs or the web UI's
-  // expandable tool view.
+  // The card body renders ALL snippets (chronological), separated by a
+  // horizontal rule. Earlier behavior was "show only the latest + a
+  // (N coalesced) footer" — that turned out to drop most of the useful
+  // content (the "经常显示不全" bug) because teammate pings, /loop
+  // iterations, and cron tasks each emit their own snippet and the user
+  // needs to see all of them. Total length is capped at
+  // SPONTANEOUS_BODY_MAX_CHARS; overflow drops the oldest snippets and
+  // prepends a one-line summary of how many were omitted.
   //
-  // The body never carries a header caption anymore — the card itself is
-  // sent with the `agent_activity` status, which renders a blue
-  // "Agent activity" title at the top. Don't re-add a body header without
-  // confirming the card-status signal is no longer sufficient.
-  it('renders only the latest snippet, with no italic header caption, for a single snippet', () => {
+  // The body never carries a header caption when nothing was dropped —
+  // the card itself is sent with the `agent_activity` status, which
+  // renders a blue "Agent activity" title at the top. Don't re-add a
+  // body header without confirming the card-status signal is no longer
+  // sufficient.
+  it('renders the single snippet verbatim with no header caption', () => {
     const body = formatSpontaneousCardBody(['Weather is sunny']);
     expect(body).toBe('Weather is sunny');
   });
 
-  it('renders only the latest snippet + a coalesced-count footer when N>1', () => {
+  it('renders ALL snippets chronologically with a horizontal-rule separator', () => {
     const body = formatSpontaneousCardBody([
       'Looking at the PR comments…',
       'Found 3 things to address.',
       'Pushed commit abc1234 to the branch.',
     ]);
-    expect(body).toContain('Pushed commit abc1234 to the branch.');
-    expect(body).toMatch(/3 events coalesced/);
-    // Earlier snippets must NOT appear in the body.
-    expect(body).not.toContain('Looking at the PR comments');
-    expect(body).not.toContain('Found 3 things to address');
-    // No numbered list prefixes either, and no body-level "between turns" caption.
-    expect(body).not.toMatch(/\*\*1\.\*\*/);
+    // All three must appear, in order.
+    const idxA = body.indexOf('Looking at the PR comments');
+    const idxB = body.indexOf('Found 3 things to address');
+    const idxC = body.indexOf('Pushed commit abc1234');
+    expect(idxA).toBeGreaterThanOrEqual(0);
+    expect(idxB).toBeGreaterThan(idxA);
+    expect(idxC).toBeGreaterThan(idxB);
+    // Snippets are separated by `---` rules (two between three snippets).
+    expect((body.match(/^---$/gm) ?? []).length).toBe(2);
+    // No body-level "between turns" / "long-running" caption, and no
+    // "N events coalesced; showing latest" footer (that's the old behavior).
+    expect(body).not.toMatch(/coalesced/i);
     expect(body).not.toMatch(/between turns/i);
     expect(body).not.toMatch(/long-running/i);
+    expect(body).not.toMatch(/showing latest/i);
+  });
+
+  it('drops the oldest snippets and prepends an "omitted" notice when total exceeds the body budget', () => {
+    // Each snippet ~3500 chars; 5 of them = ~17500 chars total → over the
+    // 12000 budget. We should keep the most recent N that fit, drop the rest.
+    const big = (label: string) => label + ' ' + 'x'.repeat(3500);
+    const snippets = ['old1', 'old2', 'old3', 'old4', 'newest'].map(big);
+    const body = formatSpontaneousCardBody(snippets);
+    // newest MUST be present (most relevant).
+    expect(body).toContain('newest');
+    // At least the oldest one MUST be omitted, with an "omitted" notice.
+    expect(body).toMatch(/^_\(\d+ earlier events? omitted; \d+ shown\)_/);
+    expect(body).not.toContain('old1');
   });
 
   it('returns an empty string when the snippets array is empty', () => {

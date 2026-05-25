@@ -51,6 +51,21 @@ const IDLE_TIMEOUT_MS = 60 * 60 * 1000; // 1 hour idle → abort
  * avoid spamming the chat.
  */
 const SPONTANEOUS_COALESCE_MS = 30 * 1000;
+/**
+ * Per-snippet character cap. One runaway block (e.g. a giant code dump from
+ * an autonomous teammate) shouldn't eat the whole card budget by itself, but
+ * 400 was so tight it cut off ordinary multi-paragraph replies mid-sentence —
+ * which was the main "agent activity 显示不全" complaint. 4000 covers almost
+ * every real-world assistant text block while still bounding worst case.
+ */
+const SPONTANEOUS_SNIPPET_MAX_CHARS = 4000;
+/**
+ * Total body cap for the coalesced agent-activity card body. Sits well below
+ * card-builder-v2's 28000-char hard limit so we leave room for header rows
+ * and the team-state panel without triggering the middle-truncation safety
+ * net (which produces an ugly `... (content truncated) ...` marker).
+ */
+const SPONTANEOUS_BODY_MAX_CHARS = 12000;
 const FINAL_CARD_RETRIES = 3;
 const FINAL_CARD_BASE_DELAY_MS = 2000;
 const TASK_TIMEOUT_MESSAGE = 'Task timed out (24 hour limit)';
@@ -80,7 +95,13 @@ export function extractSpontaneousSnippet(msg: unknown): string | null {
   for (const blk of m.message.content) {
     if (blk.type === 'text' && blk.text) {
       const trimmed = String(blk.text).trim();
-      if (trimmed) return trimmed.slice(0, 400);
+      if (!trimmed) continue;
+      if (trimmed.length <= SPONTANEOUS_SNIPPET_MAX_CHARS) return trimmed;
+      // Soft cap with an ellipsis marker. The total-body cap in
+      // formatSpontaneousCardBody enforces the card-level budget — this
+      // per-snippet cap only guards against one runaway block eating the
+      // whole card.
+      return trimmed.slice(0, SPONTANEOUS_SNIPPET_MAX_CHARS) + '…';
     }
     // tool_use blocks intentionally fall through — see docstring above.
   }
@@ -89,11 +110,19 @@ export function extractSpontaneousSnippet(msg: unknown): string | null {
 
 /**
  * Build the markdown body of a spontaneous activity card from collected
- * snippets. Shows ONLY the latest snippet (the agent's conclusion of the
- * burst); if multiple snippets were coalesced, a small footer notes the
- * count so users know there was more activity if they want to dig into
- * logs. Mirrors the "show only the final result, hide the play-by-play"
- * pattern from PR #268's main-card tool indicator.
+ * snippets. Renders ALL snippets in chronological order, separated by a
+ * horizontal rule so the reader can tell discrete bursts apart.
+ *
+ * Earlier versions showed ONLY the latest snippet (the "agent's conclusion"
+ * — same UX bet as the main card's single-line tool indicator from PR #268),
+ * but that turned out to drop most of the useful content: teammate pings,
+ * /loop iterations, and cron tasks each emit their own snippet and the user
+ * needs to see all of them, not just the final one. The "经常显示不全" bug.
+ *
+ * Total length is capped at SPONTANEOUS_BODY_MAX_CHARS; if the burst would
+ * exceed that we keep the most recent snippets (latest are most relevant)
+ * and prepend a one-line "N earlier events omitted" notice. The card
+ * builder's own 28000-char safety net still applies as a last resort.
  *
  * No header line in the body — earlier versions prepended an italic
  * "Agent activity between turns (…)" caption, but users found it long
@@ -105,12 +134,30 @@ export function extractSpontaneousSnippet(msg: unknown): string | null {
  */
 export function formatSpontaneousCardBody(snippets: string[]): string {
   if (snippets.length === 0) return '';
-  const lines: string[] = [snippets[snippets.length - 1]];
-  if (snippets.length > 1) {
-    lines.push('');
-    lines.push(`_(${snippets.length} events coalesced; showing latest)_`);
+  if (snippets.length === 1) return snippets[0];
+
+  const sep = '\n\n---\n\n';
+  // Walk newest → oldest, keeping snippets until the next one would push us
+  // over the body budget. Anything older is summarized in a single header.
+  const kept: string[] = [];
+  let total = 0;
+  let droppedCount = 0;
+  for (let i = snippets.length - 1; i >= 0; i--) {
+    const next = snippets[i];
+    const cost = next.length + (kept.length > 0 ? sep.length : 0);
+    if (total + cost > SPONTANEOUS_BODY_MAX_CHARS) {
+      droppedCount = i + 1;
+      break;
+    }
+    kept.unshift(next);
+    total += cost;
   }
-  return lines.join('\n');
+  const body = kept.join(sep);
+  if (droppedCount > 0) {
+    const noun = droppedCount === 1 ? 'event' : 'events';
+    return `_(${droppedCount} earlier ${noun} omitted; ${kept.length} shown)_\n\n` + body;
+  }
+  return body;
 }
 
 interface PendingBatch {
