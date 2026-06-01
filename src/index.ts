@@ -10,6 +10,7 @@ import type { IMessageSender } from './bridge/message-sender.interface.js';
 import type { BotConfigBase } from './config.js';
 import { startTelegramBot } from './telegram/telegram-bot.js';
 import { startWechatBot } from './wechat/wechat-bot.js';
+import { startWecomBot } from './wecom/wecom-bot.js';
 import { BotRegistry } from './api/bot-registry.js';
 import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
@@ -100,7 +101,8 @@ async function main() {
   const feishuCount = appConfig.feishuBots.length;
   const telegramCount = appConfig.telegramBots.length;
   const wechatCount = appConfig.wechatBots.length;
-  logger.info({ feishuBots: feishuCount, telegramBots: telegramCount, wechatBots: wechatCount, memoryServerUrl: appConfig.memoryServerUrl }, 'Starting MetaBot bridge...');
+  const wecomCount = appConfig.wecomBots.length;
+  logger.info({ feishuBots: feishuCount, telegramBots: telegramCount, wechatBots: wechatCount, wecomBots: wecomCount, memoryServerUrl: appConfig.memoryServerUrl }, 'Starting MetaBot bridge...');
 
   // Create bot registry
   const registry = new BotRegistry();
@@ -131,6 +133,15 @@ async function main() {
       (bot) => startWechatBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
       logger,
       'wechat',
+    )
+    : [];
+
+  const wecomHandles = wecomCount > 0
+    ? await startBotsSafely(
+      appConfig.wecomBots,
+      (bot) => startWecomBot(bot, logger, appConfig.memoryServerUrl, appConfig.memory.secret || undefined),
+      logger,
+      'wecom',
     )
     : [];
 
@@ -174,11 +185,22 @@ async function main() {
     });
   }
 
+  for (const handle of wecomHandles) {
+    registry.register({
+      name: handle.name,
+      platform: 'wecom',
+      config: handle.config,
+      bridge: handle.bridge,
+      sender: handle.sender,
+    });
+  }
+
   const allNames = [
     ...feishuHandles.map((h) => h.name),
     ...telegramHandles.map((h) => h.name),
     ...appConfig.webBots.map((b) => b.name),
     ...wechatHandles.map((h) => h.name),
+    ...wecomHandles.map((h) => h.name),
   ];
   logger.info({ bots: allNames }, 'All bots started');
 
@@ -305,6 +327,10 @@ async function main() {
       handle.bridge.destroy();
       handle.stop();
     }
+    for (const handle of wecomHandles) {
+      handle.bridge.destroy();
+      handle.stop();
+    }
     process.exit(0);
   };
 
@@ -316,7 +342,7 @@ async function startBotsSafely<TConfig extends BotConfigBase, THandle>(
   bots: TConfig[],
   starter: (bot: TConfig) => Promise<THandle>,
   logger: Logger,
-  platform: 'feishu' | 'telegram' | 'wechat',
+  platform: 'feishu' | 'telegram' | 'wechat' | 'wecom',
 ): Promise<THandle[]> {
   const results = await Promise.allSettled(bots.map((bot) => starter(bot)));
   const handles: THandle[] = [];

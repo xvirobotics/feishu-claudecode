@@ -38,6 +38,15 @@
       "defaultWorkingDirectory": "/home/user/project"
     }
   ],
+  "wecomBots": [
+    {
+      "name": "wecom-assistant",
+      "description": "企业微信智能机器人（AIP 长连接模式）",
+      "wecomBotId": "aibxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "wecomSecret": "your-wecom-bot-secret",
+      "defaultWorkingDirectory": "/home/user/project"
+    }
+  ],
   "peers": [
     {
       "name": "alice",

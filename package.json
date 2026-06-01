@@ -23,6 +23,7 @@
     "@larksuiteoapi/node-sdk": "^1.58.0",
     "@types/ws": "^8.18.0",
     "@volcengine/openapi": "^1.36.0",
+    "@wecom/aibot-node-sdk": "^1.0.7",
     "better-sqlite3": "^12.6.2",
     "cron-parser": "^5.5.0",
     "dotenv": "^16.4.0",

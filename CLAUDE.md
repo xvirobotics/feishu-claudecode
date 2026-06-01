@@ -151,6 +151,18 @@ mb skills remove <name>                    # Unpublish
 
 Sessions are keyed by `chatId` (not `userId`), so each group chat and DM gets its own independent session, working directory, and conversation history. Group chats with exactly 2 members (1 user + 1 bot) are treated like DMs — no @mention required. This lets users "fork" a bot by creating multiple small group chats, each with its own session. The member count is cached for 5 minutes to avoid excessive API calls.
 
+### WeCom (企业微信) Smart Bot
+
+Enterprise WeChat (WeCom) integration via the **智能机器人 AIP WebSocket long connection** (`wss://openws.work.weixin.qq.com`). Built on the official [`@wecom/aibot-node-sdk`](https://github.com/WecomTeam/aibot-node-sdk), which handles authentication (`aibot_subscribe` with botId + secret), heartbeat, exponential-backoff reconnection, AES-256-CBC media decryption, and chunked media upload. **This is distinct from the personal-WeChat iLink integration** (`src/wechat/`); WeCom is a separate platform under `src/wecom/`.
+
+**Key modules:**
+- **`src/wecom/wecom-bot.ts`** — `startWecomBot()` creates the SDK `WSClient`, wires `message.*` / `event.enter_chat` events, maps WeCom callback frames to the platform-agnostic `IncomingMessage`, binds the incoming frame to the sender (for streaming reply routing by `req_id`), and routes through the shared `MessageBridge`.
+- **`src/wecom/wecom-sender.ts`** — `WecomSender implements IMessageSender`. Maps the bridge's `sendCard → updateCard* → final` lifecycle onto WeCom streaming replies (`aibot_respond_msg` with a shared `stream.id`, full-content replacement, terminal frame sets `finish=true`). Streaming replies are tied to the incoming message's `req_id`; command responses / notices / output files use the active-push channel (`aibot_send_msg`). Sets `skipCompletionNotice = true` and folds stats into the final stream content.
+
+**Streaming model**: A reply is bound to the `req_id` of the incoming message frame, so each user message → one stream. Intermediate updates use `replyStreamNonBlocking` (skips when a prior ack is pending); the pending-question and terminal frames use blocking `replyStream`. Note the WeCom stream must complete within ~10 minutes; the terminal update falls back to active push if no frame is available.
+
+**Config**: Single-bot mode via `WECOM_BOT_ID` / `WECOM_BOT_SECRET` (`WECOM_WS_URL` optional for private deployment); multi-bot mode via `wecomBots` in `bots.json` (`wecomBotId`, `wecomSecret`, `wecomWsUrl`). Get the botId/secret from the WeCom admin console under 智能机器人 → 接收消息 → 长连接.
+
 ### Web Platform
 
 A full-featured React SPA served at `/web/` with real-time WebSocket streaming. No external CSS framework — hand-crafted "Midnight Luxe" design system.
@@ -191,6 +203,8 @@ Per-bot config fields (JSON array entries):
 - **`allowedTools`** — Claude tools whitelist (defaults to env var or `Read,Edit,Write,Glob,Grep,Bash`)
 - **`maxTurns`** / **`maxBudgetUsd`** / **`model`** — Claude execution limits (defaults from env vars)
 - **`outputsBaseDir`** — Base directory for output files
+
+The `bots.json` object supports multiple platform arrays: `feishuBots`, `telegramBots`, `wechatBots` (personal WeChat / iLink), `wecomBots` (企业微信 / WeCom long connection), and `webBots` (Web UI only, no IM credentials). All can coexist in one process.
 
 When `BOTS_CONFIG` is set, `FEISHU_APP_ID` / `FEISHU_APP_SECRET` env vars are ignored. Other env vars (`CLAUDE_MAX_TURNS`, `LOG_LEVEL`, etc.) still serve as defaults for any bot field not specified in JSON.
 

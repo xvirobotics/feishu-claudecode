@@ -49,6 +49,22 @@ export interface WechatBotConfig extends BotConfigBase {
   };
 }
 
+/**
+ * WeCom (企业微信) smart-bot config — AIP WebSocket long-connection mode.
+ * Distinct from `WechatBotConfig` (personal WeChat via iLink): this targets the
+ * Enterprise WeChat 智能机器人 long-connection channel (`@wecom/aibot-node-sdk`).
+ */
+export interface WecomBotConfig extends BotConfigBase {
+  wecom: {
+    /** Bot ID from the WeCom admin console. */
+    botId: string;
+    /** Bot Secret (long-connection credential) from the WeCom admin console. */
+    secret: string;
+    /** Optional custom WebSocket URL for privately-deployed WeCom (defaults to wss://openws.work.weixin.qq.com). */
+    wsUrl?: string;
+  };
+}
+
 export interface PeerConfig {
   name: string;
   url: string;
@@ -60,6 +76,7 @@ export interface AppConfig {
   telegramBots: TelegramBotConfig[];
   webBots: BotConfigBase[];
   wechatBots: WechatBotConfig[];
+  wecomBots: WecomBotConfig[];
   /** Dedicated Feishu service app for wiki sync & doc reader (independent of chat bots). */
   feishuService?: {
     appId: string;
@@ -234,6 +251,49 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
   };
 }
 
+// --- WeCom (企业微信) JSON entry (used in bots.json) ---
+
+export interface WecomBotJsonEntry {
+  name: string;
+  description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
+  ttsVoice?: string;
+  /** WeCom bot ID from the admin console. */
+  wecomBotId: string;
+  /** WeCom bot Secret (long-connection credential). */
+  wecomSecret: string;
+  /** Optional custom WebSocket URL for privately-deployed WeCom. */
+  wecomWsUrl?: string;
+  defaultWorkingDirectory: string;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  model?: string;
+  apiKey?: string;
+  outputsBaseDir?: string;
+  downloadsDir?: string;
+}
+
+function wecomBotFromJson(entry: WecomBotJsonEntry): WecomBotConfig {
+  return {
+    name: entry.name,
+    ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
+    ...(entry.icon ? { icon: entry.icon } : {}),
+    ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
+    ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
+    ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
+    wecom: {
+      botId: entry.wecomBotId,
+      secret: entry.wecomSecret,
+      ...(entry.wecomWsUrl ? { wsUrl: entry.wecomWsUrl } : {}),
+    },
+    claude: buildClaudeConfig(entry),
+  };
+}
+
 // --- Shared Claude config builder ---
 
 function buildClaudeConfig(entry: {
@@ -313,6 +373,26 @@ function wechatBotFromEnv(): WechatBotConfig {
   };
 }
 
+function wecomBotFromEnv(): WecomBotConfig {
+  return {
+    name: 'wecom-default',
+    wecom: {
+      botId: required('WECOM_BOT_ID'),
+      secret: required('WECOM_BOT_SECRET'),
+      ...(process.env.WECOM_WS_URL ? { wsUrl: process.env.WECOM_WS_URL } : {}),
+    },
+    claude: {
+      defaultWorkingDirectory: expandUserPath(required('CLAUDE_DEFAULT_WORKING_DIRECTORY')),
+      maxTurns: process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined,
+      maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
+      model: process.env.CLAUDE_MODEL || 'claude-opus-4-6',
+      apiKey: undefined,
+      outputsBaseDir: expandUserPath(process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`)),
+      downloadsDir: expandUserPath(process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`)),
+    },
+  };
+}
+
 // --- New bots.json format ---
 
 export interface PeerJsonEntry {
@@ -326,6 +406,7 @@ export interface BotsJsonNewFormat {
   telegramBots?: TelegramBotJsonEntry[];
   webBots?: WebBotJsonEntry[];
   wechatBots?: WechatBotJsonEntry[];
+  wecomBots?: WecomBotJsonEntry[];
   peers?: PeerJsonEntry[];
 }
 
@@ -336,6 +417,7 @@ export function loadAppConfig(): AppConfig {
   let telegramBots: TelegramBotConfig[] = [];
   let webBots: BotConfigBase[] = [];
   let wechatBots: WechatBotConfig[] = [];
+  let wecomBots: WecomBotConfig[] = [];
   let parsedConfig: unknown;
 
   if (botsConfigPath) {
@@ -365,7 +447,10 @@ export function loadAppConfig(): AppConfig {
       if (cfg.wechatBots) {
         wechatBots = cfg.wechatBots.map(wechatBotFromJson);
       }
-      if (feishuBots.length === 0 && telegramBots.length === 0 && webBots.length === 0 && wechatBots.length === 0) {
+      if (cfg.wecomBots) {
+        wecomBots = cfg.wecomBots.map(wecomBotFromJson);
+      }
+      if (feishuBots.length === 0 && telegramBots.length === 0 && webBots.length === 0 && wechatBots.length === 0 && wecomBots.length === 0) {
         throw new Error(`BOTS_CONFIG file must define at least one bot: ${resolved}`);
       }
     } else {
@@ -382,8 +467,11 @@ export function loadAppConfig(): AppConfig {
     if (process.env.WECHAT_BOT_TOKEN || process.env.WECHAT_ILINK_ENABLED === 'true') {
       wechatBots = [wechatBotFromEnv()];
     }
-    if (feishuBots.length === 0 && telegramBots.length === 0 && wechatBots.length === 0) {
-      throw new Error('No bot configured. Set FEISHU_APP_ID/FEISHU_APP_SECRET, TELEGRAM_BOT_TOKEN, or WECHAT_ILINK_ENABLED=true, or use BOTS_CONFIG for multi-bot mode.');
+    if (process.env.WECOM_BOT_ID) {
+      wecomBots = [wecomBotFromEnv()];
+    }
+    if (feishuBots.length === 0 && telegramBots.length === 0 && wechatBots.length === 0 && wecomBots.length === 0) {
+      throw new Error('No bot configured. Set FEISHU_APP_ID/FEISHU_APP_SECRET, TELEGRAM_BOT_TOKEN, WECOM_BOT_ID/WECOM_BOT_SECRET, or WECHAT_ILINK_ENABLED=true, or use BOTS_CONFIG for multi-bot mode.');
     }
   }
 
@@ -447,6 +535,7 @@ export function loadAppConfig(): AppConfig {
     telegramBots,
     webBots,
     wechatBots,
+    wecomBots,
     feishuService,
     log: {
       level: process.env.LOG_LEVEL || 'info',

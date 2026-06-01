@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { BotsJsonNewFormat, FeishuBotJsonEntry, TelegramBotJsonEntry, WebBotJsonEntry, WechatBotJsonEntry } from '../config.js';
+import type { BotsJsonNewFormat, FeishuBotJsonEntry, TelegramBotJsonEntry, WebBotJsonEntry, WechatBotJsonEntry, WecomBotJsonEntry } from '../config.js';
 
 export function readBotsConfig(configPath: string): BotsJsonNewFormat {
   const raw = fs.readFileSync(configPath, 'utf-8');
@@ -28,13 +28,14 @@ function allBotNames(config: BotsJsonNewFormat): string[] {
     ...(config.telegramBots || []).map((b) => b.name),
     ...(config.webBots || []).map((b) => b.name),
     ...(config.wechatBots || []).map((b) => b.name),
+    ...(config.wecomBots || []).map((b) => b.name),
   ];
 }
 
 export function addBot(
   configPath: string,
-  platform: 'feishu' | 'telegram' | 'web' | 'wechat',
-  entry: FeishuBotJsonEntry | TelegramBotJsonEntry | WebBotJsonEntry | WechatBotJsonEntry,
+  platform: 'feishu' | 'telegram' | 'web' | 'wechat' | 'wecom',
+  entry: FeishuBotJsonEntry | TelegramBotJsonEntry | WebBotJsonEntry | WechatBotJsonEntry | WecomBotJsonEntry,
 ): void {
   const config = readBotsConfig(configPath);
 
@@ -49,14 +50,15 @@ export function addBot(
   } else if (platform === 'telegram') {
     if (!config.telegramBots) config.telegramBots = [];
     config.telegramBots.push(entry as TelegramBotJsonEntry);
+  } else if (platform === 'web') {
+    if (!config.webBots) config.webBots = [];
+    config.webBots.push(entry as WebBotJsonEntry);
+  } else if (platform === 'wecom') {
+    if (!config.wecomBots) config.wecomBots = [];
+    config.wecomBots.push(entry as WecomBotJsonEntry);
   } else {
-    if (platform === 'web') {
-      if (!config.webBots) config.webBots = [];
-      config.webBots.push(entry as WebBotJsonEntry);
-    } else {
-      if (!config.wechatBots) config.wechatBots = [];
-      config.wechatBots.push(entry as WechatBotJsonEntry);
-    }
+    if (!config.wechatBots) config.wechatBots = [];
+    config.wechatBots.push(entry as WechatBotJsonEntry);
   }
 
   writeBotsConfig(configPath, config);
@@ -65,7 +67,7 @@ export function addBot(
 export function removeBot(configPath: string, name: string): boolean {
   const config = readBotsConfig(configPath);
 
-  const totalBots = (config.feishuBots?.length || 0) + (config.telegramBots?.length || 0) + (config.webBots?.length || 0) + (config.wechatBots?.length || 0);
+  const totalBots = (config.feishuBots?.length || 0) + (config.telegramBots?.length || 0) + (config.webBots?.length || 0) + (config.wechatBots?.length || 0) + (config.wecomBots?.length || 0);
 
   // Find and remove from feishu
   if (config.feishuBots) {
@@ -110,6 +112,16 @@ export function removeBot(configPath: string, name: string): boolean {
     }
   }
 
+  if (config.wecomBots) {
+    const idx = config.wecomBots.findIndex((b) => b.name === name);
+    if (idx !== -1) {
+      if (totalBots <= 1) throw new Error('Cannot remove the last bot');
+      config.wecomBots.splice(idx, 1);
+      writeBotsConfig(configPath, config);
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -122,6 +134,7 @@ export function updateBot(configPath: string, name: string, updates: Record<stri
     config.telegramBots,
     config.webBots,
     config.wechatBots,
+    config.wecomBots,
   ];
   for (const bots of platforms) {
     if (!bots) continue;
@@ -147,7 +160,7 @@ export function updateBot(configPath: string, name: string, updates: Record<stri
 export function getBotEntry(
   configPath: string,
   name: string,
-): { platform: 'feishu' | 'telegram' | 'web' | 'wechat'; entry: FeishuBotJsonEntry | TelegramBotJsonEntry | WebBotJsonEntry | WechatBotJsonEntry } | null {
+): { platform: 'feishu' | 'telegram' | 'web' | 'wechat' | 'wecom'; entry: FeishuBotJsonEntry | TelegramBotJsonEntry | WebBotJsonEntry | WechatBotJsonEntry | WecomBotJsonEntry } | null {
   const config = readBotsConfig(configPath);
 
   const feishu = config.feishuBots?.find((b) => b.name === name);
@@ -161,6 +174,9 @@ export function getBotEntry(
 
   const wechat = config.wechatBots?.find((b) => b.name === name);
   if (wechat) return { platform: 'wechat', entry: wechat };
+
+  const wecom = config.wecomBots?.find((b) => b.name === name);
+  if (wecom) return { platform: 'wecom', entry: wecom };
 
   return null;
 }
