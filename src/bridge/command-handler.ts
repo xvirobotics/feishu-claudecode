@@ -228,25 +228,30 @@ export class CommandHandler {
     const { mentions, userId, text } = msg;
     const rawArgs = text.slice('/share-session'.length).trim();
 
-    let targetUserId: string | undefined;
-    let targetUserName: string | undefined;
+    // Collect target users from mentions (bot's own @ is already filtered by event-handler)
+    const targets: Array<{ userId: string; name: string }> = [];
 
-    // 1) Try to extract from @mention (group chats)
     if (mentions && mentions.length > 0) {
-      targetUserId = mentions[0].id?.open_id;
-      targetUserName = mentions[0].name;
-    }
-
-    // 2) Fallback: try to parse open_id from raw text args (private chats)
-    if (!targetUserId && rawArgs) {
-      const match = rawArgs.match(/(ou_[a-z0-9]+)/i);
-      if (match) {
-        targetUserId = match[1];
-        targetUserName = targetUserId; // use open_id as display name
+      for (const m of mentions) {
+        const openId = m.id?.open_id;
+        if (openId && openId !== userId) {
+          targets.push({ userId: openId, name: m.name || openId });
+        }
       }
     }
 
-    if (!targetUserId) {
+    // Fallback: parse open_id from raw text args (private chats, no @mentions)
+    if (targets.length === 0 && rawArgs) {
+      const match = rawArgs.match(/(ou_[a-z0-9]+)/i);
+      if (match) {
+        const openId = match[1];
+        if (openId !== userId) {
+          targets.push({ userId: openId, name: openId });
+        }
+      }
+    }
+
+    if (targets.length === 0) {
       await this.sender.sendTextNotice(
         chatId,
         '❌ 缺少目标用户',
@@ -254,20 +259,9 @@ export class CommandHandler {
           '请使用 `@用户名` 指定接收 session 的用户。',
           '',
           '**用法：**',
-          '- 群聊：`/share-session @用户B`',
+          '- 群聊：`/share-session @用户B @用户C ...`（支持多人）',
           '- 私聊：`/share-session ou_xxxxxxxxxxxx`',
         ].join('\n'),
-        'red',
-      );
-      return;
-    }
-
-    // Don't share with yourself
-    if (targetUserId === userId) {
-      await this.sender.sendTextNotice(
-        chatId,
-        '❌ 不能分享给自己',
-        'Session 分享的目标用户不能是自己。',
         'red',
       );
       return;
@@ -285,21 +279,28 @@ export class CommandHandler {
       return;
     }
 
-    // Create the transfer
-    const displayName = targetUserName || '未知用户';
-    const result = this.shareSession(scopeKey, targetUserId, displayName);
+    // Create transfers for all targets
+    const results: ShareSessionResult[] = [];
+    for (const t of targets) {
+      results.push(this.shareSession(scopeKey, t.userId, t.name));
+    }
+
+    // Build success message
+    const userList = results
+      .map((r, i) => `**${r.targetUserName}** — 分享码 \`${r.shareCode}\``)
+      .join('\n');
 
     await this.sender.sendTextNotice(
       chatId,
-      '✅ Session 已分享',
+      `✅ Session 已分享 (${results.length} 人)`,
       [
-        `已将当前 session 分享给 **${displayName}** (${targetUserId})。`,
+        `已将当前 session 分享给以下用户：`,
         '',
-        `**分享码：** \`${result.shareCode}\``,
+        userList,
         '',
         '**接收方操作：**',
-        `1. **自动领取** — ${displayName} 在任意对话中向本 Bot 发送任意消息即可自动接续`,
-        `2. **手动领取** — 使用 \`/claim ${result.shareCode}\` 明确接续`,
+        '1. **自动领取** — 被分享的用户向本 Bot 发送任意消息即可自动接续',
+        `2. **手动领取** — 使用 \`/claim <分享码>\` 明确接续`,
         '',
         `⏰ 此分享 **30 分钟** 内有效。`,
       ].join('\n'),
