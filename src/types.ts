@@ -108,4 +108,14 @@ export interface IncomingMessage {
     fileKey?: string;
     fileName?: string;
   }>;
+  /**
+   * Raw @mentions from the Feishu message. Each entry contains the
+   * mentioned user's open_id and display name. Used by /share-session
+   * and other commands that need to resolve @mentions to user IDs.
+   */
+  mentions?: Array<{
+    key: string;
+    id: { open_id?: string; union_id?: string };
+    name: string;
+  }>;
 }

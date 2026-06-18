@@ -16,16 +16,18 @@ import type {
 } from '../engines/index.js';
 import { createEngine, resolveEngineName, StreamProcessor, SessionManager } from '../engines/index.js';
 import { ExecutorRegistry } from '../engines/claude/executor-registry.js';
-import { composeScopeKey } from '../session/compose-key.js';
+import { composeScopeKey, chatIdFromScopeKey } from '../session/compose-key.js';
 import { RateLimiter } from './rate-limiter.js';
 import { OutputsManager } from './outputs-manager.js';
 import { MemoryClient } from '../memory/memory-client.js';
 import { AuditLogger } from '../utils/audit-logger.js';
 import { CommandHandler } from './command-handler.js';
+import type { ShareSessionResult } from './command-handler.js';
 import { OutputHandler } from './output-handler.js';
 import { CostTracker } from '../utils/cost-tracker.js';
 import { metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
+import { SessionSharing } from './session-sharing.js';
 
 const TASK_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 24 hours
 const QUESTION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes for user to answer
@@ -211,6 +213,7 @@ export class MessageBridge {
   private outputHandler: OutputHandler;
   readonly costTracker: CostTracker;
   private sessionRegistry?: SessionRegistry;
+  private sessionSharing = new SessionSharing();
   private runningTasks = new Map<string, RunningTask>(); // keyed by scopeKey (chatId or chatId:userId under perUserContext)
   private messageQueues = new Map<string, IncomingMessage[]>(); // per-scopeKey message queue
   private pendingBatches = new Map<string, PendingBatch>(); // media debounce batches — chatId-keyed (per-chat by design, see Phase 2 notes)
@@ -292,6 +295,8 @@ export class MessageBridge {
       (scopeKey) => this.stopTask(scopeKey),
       (scopeKey) => this.clearChatQueue(scopeKey),
       (scopeKey, reason) => this.releaseChatExecutor(scopeKey, reason),
+      (sourceScopeKey, targetUserId, targetUserName) => this.shareSession(sourceScopeKey, targetUserId, targetUserName),
+      (shareCode, targetScopeKey) => this.claimSession(shareCode, targetScopeKey),
     );
 
     this.outputHandler = new OutputHandler(logger, sender, this.outputsManager);
@@ -372,6 +377,98 @@ export class MessageBridge {
   /** Expose session manager for cross-platform session linking. */
   getSessionManager(): SessionManager {
     return this.sessionManager;
+  }
+
+  /**
+   * Create a pending session transfer. The source user's current sessionId
+   * is recorded, and the target user can claim it by sending any message
+   * or using `/claim <code>`.
+   *
+   * Called by CommandHandler when a user runs `/share-session @target`.
+   */
+  shareSession(sourceScopeKey: string, targetUserId: string, targetUserName: string): ShareSessionResult {
+    const session = this.sessionManager.getSession(sourceScopeKey);
+    const shareCode = this.sessionSharing.createTransfer(
+      sourceScopeKey,
+      session.sessionId || '',
+      targetUserId,
+    );
+    this.logger.info(
+      { sourceScopeKey, targetUserId, targetUserName, shareCode },
+      'Session share created',
+    );
+    return { shareCode, targetUserId, targetUserName };
+  }
+
+  /**
+   * Claim a pending session transfer by share code. This links the target
+   * user's scopeKey to the source user's Claude sessionId.
+   *
+   * Called by CommandHandler when someone runs `/claim <code>`.
+   *
+   * Returns the target scopeKey if successfully claimed, undefined otherwise.
+   */
+  claimSession(shareCode: string, targetScopeKey: string): string | undefined {
+    const transfer = this.sessionSharing.claimByCode(shareCode);
+    if (!transfer) return undefined;
+
+    // Copy sessionId to target scopeKey
+    this.sessionManager.setSessionId(targetScopeKey, transfer.sessionId);
+
+    // Also link in SessionRegistry if available
+    if (this.sessionRegistry) {
+      const targetChatId = chatIdFromScopeKey(targetScopeKey);
+      // Find the registry session that holds the source claudeSessionId
+      const sessions = this.sessionRegistry.listSessions(this.config.name);
+      const sourceSession = sessions.find(
+        (s) => s.claudeSessionId === transfer.sessionId,
+      );
+      if (sourceSession) {
+        this.sessionRegistry.linkChatId(sourceSession.id, targetChatId);
+      }
+    }
+
+    this.logger.info(
+      { shareCode, targetScopeKey, sessionId: transfer.sessionId },
+      'Session claimed by code',
+    );
+    return targetScopeKey;
+  }
+
+  /**
+   * Check if the incoming message's user has a pending session transfer.
+   * If so, auto-claim it (link their scope to the source session) and
+   * return the linked scopeKey. Returns undefined if no pending transfer.
+   *
+   * Called in handleMessage BEFORE normal message processing, so the
+   * target user's first message auto-claims instead of starting fresh.
+   */
+  private tryAutoClaimSession(scopeKey: string, userId: string): string | undefined {
+    const transfer = this.sessionSharing.claimByUserId(userId);
+    if (!transfer) return undefined;
+
+    // Copy sessionId to target scopeKey
+    this.sessionManager.setSessionId(scopeKey, transfer.sessionId);
+
+    // Also link in SessionRegistry if available
+    if (this.sessionRegistry) {
+      const targetChatId = scopeKey.includes(':')
+        ? scopeKey.split(':')[0]
+        : scopeKey;
+      const sessions = this.sessionRegistry.listSessions(this.config.name);
+      const sourceSession = sessions.find(
+        (s) => s.claudeSessionId === transfer.sessionId,
+      );
+      if (sourceSession) {
+        this.sessionRegistry.linkChatId(sourceSession.id, targetChatId);
+      }
+    }
+
+    this.logger.info(
+      { userId, scopeKey, sessionId: transfer.sessionId, shareCode: transfer.shareCode },
+      'Session auto-claimed on first message',
+    );
+    return scopeKey;
   }
 
   /**
@@ -1330,6 +1427,26 @@ export class MessageBridge {
       }
       await this.executeQuery(msg);
       return;
+    }
+
+    // Auto-claim pending session transfer: if a user has been shared a session
+    // and sends their first message (non-command), link their scopeKey to the
+    // shared sessionId BEFORE any other processing. This runs after the
+    // command block so /claim still works explicitly.
+    const claimed = this.tryAutoClaimSession(scopeKey, userId);
+    if (claimed) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '🔄 Session 已接续',
+        [
+          '已自动接续分享给你的 session！现在你可以继续之前的对话了。',
+          '',
+          '发送消息即可开始对话。',
+        ].join('\n'),
+        'green',
+      );
+      // Don't return — let the message flow through to executeQuery,
+      // which will now use the linked sessionId to resume the conversation.
     }
 
     // Between-turn AskUserQuestion reply — must run BEFORE the

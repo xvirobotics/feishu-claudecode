@@ -9,6 +9,17 @@ import { AuditLogger } from '../utils/audit-logger.js';
 import type { DocSync } from '../sync/doc-sync.js';
 import { composeScopeKey } from '../session/compose-key.js';
 
+/**
+ * Callback result from a successful session share.
+ * `shareCode` is a human-readable code the source user can share
+ * with the target user (alternative to auto-claim).
+ */
+export interface ShareSessionResult {
+  shareCode: string;
+  targetUserId: string;
+  targetUserName: string;
+}
+
 export class CommandHandler {
   private docSync: DocSync | null = null;
 
@@ -36,6 +47,17 @@ export class CommandHandler {
      * tied to the old session are torn down with the conversation.
      */
     private releaseExecutor: (scopeKey: string, reason: string) => Promise<void>,
+    /**
+     * Create a pending session transfer from the current scope to a
+     * target Feishu user. Returns share metadata so the handler can
+     * confirm to the source user.
+     */
+    private shareSession: (sourceScopeKey: string, targetUserId: string, targetUserName: string) => ShareSessionResult,
+    /**
+     * Claim a pending session transfer by share code. Returns the
+     * target scopeKey if successfully claimed, undefined otherwise.
+     */
+    private claimSession: (shareCode: string, targetScopeKey: string) => string | undefined,
   ) {}
 
   /** Set the doc sync service (optional, only available for Feishu bots). */
@@ -64,6 +86,8 @@ export class CommandHandler {
           '`/model` - Show current engine/model; `/model list` - Available options',
           '`/model claude`, `/model kimi`, or `/model codex` - Switch engine (resets session)',
           '`/model <name>` - Set model for current engine',
+          '`/share-session @user` - Share current session with another user',
+          '`/claim <code>` - Claim a shared session by code',
           '`/memory` - Memory document commands',
           '`/help` - Show this help message',
           '',
@@ -170,10 +194,180 @@ export class CommandHandler {
         return true;
       }
 
+      case '/share-session': {
+        await this.handleShareSession(msg, scopeKey, chatId);
+        return true;
+      }
+
+      case '/claim': {
+        await this.handleClaim(msg, scopeKey, chatId);
+        return true;
+      }
+
       default:
         // Unrecognized /xxx commands — not handled here, pass through to Claude
         return false;
     }
+  }
+
+  /**
+   * /share-session @用户B
+   *
+   * Creates a pending transfer from the current user's session to the
+   * mentioned target user. The target user can either:
+   *   a) Send ANY message to the bot — the session auto-links, or
+   *   b) Use `/claim <code>` explicitly.
+   *
+   * Transfers expire after 30 minutes.
+   */
+  private async handleShareSession(
+    msg: IncomingMessage,
+    scopeKey: string,
+    chatId: string,
+  ): Promise<void> {
+    const { mentions, userId, text } = msg;
+    const rawArgs = text.slice('/share-session'.length).trim();
+
+    let targetUserId: string | undefined;
+    let targetUserName: string | undefined;
+
+    // 1) Try to extract from @mention (group chats)
+    if (mentions && mentions.length > 0) {
+      targetUserId = mentions[0].id?.open_id;
+      targetUserName = mentions[0].name;
+    }
+
+    // 2) Fallback: try to parse open_id from raw text args (private chats)
+    if (!targetUserId && rawArgs) {
+      const match = rawArgs.match(/(ou_[a-z0-9]+)/i);
+      if (match) {
+        targetUserId = match[1];
+        targetUserName = targetUserId; // use open_id as display name
+      }
+    }
+
+    if (!targetUserId) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ 缺少目标用户',
+        [
+          '请使用 `@用户名` 指定接收 session 的用户。',
+          '',
+          '**用法：**',
+          '- 群聊：`/share-session @用户B`',
+          '- 私聊：`/share-session ou_xxxxxxxxxxxx`',
+        ].join('\n'),
+        'red',
+      );
+      return;
+    }
+
+    // Don't share with yourself
+    if (targetUserId === userId) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ 不能分享给自己',
+        'Session 分享的目标用户不能是自己。',
+        'red',
+      );
+      return;
+    }
+
+    // Check that the current user has an active session
+    const session = this.sessionManager.getSession(scopeKey);
+    if (!session.sessionId) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ 无活跃 Session',
+        '当前对话还没有创建 session。请先发送一条消息开始对话，然后再分享。',
+        'red',
+      );
+      return;
+    }
+
+    // Create the transfer
+    const displayName = targetUserName || '未知用户';
+    const result = this.shareSession(scopeKey, targetUserId, displayName);
+
+    await this.sender.sendTextNotice(
+      chatId,
+      '✅ Session 已分享',
+      [
+        `已将当前 session 分享给 **${displayName}** (${targetUserId})。`,
+        '',
+        `**分享码：** \`${result.shareCode}\``,
+        '',
+        '**接收方操作：**',
+        `1. **自动领取** — ${displayName} 在任意对话中向本 Bot 发送任意消息即可自动接续`,
+        `2. **手动领取** — 使用 \`/claim ${result.shareCode}\` 明确接续`,
+        '',
+        `⏰ 此分享 **30 分钟** 内有效。`,
+      ].join('\n'),
+      'green',
+    );
+  }
+
+  /**
+   * /claim <shareCode>
+   *
+   * Explicitly claim a pending session transfer. The target user runs this
+   * in their own chat with the bot. On success, their session is linked to
+   * the source user's Claude sessionId.
+   */
+  private async handleClaim(
+    msg: IncomingMessage,
+    scopeKey: string,
+    chatId: string,
+  ): Promise<void> {
+    const args = msg.text.slice('/claim'.length).trim();
+
+    if (!args) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '📋 领取 Session',
+        [
+          '**用法：** `/claim <分享码>`',
+          '',
+          '输入发起方提供的 6 位分享码来接续对方分享的 session。',
+          '',
+          '**提示：** 如果你是被分享的目标用户，直接发送任意消息即可自动接续，无需手动输入分享码。',
+        ].join('\n'),
+        'blue',
+      );
+      return;
+    }
+
+    const shareCode = args.split(/\s+/)[0].toUpperCase();
+    const claimedScopeKey = this.claimSession(shareCode, scopeKey);
+
+    if (!claimedScopeKey) {
+      await this.sender.sendTextNotice(
+        chatId,
+        '❌ 领取失败',
+        [
+          `分享码 \`${shareCode}\` 无效或已过期。`,
+          '',
+          '可能的原因：',
+          '- 分享码输入错误（注意：6 位字母+数字）',
+          '- 分享已过期（超过 30 分钟）',
+          '- 该分享已被其他人领取',
+          '- 你不在该分享的目标用户列表中',
+        ].join('\n'),
+        'red',
+      );
+      return;
+    }
+
+    await this.sender.sendTextNotice(
+      chatId,
+      '✅ Session 已接续',
+      [
+        '已成功接续分享的 session！',
+        '',
+        '现在你可以继续之前的对话了。发送任意消息即可开始。',
+      ].join('\n'),
+      'green',
+    );
   }
 
   private async handleMemoryCommand(chatId: string, args: string): Promise<void> {

@@ -282,7 +282,12 @@ export function createEventDispatcher(
           }
         }
 
-        onMessage({ messageId, chatId, chatType, userId, text, imageKey, fileKey, fileName, extraMedia });
+        const rawMentions: IncomingMessage['mentions'] = mentions?.map((m: any) => ({
+          key: m.key,
+          id: { open_id: m.id?.open_id, union_id: m.id?.union_id },
+          name: m.name,
+        }));
+        onMessage({ messageId, chatId, chatType, userId, text, imageKey, fileKey, fileName, extraMedia, mentions: rawMentions });
       } catch (err) {
         logger.error({ err }, 'Error handling message event');
       }
