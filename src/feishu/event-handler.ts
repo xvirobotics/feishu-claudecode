@@ -282,11 +282,13 @@ export function createEventDispatcher(
           }
         }
 
-        const rawMentions: IncomingMessage['mentions'] = mentions?.map((m: any) => ({
-          key: m.key,
-          id: { open_id: m.id?.open_id, union_id: m.id?.union_id },
-          name: m.name,
-        }));
+        const rawMentions: IncomingMessage['mentions'] = mentions
+          ?.filter((m: any) => m.id?.open_id !== botOpenId) // exclude bot's own @mention
+          .map((m: any) => ({
+            key: m.key,
+            id: { open_id: m.id?.open_id, union_id: m.id?.union_id },
+            name: m.name,
+          }));
         onMessage({ messageId, chatId, chatType, userId, text, imageKey, fileKey, fileName, extraMedia, mentions: rawMentions });
       } catch (err) {
         logger.error({ err }, 'Error handling message event');
