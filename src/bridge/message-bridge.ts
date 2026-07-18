@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { BotConfigBase } from '../config.js';
 import type { Logger } from '../utils/logger.js';
@@ -163,6 +164,16 @@ export interface ActivityEventData {
   durationMs?: number;
   errorMessage?: string;
   timestamp: number;
+}
+
+/**
+ * Whether a downloaded file lives in the system temp dir and should be
+ * removed once the task finishes. Files downloaded into a bot-configured
+ * persistent downloadsDir (e.g. <project>/inputs) must survive the task so
+ * the user can refer back to them in later messages without re-uploading.
+ */
+export function isTransientDownload(filePath: string): boolean {
+  return filePath.startsWith(os.tmpdir() + path.sep);
 }
 
 export class MessageBridge {
@@ -2474,14 +2485,17 @@ export class MessageBridge {
         metrics.setGauge('metabot_active_tasks', this.runningTasks.size);
         this.processQueue(chatId);
       }
-      if (imagePath) {
+      // Only remove downloads that live in the system temp dir; files saved
+      // into a persistent downloadsDir must survive the task (see
+      // isTransientDownload).
+      if (imagePath && isTransientDownload(imagePath)) {
         try { fs.unlinkSync(imagePath); } catch { /* ignore */ }
       }
-      if (filePath) {
+      if (filePath && isTransientDownload(filePath)) {
         try { fs.unlinkSync(filePath); } catch { /* ignore */ }
       }
       for (const p of extraPaths) {
-        try { fs.unlinkSync(p); } catch { /* ignore */ }
+        if (isTransientDownload(p)) { try { fs.unlinkSync(p); } catch { /* ignore */ } }
       }
       try { this.outputsManager.cleanup(outputsDir); } catch { /* ignore */ }
     }
