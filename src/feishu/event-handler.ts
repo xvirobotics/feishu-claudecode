@@ -68,6 +68,40 @@ function clearCachedMedia(chatId: string, userId: string): void {
   pendingMediaCache.delete(cacheMediaKey(chatId, userId));
 }
 
+// Feishu delivers webhook events at-least-once: when the handler is slow to
+// ack (e.g. a long-running task or media download), the same message event is
+// redelivered. Track recently seen message_ids so retries are dropped instead
+// of being processed as new messages.
+const PROCESSED_MSG_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const PROCESSED_MSG_MAX_ENTRIES = 500;
+
+/**
+ * Create a per-dispatcher message dedup checker. Per-dispatcher (rather than
+ * module-level) state so that two bots receiving events for the same
+ * message_id (e.g. one group message @-mentioning both bots) don't suppress
+ * each other. Returns true when messageId was already seen within the TTL,
+ * and records it otherwise.
+ */
+export function createMessageDeduper(
+  ttlMs: number = PROCESSED_MSG_TTL_MS,
+  maxEntries: number = PROCESSED_MSG_MAX_ENTRIES,
+): (messageId: string) => boolean {
+  const seen = new Map<string, number>(); // messageId -> first-seen ts
+  return (messageId) => {
+    const now = Date.now();
+    // Opportunistic cleanup of stale entries to bound memory
+    if (seen.size > maxEntries) {
+      for (const [id, ts] of seen) {
+        if (now - ts > ttlMs) seen.delete(id);
+      }
+    }
+    const ts = seen.get(messageId);
+    if (ts !== undefined && now - ts < ttlMs) return true;
+    seen.set(messageId, now);
+    return false;
+  };
+}
+
 async function isPrivateLikeGroup(chatId: string, sender: MessageSender): Promise<boolean> {
   const cached = memberCountCache.get(chatId);
   if (cached && Date.now() - cached.ts < MEMBER_COUNT_CACHE_TTL_MS) {
@@ -194,6 +228,7 @@ export function createEventDispatcher(
   onGroupReplyModeNotice?: GroupReplyModeNoticeHandler,
 ): lark.EventDispatcher {
   const dispatcher = new lark.EventDispatcher({});
+  const isDuplicateMessage = createMessageDeduper();
 
   // Register the card action trigger handler (fired when a user clicks a button
   // on an interactive card). The lark SDK types omit this event so we cast.
@@ -255,6 +290,14 @@ export function createEventDispatcher(
         const chatId = message.chat_id;
         const chatType = message.chat_type;
         const messageId = message.message_id;
+
+        // Drop redelivered events: Feishu retries delivery when the ack is
+        // slow, and a retry must not become a second task.
+        if (messageId && isDuplicateMessage(messageId)) {
+          logger.debug({ messageId, msgType }, 'Duplicate message delivery ignored');
+          return;
+        }
+
         const mentions = message.mentions;
 
         let commandText = '';
