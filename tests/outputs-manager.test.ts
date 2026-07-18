@@ -35,12 +35,12 @@ describe('OutputsManager', () => {
       expect(dir).toBe(path.join(tmpDir, 'chat-123'));
     });
 
-    it('keeps recent files in existing directory', () => {
+    it('clears leftover files from previous turn', () => {
       const dir = manager.prepareDir('chat-123');
       fs.writeFileSync(path.join(dir, 'recent.txt'), 'recent content');
       const dir2 = manager.prepareDir('chat-123');
-      // Recent files should be preserved (within retention window)
-      expect(fs.readdirSync(dir2)).toContain('recent.txt');
+      // Leftovers were already delivered last turn; keeping them would re-send
+      expect(fs.readdirSync(dir2)).not.toContain('recent.txt');
     });
 
     it('removes old files beyond retention window', () => {

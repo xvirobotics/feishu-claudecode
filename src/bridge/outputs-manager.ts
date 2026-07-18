@@ -25,7 +25,7 @@ export class OutputsManager {
     private logger: Logger,
   ) {}
 
-  /** Create a fresh per-chat outputs directory, preserving recent files. */
+  /** Create a fresh (empty) per-chat outputs directory for the upcoming turn. */
   prepareDir(chatId: string): string {
     const root = path.resolve(this.baseDir);
     const dir = resolveWithinRoot(root, chatId);
@@ -40,19 +40,17 @@ export class OutputsManager {
       this.pendingCleanups.delete(dir);
     }
 
-    // Only remove files older than RETENTION_MS, keep recent ones
+    // Start the turn with an empty send dir. Any file still here is a leftover
+    // from a previous turn (already delivered); keeping it would make this turn
+    // re-send it — the duplicate-image bug. Turns are serialized per chat, so
+    // nothing here belongs to an in-flight turn — safe to remove all files.
     try {
       if (fs.existsSync(dir)) {
-        const now = Date.now();
         const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
           if (!entry.isFile()) continue;
-          const filePath = path.join(dir, entry.name);
           try {
-            const stat = fs.statSync(filePath);
-            if (now - stat.mtimeMs > RETENTION_MS) {
-              fs.unlinkSync(filePath);
-            }
+            fs.unlinkSync(path.join(dir, entry.name));
           } catch { /* ignore individual file errors */ }
         }
       } else {
