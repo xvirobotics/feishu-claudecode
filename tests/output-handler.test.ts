@@ -155,3 +155,82 @@ describe('OutputHandler.sendOutputFiles', () => {
     expect(notices[0].content).not.toMatch(/files because they/);
   });
 });
+
+/**
+ * Resend prevention across turns.
+ *
+ * prepareDir keeps files younger than the 5-minute retention window, and
+ * scanOutputs is a stateless directory walk — so without binding delivery
+ * to deletion, EVERY follow-up message inside that window replays the whole
+ * outputs directory to the chat ("thanks" → here is report.pdf again).
+ * Delivered files (sent, text-fallback, or accounted for via the oversized
+ * notice) are therefore unlinked; files whose send THREW stay on disk so the
+ * next turn retries them.
+ */
+describe('OutputHandler resend prevention', () => {
+  let tmpDir:  string;
+  let outputs: OutputsManager;
+  let chatDir: string;
+
+  beforeEach(() => {
+    tmpDir  = fs.mkdtempSync(path.join(os.tmpdir(), 'metabot-output-resend-'));
+    outputs = new OutputsManager(tmpDir, mockLogger);
+    chatDir = outputs.prepareDir('chat-1');
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('does not resend a delivered file on the next turn within the retention window', async () => {
+    fs.writeFileSync(path.join(chatDir, 'report.pdf'), Buffer.alloc(1024));
+    const { sender, sends } = buildSender();
+    const handler = new OutputHandler(mockLogger, sender, outputs);
+
+    await handler.sendOutputFiles('chat-1', chatDir, mockProcessor, emptyState());
+    expect(sends).toHaveLength(1);  // first turn delivers it
+
+    // Follow-up message moments later: retention keeps recent files, so only
+    // delivery-bound deletion stands between the user and a replay.
+    const chatDir2 = outputs.prepareDir('chat-1');
+    await handler.sendOutputFiles('chat-1', chatDir2, mockProcessor, emptyState());
+    expect(sends).toHaveLength(1);  // nothing resent
+  });
+
+  it('does not repeat the oversized notice on the next turn', async () => {
+    fs.writeFileSync(path.join(chatDir, 'huge.png'), Buffer.alloc(10 * 1024 * 1024 + 1));
+    const { sender, notices } = buildSender();
+    const handler = new OutputHandler(mockLogger, sender, outputs);
+
+    await handler.sendOutputFiles('chat-1', chatDir, mockProcessor, emptyState());
+    expect(notices).toHaveLength(1);
+
+    await handler.sendOutputFiles('chat-1', outputs.prepareDir('chat-1'), mockProcessor, emptyState());
+    expect(notices).toHaveLength(1);  // still the single original notice
+  });
+
+  it('keeps a file whose send threw, so the next turn can retry it', async () => {
+    fs.writeFileSync(path.join(chatDir, 'flaky.pdf'), Buffer.alloc(1024));
+    const sends: string[] = [];
+    let calls = 0;
+    const throwingSender = {
+      sendTextNotice: async () => {},
+      sendText:       async () => {},
+      sendImageFile:  async () => true,
+      sendLocalFile:  async (_chat: string, filePath: string) => {
+        calls++;
+        if (calls === 1) throw new Error('feishu hiccup');
+        sends.push(filePath);
+        return true;
+      },
+    } as any;
+    const handler = new OutputHandler(mockLogger, throwingSender, outputs);
+
+    await handler.sendOutputFiles('chat-1', chatDir, mockProcessor, emptyState());
+    expect(sends).toHaveLength(0);                                    // first turn failed
+    expect(fs.existsSync(path.join(chatDir, 'flaky.pdf'))).toBe(true); // file survives for retry
+
+    await handler.sendOutputFiles('chat-1', outputs.prepareDir('chat-1'), mockProcessor, emptyState());
+    expect(sends).toHaveLength(1);  // retry succeeded on the follow-up turn
+  });
+});

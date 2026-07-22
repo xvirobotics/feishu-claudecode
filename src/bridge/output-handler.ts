@@ -49,10 +49,12 @@ export class OutputHandler {
     // 1. Scan the outputs directory for any files the agent placed there
     const outputFiles = this.outputsManager.scanOutputs(outputsDir);
     for (const file of outputFiles) {
+      let delivered = false;
       try {
         if (file.isImage && file.sizeBytes <= IMAGE_MAX_BYTES) {
           this.logger.info({ filePath: file.filePath }, 'Sending output image from outputs dir');
           await this.sender.sendImageFile(chatId, file.filePath);
+          delivered = true;
         } else if (!file.isImage && file.sizeBytes <= FILE_MAX_BYTES) {
           this.logger.info({ filePath: file.filePath }, 'Sending output file from outputs dir');
           const sent = await this.sender.sendLocalFile(chatId, file.filePath, file.fileName);
@@ -61,15 +63,25 @@ export class OutputHandler {
             const content = fs.readFileSync(file.filePath, 'utf-8');
             await this.sender.sendText(chatId, `📄 ${file.fileName}\n\n${content}`);
           }
+          delivered = true;
         } else {
           // Track for a single end-of-batch notice so users know files exist
           // but were dropped — silently logging warn was the original bug.
           this.logger.warn({ filePath: file.filePath, sizeBytes: file.sizeBytes }, 'Output file too large to send');
           oversized.push({ fileName: file.fileName, sizeBytes: file.sizeBytes, isImage: file.isImage });
+          delivered = true;
         }
         sentPaths.add(file.filePath);
       } catch (err) {
         this.logger.warn({ err, filePath: file.filePath }, 'Failed to send output file');
+      }
+      // Bind delivery to deletion: once a file is sent (or accounted for via
+      // the oversized notice), remove it so the next turn does not rescan
+      // and resend it. Without this, every subsequent user message within
+      // the 5-min retention window replays the entire outputs directory.
+      if (delivered) {
+        try { fs.unlinkSync(file.filePath); }
+        catch (err) { this.logger.warn({ err, filePath: file.filePath }, 'Failed to unlink sent output file'); }
       }
     }
 
