@@ -142,5 +142,10 @@ On failure it prints only bounded PM2 and log diagnostics. It does not install,
 stop, or delete a Core/MetaMemory service. Configure an existing Core with
 `METABOT_CORE_URL` and `METABOT_CORE_TOKEN`; standalone port `8100` is obsolete.
 
+The generated wrapper records the absolute, quoted Git Bash path. The legacy
+`C:\Windows\System32\bash.exe` WSL launcher is intentionally rejected because
+it cannot execute the wrapper's Windows-style script path. If Git Bash is
+missing, install Git for Windows and rerun `install.ps1`.
+
 Next: [Quick Setup](quick-setup.md) or the detailed
 [Feishu App Setup](feishu-app-setup.md).

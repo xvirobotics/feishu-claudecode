@@ -210,6 +210,72 @@ function Write-BridgeDiagnostics {
     }
 }
 
+function Test-GitBashPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $fullPath = [System.IO.Path]::GetFullPath($Path)
+        $system32 = [System.IO.Path]::GetFullPath((Join-Path $env:WINDIR "System32"))
+        if ($fullPath.StartsWith($system32, [System.StringComparison]::OrdinalIgnoreCase)) {
+            # C:\Windows\System32\bash.exe is the legacy WSL launcher. It
+            # cannot execute a Windows path such as C:\Users\...\metabot.
+            return $false
+        }
+        if ([System.IO.Path]::GetFileName($fullPath) -ine "bash.exe") {
+            return $false
+        }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Resolve-GitBashPath {
+    $roots = New-Object System.Collections.Generic.List[string]
+
+    # Derive the installation root from the Git executable first. This works
+    # for custom locations as well as the default "Program Files\Git" path.
+    try {
+        $gitCommand = Get-Command git -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1
+        $gitDir = Split-Path -Parent $gitCommand.Source
+        $gitDirName = Split-Path -Leaf $gitDir
+        if ($gitDirName -ieq "cmd" -or $gitDirName -ieq "bin") {
+            $candidateRoot = Split-Path -Parent $gitDir
+            if ((Split-Path -Leaf $candidateRoot) -ieq "mingw64") {
+                $candidateRoot = Split-Path -Parent $candidateRoot
+            }
+            $roots.Add($candidateRoot)
+        }
+    } catch {}
+
+    if ($env:ProgramFiles) {
+        $roots.Add((Join-Path $env:ProgramFiles "Git"))
+    }
+    if (${env:ProgramFiles(x86)}) {
+        $roots.Add((Join-Path ${env:ProgramFiles(x86)} "Git"))
+    }
+    if ($env:LOCALAPPDATA) {
+        $roots.Add((Join-Path $env:LOCALAPPDATA "Programs\Git"))
+    }
+
+    $seen = @{}
+    foreach ($root in $roots) {
+        foreach ($relativePath in @("bin\bash.exe", "usr\bin\bash.exe")) {
+            $candidate = Join-Path $root $relativePath
+            if ($seen.ContainsKey($candidate)) { continue }
+            $seen[$candidate] = $true
+            if (Test-GitBashPath $candidate) {
+                return [System.IO.Path]::GetFullPath($candidate)
+            }
+        }
+    }
+    return $null
+}
+
 function Get-KimiCodeVersion {
     if (-not (Test-Command "kimi")) { return $null }
     try {
@@ -866,12 +932,12 @@ if ($DeployWorkDir) {
 $LocalBin = Join-Path $env:USERPROFILE ".local\bin"
 New-Item -ItemType Directory -Path $LocalBin -Force | Out-Null
 
-$HasBash = Test-Command "bash"
+$GitBashPath = Resolve-GitBashPath
 
 $cliTools = @("metabot")
 if ($HasFeishu) { $cliTools += "fd" }
 
-if ($HasBash) {
+if ($GitBashPath) {
     foreach ($cli in $cliTools) {
         $srcScript = Join-Path $MetabotHome "bin\$cli"
         if (Test-Path $srcScript) {
@@ -884,8 +950,9 @@ if ($HasBash) {
                 (Get-Content $scriptPath -Raw) -replace 'changeme', $ApiSecret | Set-Content $scriptPath -NoNewline
             }
 
-            # Create .cmd wrapper: @bash "%~dp0metabot" %*
-            $cmdContent = "@bash `"%~dp0$cli`" %*"
+            # Pin the wrapper to Git Bash. Quoting both absolute paths keeps
+            # installs under "Program Files" and user profiles with spaces safe.
+            $cmdContent = "@`"$GitBashPath`" `"%~dp0$cli`" %*"
             $cmdContent | Out-File -FilePath (Join-Path $LocalBin "$cli.cmd") -Encoding ascii -NoNewline
         }
     }
@@ -912,8 +979,8 @@ if ($HasBash) {
         Write-Success "metabot CLI installed to $LocalBin (with .cmd wrapper)"
     }
 } else {
-    Write-Warn "Git Bash not found. The metabot CLI requires bash."
-    Write-Warn "Install Git for Windows (https://git-scm.com) to enable CLI tools."
+    Write-Warn "Git Bash was not found. The WSL/System32 bash launcher is not compatible with Windows CLI wrappers."
+    Write-Warn "Install Git for Windows (https://git-scm.com) and re-run this installer."
 }
 
 # Persist METABOT_HOME for non-default install paths so the CLI tool

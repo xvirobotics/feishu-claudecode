@@ -137,4 +137,9 @@ PM2 信息和日志。PowerShell 安装器不会安装、停止或删除 Core/Me
 服务；请通过 `METABOT_CORE_URL` 和 `METABOT_CORE_TOKEN` 连接已有 Core，
 旧的独立 `8100` 端口已废弃。
 
+生成的 wrapper 会保存带引号的 Git Bash 绝对路径。安装器会主动拒绝旧的
+`C:\Windows\System32\bash.exe` WSL launcher，因为它无法执行 wrapper 中的
+Windows 风格脚本路径。若未找到 Git Bash，请安装 Git for Windows 后重新运行
+`install.ps1`。
+
 下一步：[快速配置](quick-setup.md)或详细的[飞书应用配置](feishu-app-setup.md)。
