@@ -22,6 +22,10 @@ interface OversizedFile {
   fileName:  string;
   sizeBytes: number;
   isImage:   boolean;
+  /** Set only for outputs-dir files — these are deleted once the notice
+   *  reaches the user. Fallback-scan images live outside the outputs dir
+   *  and are never deleted. */
+  filePath?: string;
 }
 
 function formatBytes(bytes: number): string {
@@ -53,32 +57,35 @@ export class OutputHandler {
       try {
         if (file.isImage && file.sizeBytes <= IMAGE_MAX_BYTES) {
           this.logger.info({ filePath: file.filePath }, 'Sending output image from outputs dir');
-          await this.sender.sendImageFile(chatId, file.filePath);
-          delivered = true;
+          delivered = await this.sender.sendImageFile(chatId, file.filePath);
         } else if (!file.isImage && file.sizeBytes <= FILE_MAX_BYTES) {
           this.logger.info({ filePath: file.filePath }, 'Sending output file from outputs dir');
           const sent = await this.sender.sendLocalFile(chatId, file.filePath, file.fileName);
-          if (!sent && OutputsManager.isTextFile(file.extension) && file.sizeBytes < 30 * 1024) {
+          if (sent) {
+            delivered = true;
+          } else if (OutputsManager.isTextFile(file.extension) && file.sizeBytes < 30 * 1024) {
             this.logger.info({ filePath: file.filePath }, 'File upload failed, sending as text message');
             const content = fs.readFileSync(file.filePath, 'utf-8');
             await this.sender.sendText(chatId, `📄 ${file.fileName}\n\n${content}`);
+            delivered = true;
           }
-          delivered = true;
         } else {
           // Track for a single end-of-batch notice so users know files exist
           // but were dropped — silently logging warn was the original bug.
+          // Deletion is deferred until that notice actually reaches the user.
           this.logger.warn({ filePath: file.filePath, sizeBytes: file.sizeBytes }, 'Output file too large to send');
-          oversized.push({ fileName: file.fileName, sizeBytes: file.sizeBytes, isImage: file.isImage });
-          delivered = true;
+          oversized.push({ fileName: file.fileName, sizeBytes: file.sizeBytes, isImage: file.isImage, filePath: file.filePath });
         }
         sentPaths.add(file.filePath);
       } catch (err) {
         this.logger.warn({ err, filePath: file.filePath }, 'Failed to send output file');
       }
-      // Bind delivery to deletion: once a file is sent (or accounted for via
-      // the oversized notice), remove it so the next turn does not rescan
-      // and resend it. Without this, every subsequent user message within
-      // the 5-min retention window replays the entire outputs directory.
+      // Bind delivery to deletion: only once a file actually reached the user
+      // (send resolved true, or the text fallback succeeded) remove it so the
+      // next turn does not rescan and resend it. Without this, every user
+      // message within the 5-min retention window replays the entire outputs
+      // directory. Files whose send returned false or threw stay on disk so
+      // the next turn retries them.
       if (delivered) {
         try { fs.unlinkSync(file.filePath); }
         catch (err) { this.logger.warn({ err, filePath: file.filePath }, 'Failed to unlink sent output file'); }
@@ -118,11 +125,21 @@ export class OutputHandler {
     //    the file. One coalesced notice for the whole batch instead of one
     //    per file so a 10-file batch with all-oversized doesn't spam.
     if (oversized.length > 0) {
-      await this.sendOversizedNotice(chatId, oversized);
+      const noticed = await this.sendOversizedNotice(chatId, oversized);
+      // Oversized files count as "accounted for" only once the notice reached
+      // the user — if it failed, keep them so the next turn re-raises it.
+      if (noticed) {
+        for (const f of oversized) {
+          if (!f.filePath) continue;
+          try { fs.unlinkSync(f.filePath); }
+          catch (err) { this.logger.warn({ err, filePath: f.filePath }, 'Failed to unlink oversized output file'); }
+        }
+      }
     }
   }
 
-  private async sendOversizedNotice(chatId: string, files: OversizedFile[]): Promise<void> {
+  /** @returns true when the notice reached the user. */
+  private async sendOversizedNotice(chatId: string, files: OversizedFile[]): Promise<boolean> {
     const lines = [
       `Cannot send **${files.length}** file${files.length === 1 ? '' : 's'} because ${files.length === 1 ? 'it exceeds' : 'they exceed'} the Feishu upload limit (max ${IMAGE_MAX_BYTES / 1024 / 1024}MB images, ${FILE_MAX_BYTES / 1024 / 1024}MB files):`,
       '',
@@ -130,8 +147,10 @@ export class OutputHandler {
     ];
     try {
       await this.sender.sendTextNotice(chatId, '⚠️ Files Too Large', lines.join('\n'), 'orange');
+      return true;
     } catch (err) {
       this.logger.warn({ err, chatId, count: files.length }, 'Failed to send oversized-file notice');
+      return false;
     }
   }
 }
