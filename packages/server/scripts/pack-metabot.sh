@@ -135,8 +135,12 @@ done
 mkdir -p "$SERVER_STATIC_DIR"
 
 TMP_EXTRA_DIR="$(mktemp -d -t metabot-pack-extra.XXXXXX)"
+STAGE_DIR=""
 cleanup() {
   rm -rf "$TMP_EXTRA_DIR"
+  if [[ -n "$STAGE_DIR" ]]; then
+    rm -rf "$STAGE_DIR"
+  fi
 }
 trap cleanup EXIT
 
@@ -206,23 +210,64 @@ const manifest = {
 fs.writeFileSync(dest, `${JSON.stringify(manifest, null, 2)}\n`);
 NODE
 
-EXTRA_TAR_ARGS=(-C "$TMP_EXTRA_DIR" 'package.json' 'tsconfig.json' '.metabot-package/manifest.json')
+EXTRA_MEMBERS=('package.json' 'tsconfig.json' '.metabot-package/manifest.json')
 if [[ -f "$TMP_EXTRA_DIR/.metabot-package/default.env" ]]; then
-  EXTRA_TAR_ARGS+=(-C "$TMP_EXTRA_DIR" '.metabot-package/default.env')
+  EXTRA_MEMBERS+=('.metabot-package/default.env')
 fi
+EXTRA_TAR_ARGS=(-C "$TMP_EXTRA_DIR" "${EXTRA_MEMBERS[@]}")
 
 echo "==> Writing $SERVER_STATIC_DIR/$TARBALL_NAME (atomic)"
 # Sort+mtime flags produce a deterministic tarball — easier diffs across
 # builds and avoids spurious rsync churn on the deploy host. -C anchors all
 # include paths to the repo root.
-tar --sort=name \
-    --owner=0 --group=0 --numeric-owner \
-    --mtime='UTC 2026-01-01' \
-    "${TAR_EXCLUDES[@]}" \
-    -czf "$SERVER_STATIC_DIR/$TARBALL_NAME.new" \
-    -C "$REPO_ROOT" \
-    "${PRESENT_INCLUDES[@]}" \
-    "${EXTRA_TAR_ARGS[@]}"
+#
+# --sort/--owner/--group/--mtime are GNU tar extensions. Linux ships GNU tar
+# as `tar`, but macOS ships BSD tar (bsdtar), which rejects them
+# ("Option --sort=name is not supported"). Prefer GNU tar when present
+# (Homebrew installs it as `gtar`), otherwise emulate the same determinism
+# guarantees with a BSD-compatible pipeline.
+GNU_TAR=""
+for tar_candidate in tar gtar; do
+  if "$tar_candidate" --version 2>/dev/null | grep -q 'GNU tar'; then
+    GNU_TAR="$tar_candidate"
+    break
+  fi
+done
+
+if [[ -n "$GNU_TAR" ]]; then
+  "$GNU_TAR" --sort=name \
+      --owner=0 --group=0 --numeric-owner \
+      --mtime='UTC 2026-01-01' \
+      "${TAR_EXCLUDES[@]}" \
+      -czf "$SERVER_STATIC_DIR/$TARBALL_NAME.new" \
+      -C "$REPO_ROOT" \
+      "${PRESENT_INCLUDES[@]}" \
+      "${EXTRA_TAR_ARGS[@]}"
+else
+  # BSD tar fallback (stock macOS). Reproduce the GNU flags in three steps:
+  #   1. Stage the payload with bsdtar itself, so the TAR_EXCLUDES patterns
+  #      keep their create-time recursion semantics (bsdtar matches path
+  #      components the same way GNU tar does).
+  #   2. Pin every staged mtime to the instant GNU's --mtime pins
+  #      (2026-01-01 00:00:00 UTC).
+  #   3. Archive an explicitly pre-sorted member list with tar recursion
+  #      disabled (-n) — the --sort=name replacement — forcing uid/gid 0
+  #      like --owner/--group, and gzip -n for a timestamp-free header.
+  STAGE_DIR="$(mktemp -d -t metabot-pack-stage.XXXXXX)"
+  tar "${TAR_EXCLUDES[@]}" -cf - -C "$REPO_ROOT" "${PRESENT_INCLUDES[@]}" \
+    | tar -xpf - -C "$STAGE_DIR"
+  tar -cf - -C "$TMP_EXTRA_DIR" "${EXTRA_MEMBERS[@]}" \
+    | tar -xpf - -C "$STAGE_DIR"
+  TZ=UTC0 find "$STAGE_DIR" -exec touch -h -t 202601010000.00 {} +
+  (
+    cd "$STAGE_DIR" \
+      && find . -mindepth 1 \
+        | sed 's,^\./,,' \
+        | LC_ALL=C sort \
+        | tar --format gnutar --uid 0 --gid 0 --numeric-owner -n -cf - -T - \
+        | gzip -n
+  ) > "$SERVER_STATIC_DIR/$TARBALL_NAME.new"
+fi
 
 # Post-pack sanity: confirm SKILL_SENTINEL actually landed in the tarball.
 # Catches cases where an --exclude pattern accidentally swallowed it.
