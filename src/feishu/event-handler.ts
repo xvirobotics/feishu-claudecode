@@ -75,30 +75,58 @@ function clearCachedMedia(chatId: string, userId: string): void {
 const PROCESSED_MSG_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const PROCESSED_MSG_MAX_ENTRIES = 500;
 
+export interface MessageDeduper {
+  /** True when messageId was already seen within the TTL; records it otherwise. */
+  isDuplicate(messageId: string): boolean;
+  /**
+   * Forget a messageId after a failed processing attempt, so a Feishu
+   * redelivery of the same event gets a fresh attempt instead of being
+   * dropped as a duplicate.
+   */
+  release(messageId: string): void;
+}
+
 /**
- * Create a per-dispatcher message dedup checker. Per-dispatcher (rather than
+ * Create a per-dispatcher message deduper. Per-dispatcher (rather than
  * module-level) state so that two bots receiving events for the same
  * message_id (e.g. one group message @-mentioning both bots) don't suppress
- * each other. Returns true when messageId was already seen within the TTL,
- * and records it otherwise.
+ * each other.
+ *
+ * Memory is hard-bounded: `maxEntries` is an invariant, not a cleanup hint.
+ * On insert when the map is full, expired entries are swept first; if still
+ * full, the oldest entries are evicted regardless of TTL. Entries are deleted
+ * before re-insert on expiry, so Map iteration order stays first-seen order
+ * and "oldest" is well-defined. Evicting a live entry trades a sliver of
+ * dedup coverage (an extremely late redelivery of an evicted id would be
+ * reprocessed) for a guaranteed memory ceiling.
  */
 export function createMessageDeduper(
   ttlMs: number = PROCESSED_MSG_TTL_MS,
   maxEntries: number = PROCESSED_MSG_MAX_ENTRIES,
-): (messageId: string) => boolean {
+): MessageDeduper {
   const seen = new Map<string, number>(); // messageId -> first-seen ts
-  return (messageId) => {
-    const now = Date.now();
-    // Opportunistic cleanup of stale entries to bound memory
-    if (seen.size > maxEntries) {
-      for (const [id, ts] of seen) {
-        if (now - ts > ttlMs) seen.delete(id);
+  return {
+    isDuplicate(messageId) {
+      const now = Date.now();
+      const ts = seen.get(messageId);
+      if (ts !== undefined && now - ts < ttlMs) return true;
+      if (ts !== undefined) seen.delete(messageId); // expired: re-insert below so recency order holds
+      if (seen.size >= maxEntries) {
+        for (const [id, t] of seen) {
+          if (now - t >= ttlMs) seen.delete(id);
+        }
+        while (seen.size >= maxEntries) {
+          const oldest = seen.keys().next().value;
+          if (oldest === undefined) break;
+          seen.delete(oldest);
+        }
       }
-    }
-    const ts = seen.get(messageId);
-    if (ts !== undefined && now - ts < ttlMs) return true;
-    seen.set(messageId, now);
-    return false;
+      seen.set(messageId, now);
+      return false;
+    },
+    release(messageId) {
+      seen.delete(messageId);
+    },
   };
 }
 
@@ -228,7 +256,7 @@ export function createEventDispatcher(
   onGroupReplyModeNotice?: GroupReplyModeNoticeHandler,
 ): lark.EventDispatcher {
   const dispatcher = new lark.EventDispatcher({});
-  const isDuplicateMessage = createMessageDeduper();
+  const messageDeduper = createMessageDeduper();
 
   // Register the card action trigger handler (fired when a user clicks a button
   // on an interactive card). The lark SDK types omit this event so we cast.
@@ -268,6 +296,9 @@ export function createEventDispatcher(
 
   dispatcher.register({
     'im.message.receive_v1': async (data: any) => {
+      // Set once this delivery is recorded in the deduper; released in the
+      // catch below so a failed attempt doesn't suppress the redelivery.
+      let inflightMessageId: string | undefined;
       try {
         const event = data;
         const message = event.message;
@@ -292,11 +323,14 @@ export function createEventDispatcher(
         const messageId = message.message_id;
 
         // Drop redelivered events: Feishu retries delivery when the ack is
-        // slow, and a retry must not become a second task.
-        if (messageId && isDuplicateMessage(messageId)) {
+        // slow, and a retry must not become a second task. Intentional drops
+        // further down (not @mentioned, empty text, ...) keep the mark — they
+        // are terminal decisions and a redelivery must be dropped the same way.
+        if (messageId && messageDeduper.isDuplicate(messageId)) {
           logger.debug({ messageId, msgType }, 'Duplicate message delivery ignored');
           return;
         }
+        inflightMessageId = messageId;
 
         const mentions = message.mentions;
 
@@ -481,6 +515,10 @@ export function createEventDispatcher(
 
         onMessage({ messageId, chatId, chatType, userId, text, imageKey, fileKey, fileName, extraMedia });
       } catch (err) {
+        // The message never reached a successful hand-off: forget the dedup
+        // mark so a Feishu redelivery gets processed instead of being dropped
+        // as a duplicate (otherwise a transient failure loses the message).
+        if (inflightMessageId) messageDeduper.release(inflightMessageId);
         logger.error({ err }, 'Error handling message event');
       }
     },
