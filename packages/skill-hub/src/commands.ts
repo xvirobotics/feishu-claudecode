@@ -40,6 +40,26 @@ interface SkillRecordSnippet {
   skillMd?: string;
 }
 
+const DEFAULT_SKILL_INSTALL_ROOT = path.join('.metabot', 'skills');
+const ENGINE_SKILL_DIRS = new Set(['.claude/skills', '.codex/skills', '.agents/skills']);
+
+function flagEnabled(value: string | true | undefined): boolean {
+  return value === true || value === '1' || value === 'true' || value === 'yes';
+}
+
+export function defaultInstallDir(name: string): string {
+  return path.join(DEFAULT_SKILL_INSTALL_ROOT, name);
+}
+
+export function targetsEngineAutoloadDir(dir: string): boolean {
+  const normalized = path.normalize(dir).replace(/\\/g, '/');
+  const parts = normalized.split('/').filter(Boolean);
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (ENGINE_SKILL_DIRS.has(`${parts[i]}/${parts[i + 1]}`)) return true;
+  }
+  return false;
+}
+
 export async function cmdPublish(cfg: Config, args: ParsedArgs): Promise<void> {
   const name = args.positional[0];
   if (!name) throw new Error('publish: <skill name> required');
@@ -79,7 +99,14 @@ export async function cmdPublish(cfg: Config, args: ParsedArgs): Promise<void> {
 export async function cmdInstall(cfg: Config, args: ParsedArgs): Promise<void> {
   const name = args.positional[0];
   if (!name) throw new Error('install: <skill name> required');
-  const to = typeof args.flags.to === 'string' ? args.flags.to : path.join('.claude', 'skills', name);
+  const to = typeof args.flags.to === 'string' ? args.flags.to : defaultInstallDir(name);
+  const trust = flagEnabled(args.flags.trust) || flagEnabled(args.flags.yes) || flagEnabled(args.flags.y);
+  if (targetsEngineAutoloadDir(to) && !trust) {
+    throw new Error(
+      'install: refusing to write into an engine auto-load skills directory without --trust; '
+      + 'install to .metabot/skills first, review SKILL.md, then rerun with --trust if you want the engine to auto-load it',
+    );
+  }
 
   const record = await request<SkillRecordSnippet>(cfg, {
     path: `/api/skills/${encodeURIComponent(name)}`,
@@ -90,7 +117,7 @@ export async function cmdInstall(cfg: Config, args: ParsedArgs): Promise<void> {
   fs.mkdirSync(to, { recursive: true });
   const dst = path.join(to, 'SKILL.md');
   fs.writeFileSync(dst, record.skillMd);
-  print({ name, installedTo: dst, version: record.version });
+  print({ name, installedTo: dst, version: record.version, trusted: targetsEngineAutoloadDir(to) });
 }
 
 export async function cmdRemove(cfg: Config, args: ParsedArgs): Promise<void> {
@@ -123,8 +150,9 @@ Commands:
                                       --md <file>    reads file
                                       else           reads stdin
                                     Optional: --visibility published|private|shared
-  install <name>                    Download SKILL.md to a local skill dir
-                                      [--to <dir>]   default: .claude/skills/<name>
+  install <name>                    Download SKILL.md to a local review dir
+                                      [--to <dir>]   default: .metabot/skills/<name>
+                                      [--trust]      required when --to points at .claude/.codex/.agents skills
   remove <name>                     Unpublish a skill
   health
   help

@@ -144,14 +144,8 @@ function matchesOwnerNamespace(cred: Credential, path: string): boolean {
   return pathMatchesNamespace(path, `/users/${cred.ownerName}`);
 }
 
-export function canPublishSkill(_cred: Credential): boolean {
-  // Anyone with a valid cred can publish a skill — auth middleware already
-  // blocks unauthenticated requests, so reaching here means the caller has
-  // a verified identity. Per-skill overwrite protection (only admin or the
-  // original owner may republish an existing name) lives at the route layer
-  // via `canOverwriteSkill`. The `publishSkill` cred flag is preserved in
-  // the schema for future per-cred revocation but is no longer consulted.
-  return true;
+export function canPublishSkill(cred: Credential): boolean {
+  return cred.role === 'admin' || cred.publishSkill;
 }
 
 function pathMatchesNamespace(p: string, ns: string): boolean {

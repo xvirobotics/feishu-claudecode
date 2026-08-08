@@ -4,11 +4,19 @@ MetaBot exposes a REST API on port `9100` (configurable via `API_PORT`).
 
 ## Authentication
 
-If `API_SECRET` is set, all requests require:
+All non-health Bridge API requests require a Bearer credential:
 
 ```
 Authorization: Bearer <API_SECRET>
 ```
+
+`token=` query-string credentials are not accepted. The Bridge binds to
+`127.0.0.1` by default; set `API_HOST` explicitly only behind your own
+private/TLS boundary.
+
+The Bridge WebSocket `/ws` follows the same rule. Non-browser clients should
+use the `Authorization` header; browser clients can use the
+`metabot-bearer.<API_SECRET>` WebSocket subprotocol when needed.
 
 ## Endpoints
 

@@ -1,5 +1,4 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import * as zlib from 'node:zlib';
 import { makeKit, type TestKit } from './helpers.js';
 import {
   canPublishSkill, canOverwriteSkill, visibilityFilter, filterSkillsForCred, isVisibleToCred,
@@ -87,13 +86,13 @@ describe('SkillStore + publish-acl', () => {
     expect(publicOnly[0].name).toBe('pub');
   });
 
-  it('canPublishSkill: any authenticated cred (admin + member, flag ignored)', () => {
+  it('canPublishSkill: admin always; member only with publishSkill flag', () => {
     kit = makeKit('skill-publish-acl');
     const admin = issue(kit, 'admin', 'admin');
     const m1 = issue(kit, 'm1', 'member', false);
     const m2 = issue(kit, 'm2', 'member', true);
     expect(canPublishSkill(admin)).toBe(true);
-    expect(canPublishSkill(m1)).toBe(true);
+    expect(canPublishSkill(m1)).toBe(false);
     expect(canPublishSkill(m2)).toBe(true);
   });
 
@@ -205,25 +204,26 @@ describe('SkillStore + publish-acl', () => {
   });
 });
 
-describe('publishSkill route — open-to-members + overwrite protection', () => {
-  it('member can publish a brand-new skill (201)', () => {
+describe('publishSkill route — explicit publish grant + overwrite protection', () => {
+  it('member with publish grant can publish a brand-new private skill (201)', () => {
     kit = makeKit('skill-route-member-new');
-    const alice = issueWithOwner(kit, 'alice-bot', 'alice', 'member', false);
+    const alice = issueWithOwner(kit, 'alice-bot', 'alice', 'member', true);
     const res = skillRoutes.publishSkill(
       kit.skills, 'my-cool-skill',
-      { skillMd: SKILL_MD, visibility: 'published' },
+      { skillMd: SKILL_MD },
       alice,
     );
     expect(res.status).toBe(201);
     const rec = kit.skills.get('my-cool-skill')!;
     expect(rec.ownerName).toBe('alice');
+    expect(rec.visibility).toBe('private');
     expect(rec.version).toBe(1);
   });
 
   it('member can republish their own skill (version bumps)', () => {
     kit = makeKit('skill-route-member-own-republish');
-    const alice1 = issueWithOwner(kit, 'alice-bot-1', 'alice', 'member', false);
-    const alice2 = issueWithOwner(kit, 'alice-bot-2', 'alice', 'member', false);
+    const alice1 = issueWithOwner(kit, 'alice-bot-1', 'alice', 'member', true);
+    const alice2 = issueWithOwner(kit, 'alice-bot-2', 'alice', 'member', true);
 
     expect(skillRoutes.publishSkill(kit.skills, 'foo', { skillMd: SKILL_MD }, alice1).status).toBe(201);
     // Same owner, different machine → still allowed (user-level bypass).
@@ -234,8 +234,8 @@ describe('publishSkill route — open-to-members + overwrite protection', () => 
 
   it('member B cannot overwrite member A\'s skill (403 skill_owned_by_other)', () => {
     kit = makeKit('skill-route-member-cross-owner');
-    const alice = issueWithOwner(kit, 'alice-bot', 'alice', 'member', false);
-    const bob = issueWithOwner(kit, 'bob-bot', 'bob', 'member', false);
+    const alice = issueWithOwner(kit, 'alice-bot', 'alice', 'member', true);
+    const bob = issueWithOwner(kit, 'bob-bot', 'bob', 'member', true);
 
     expect(skillRoutes.publishSkill(kit.skills, 'foo', { skillMd: SKILL_MD }, alice).status).toBe(201);
     const res = skillRoutes.publishSkill(kit.skills, 'foo', { skillMd: SKILL_MD + '\nbob' }, bob);
@@ -248,7 +248,7 @@ describe('publishSkill route — open-to-members + overwrite protection', () => 
 
   it('admin can overwrite any skill', () => {
     kit = makeKit('skill-route-admin-overwrite');
-    const alice = issueWithOwner(kit, 'alice-bot', 'alice', 'member', false);
+    const alice = issueWithOwner(kit, 'alice-bot', 'alice', 'member', true);
     const admin = issue(kit, 'root', 'admin');
     expect(skillRoutes.publishSkill(kit.skills, 'foo', { skillMd: SKILL_MD }, alice).status).toBe(201);
     const res = skillRoutes.publishSkill(kit.skills, 'foo', { skillMd: SKILL_MD + '\nadmin' }, admin);
@@ -260,7 +260,7 @@ describe('publishSkill route — open-to-members + overwrite protection', () => 
     kit = makeKit('skill-route-legacy');
     // Seed a legacy row directly (no ownerName).
     kit.skills.publish({ name: 'legacy', skillMd: SKILL_MD });
-    const member = issueWithOwner(kit, 'm-bot', 'm-owner', 'member', false);
+    const member = issueWithOwner(kit, 'm-bot', 'm-owner', 'member', true);
     const admin = issue(kit, 'root', 'admin');
 
     const res1 = skillRoutes.publishSkill(kit.skills, 'legacy', { skillMd: SKILL_MD + '\nclaim' }, member);
@@ -272,15 +272,41 @@ describe('publishSkill route — open-to-members + overwrite protection', () => 
     expect(kit.skills.get('legacy')!.version).toBe(2);
   });
 
-  it('all three visibilities accepted from a member (private/shared/published)', () => {
+  it('member can only publish private skills', () => {
     kit = makeKit('skill-route-member-visibilities');
-    const alice = issueWithOwner(kit, 'alice-bot', 'alice', 'member', false);
-    for (const v of ['private', 'shared', 'published'] as const) {
+    const alice = issueWithOwner(kit, 'alice-bot', 'alice', 'member', true);
+    const privateRes = skillRoutes.publishSkill(
+      kit.skills, 'skill-private', { skillMd: SKILL_MD, visibility: 'private' }, alice,
+    );
+    expect(privateRes.status).toBe(201);
+    for (const v of ['shared', 'published'] as const) {
       const res = skillRoutes.publishSkill(
         kit.skills, `skill-${v}`, { skillMd: SKILL_MD, visibility: v }, alice,
+      );
+      expect(res.status).toBe(403);
+      expect((res.body as { error: string }).error).toBe('public_skill_publish_admin_required');
+    }
+  });
+
+  it('admin can publish all three visibilities', () => {
+    kit = makeKit('skill-route-admin-visibilities');
+    const admin = issueWithOwner(kit, 'root', 'root', 'admin');
+    for (const v of ['private', 'shared', 'published'] as const) {
+      const res = skillRoutes.publishSkill(
+        kit.skills, `skill-${v}`, { skillMd: SKILL_MD, visibility: v }, admin,
       );
       expect(res.status).toBe(201);
       expect(kit.skills.get(`skill-${v}`)!.visibility).toBe(v);
     }
+  });
+
+  it('rejects invalid or oversized skill markdown', () => {
+    kit = makeKit('skill-route-content-validation');
+    const admin = issue(kit, 'root', 'admin');
+    expect(skillRoutes.publishSkill(kit.skills, 'bad', { skillMd: '# no frontmatter' }, admin).status).toBe(400);
+    const noName = '---\ndescription: missing name\n---\n# Body\n';
+    const res = skillRoutes.publishSkill(kit.skills, 'bad2', { skillMd: noName }, admin);
+    expect(res.status).toBe(400);
+    expect((res.body as { error: string }).error).toBe('skillMd_name_required');
   });
 });

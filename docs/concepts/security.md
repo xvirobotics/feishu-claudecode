@@ -48,15 +48,18 @@ stat -c '%a %n' ~/.metabot-core/token
 
 ## Bridge API
 
-Bridge port `9100` binds to localhost when `API_SECRET` is empty. If remote
-Bridge commands are required, generate a separate secret and terminate TLS at
-your own proxy:
+Bridge port `9100` binds to `127.0.0.1` by default and non-health API routes
+require a Bearer credential. If remote Bridge commands are required, generate a
+separate secret, set `API_HOST` explicitly, and terminate TLS at your own proxy:
 
 ```bash
 openssl rand -hex 32
 ```
 
 Do not expose raw ports `9100` or `9200` directly to the public internet.
+Do not pass Bridge credentials in `token=` query strings; use
+`Authorization: Bearer ...` for HTTP and non-browser WebSocket clients, or
+`metabot-bearer.<secret>` as a WebSocket subprotocol for browser clients.
 
 ## Channels
 

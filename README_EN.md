@@ -163,6 +163,9 @@ Each bot has its own channel credentials, engine, workspace, and sessions. Bots 
 - **Channels and media** — text, rich posts, images, files, audio, smart batching, and exact @Bot routing.
 - **Peers, scheduling, and voice** — optional capabilities for larger personal setups. [Feature docs](docs/)
 
+Slack as a first-class IM channel is tracked as later platform work. The current
+personal edition focuses on Web, Feishu/Lark, Telegram, and WeChat.
+
 ## Essential Commands
 
 | Command                                        | Purpose                                                                |

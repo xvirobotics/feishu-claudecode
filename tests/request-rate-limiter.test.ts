@@ -4,7 +4,11 @@ import {
   rateLimiterFromEnv,
   resolveClientIp,
 } from '../src/api/request-rate-limiter.js';
-import { timingSafeStrEqual } from '../src/web/ws-server.js';
+import {
+  bearerTokenFromWebSocketProtocol,
+  isWebSocketSecretAuthorized,
+  timingSafeStrEqual,
+} from '../src/web/ws-server.js';
 
 /** A controllable clock for deterministic time-based assertions. */
 function clock(start = 1_000_000) {
@@ -174,5 +178,35 @@ describe('timingSafeStrEqual', () => {
     expect(timingSafeStrEqual(undefined, 'x')).toBe(false);
     expect(timingSafeStrEqual('x', null)).toBe(false);
     expect(timingSafeStrEqual(null, null)).toBe(false);
+  });
+});
+
+describe('WebSocket secret auth helpers', () => {
+  it('extracts bearer credentials from the metabot WebSocket subprotocol', () => {
+    expect(bearerTokenFromWebSocketProtocol('metabot-bearer.secret')).toBe('secret');
+    expect(bearerTokenFromWebSocketProtocol('chat, metabot-bearer.secret')).toBe('secret');
+    expect(bearerTokenFromWebSocketProtocol('other')).toBeUndefined();
+  });
+
+  it('does not accept query-string tokens for WebSocket auth', () => {
+    const req = {
+      headers: {
+        authorization: undefined,
+        'sec-websocket-protocol': undefined,
+      },
+    } as any;
+    expect(isWebSocketSecretAuthorized('secret', req)).toBe(false);
+  });
+
+  it('accepts WebSocket credentials through Authorization or subprotocol only', () => {
+    expect(isWebSocketSecretAuthorized('secret', {
+      headers: { authorization: 'Bearer secret' },
+    } as any)).toBe(true);
+    expect(isWebSocketSecretAuthorized('secret', {
+      headers: { 'sec-websocket-protocol': 'metabot-bearer.secret' },
+    } as any)).toBe(true);
+    expect(isWebSocketSecretAuthorized(undefined, {
+      headers: { authorization: 'Bearer secret' },
+    } as any)).toBe(false);
   });
 });

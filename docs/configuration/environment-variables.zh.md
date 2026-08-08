@@ -10,7 +10,8 @@
 | `BOTS_CONFIG` | — | 多 Bot 配置路径，通常为 `./bots.json` |
 | `METABOT_ENGINE` | `codex` | 单 Bot 默认引擎：`codex`、`kimi` 或兼容 `claude` |
 | `API_PORT` | `9100` | 本地 Bridge API 端口 |
-| `API_SECRET` | — | Bridge Bearer Secret；为空时只监听 localhost |
+| `API_SECRET` | — | Bridge Bearer Secret；非健康检查 API 会拒绝匿名请求 |
+| `API_HOST` / `METABOT_API_HOST` | `127.0.0.1` | Bridge 监听地址；只有放在自有私网/TLS 边界后才应使用 `0.0.0.0` |
 | `METABOT_URL` | `http://localhost:9100` | Bridge CLI 命令使用的地址 |
 | `METABOT_CORE_URL` | `http://localhost:9200` | Core Console 与委托 CLI 地址 |
 | `METABOT_CORE_TOKEN` | Token 文件 | 覆盖 `~/.metabot-core/token` |

@@ -40,7 +40,7 @@ describe('GET /api/skills/:name/references', () => {
     const pub = await call(kit.baseUrl, 'POST', '/api/skills/refs-skill/publish', memberToken, {
       skillMd: SKILL_MD,
       referencesTar,
-      visibility: 'published',
+      visibility: 'private',
     });
     expect(pub.status).toBe(201);
 
@@ -65,7 +65,7 @@ describe('GET /api/skills/:name/references', () => {
 
     await call(kit.baseUrl, 'POST', '/api/skills/bare-skill/publish', memberToken, {
       skillMd: `---\nname: bare-skill\ndescription: bare\n---\nbody`,
-      visibility: 'published',
+      visibility: 'private',
     });
 
     const refs = await call(kit.baseUrl, 'GET', '/api/skills/bare-skill/references', memberToken);
@@ -96,7 +96,7 @@ describe('GET /api/skills/:name/references', () => {
     const pub = await call(kit.baseUrl, 'POST', '/api/skills/oversized-refs/publish', memberToken, {
       skillMd: `---\nname: oversized-refs\ndescription: oversized refs\n---\nbody`,
       referencesTar,
-      visibility: 'published',
+      visibility: 'private',
     });
     expect(pub.status).toBe(201);
 
@@ -117,7 +117,7 @@ describe('GET /api/skills/:name/references', () => {
     const pub = await call(kit.baseUrl, 'POST', '/api/skills/corrupt-refs/publish', memberToken, {
       skillMd: `---\nname: corrupt-refs\ndescription: corrupt refs\n---\nbody`,
       referencesTar,
-      visibility: 'published',
+      visibility: 'private',
     });
     expect(pub.status).toBe(201);
 

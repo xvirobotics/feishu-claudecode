@@ -101,7 +101,7 @@ describe('E2E flow', () => {
     expect(afterRevoke.body.error).toBe('credential_revoked');
   });
 
-  it('member without publishSkill flag can still publish (gate opened)', async () => {
+  it('member without publishSkill flag cannot publish skills', async () => {
     kit = await startTestServer('e2e-publish');
     const { baseUrl, adminToken } = kit;
 
@@ -112,11 +112,20 @@ describe('E2E flow', () => {
     const ok = await call(baseUrl, 'POST', '/api/skills/x/publish', token, {
       skillMd: '---\nname: x\n---\nbody',
     });
-    expect(ok.status).toBe(201);
+    expect(ok.status).toBe(403);
+    expect(ok.body.error).toBe('publish_skill_forbidden');
+
+    const granted = await call(baseUrl, 'POST', '/admin/credentials/issue', adminToken, {
+      botName: 'can-pub', ownerName: 'cp', role: 'member', publishSkill: true,
+    });
+    const publish = await call(baseUrl, 'POST', '/api/skills/x/publish', granted.body.token as string, {
+      skillMd: '---\nname: x\n---\nbody',
+    });
+    expect(publish.status).toBe(201);
 
     // But a different member can NOT overwrite it.
     const other = await call(baseUrl, 'POST', '/admin/credentials/issue', adminToken, {
-      botName: 'squatter', ownerName: 'someone-else', role: 'member',
+      botName: 'squatter', ownerName: 'someone-else', role: 'member', publishSkill: true,
     });
     const denied = await call(baseUrl, 'POST', '/api/skills/x/publish', other.body.token as string, {
       skillMd: '---\nname: x\n---\nhostile',

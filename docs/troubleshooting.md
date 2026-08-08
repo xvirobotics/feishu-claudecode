@@ -59,6 +59,18 @@ Legacy Python `kimi-cli --wire` configuration is not compatible with this
 adapter. Keep the Kimi server on loopback; MetaBot rejects non-loopback server
 URLs by default.
 
+If logs mention `unknown option '--work-dir'`, `unknown option '--wire'`, or an
+SDK command line that includes those flags, the running MetaBot is an older
+Kimi adapter. Update MetaBot and restart the Bridge:
+
+```bash
+metabot update
+metabot restart
+```
+
+The current adapter talks to Kimi Code 0.27+ through the local `/api/v1` Server
+API and does not spawn the removed `--wire --work-dir` path.
+
 ## Feishu/Lark receives no messages
 
 1. Select **persistent connection** rather than an HTTP callback.
@@ -108,6 +120,26 @@ the check; retry from the official GitHub Release.
 Claude is optional for existing workspaces. Run `claude login` in a standalone
 terminal and select `"engine": "claude"` for that bot. Codex and Kimi Code are
 the primary Personal Edition engines.
+
+### Claude-compatible providers return `529 overloaded_error`
+
+`529 overloaded_error` is returned by the upstream Claude-compatible provider
+or model gateway. MetaBot cannot turn that into local capacity, but it can help
+you prove whether the mobile/Bridge path is using a different provider profile
+from standalone Claude Code:
+
+1. Reproduce once from the Bridge path and copy only the redacted error line,
+   timestamp, model, and upstream request id if present.
+2. Compare the Bridge service environment with the standalone terminal that
+   works: provider base URL, API key source, model, profile, proxy variables,
+   and workspace.
+3. Check the bot config for `claude.model`, `claude.env`, `model`, and any
+   provider-specific override.
+4. If the environments match, treat it as upstream rate limiting: retry later,
+   switch model/provider account, or ask the provider to raise quota.
+
+Do not paste API keys, bearer tokens, or full environment dumps into GitHub
+issues.
 
 If the issue remains, include the MetaBot version, operating system, selected
 engine, `metabot doctor` output with secrets removed, and the smallest relevant

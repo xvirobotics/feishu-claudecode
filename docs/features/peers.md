@@ -35,7 +35,7 @@ For peers on remote servers, prefer HTTPS URLs fronted by Caddy or another TLS r
     ```
 
     - `METABOT_PEERS` — comma-separated peer URLs (required)
-    - `METABOT_PEER_SECRETS` — comma-separated secrets, positional match with URLs (optional, needed if the peer has `API_SECRET` set)
+    - `METABOT_PEER_SECRETS` — comma-separated Bridge API secrets, positional match with URLs (required for non-health peer API calls)
     - `METABOT_PEER_NAMES` — comma-separated display names (optional, auto-derived from URL if omitted, e.g. `localhost-9200`)
 
 === "bots.json"
@@ -62,7 +62,10 @@ For peers on remote servers, prefer HTTPS URLs fronted by Caddy or another TLS r
 
     - `name` — display name for the peer (required)
     - `url` — peer's API URL (required)
-    - `secret` — the peer's `API_SECRET` (optional, needed if the peer has authentication enabled)
+    - `secret` — the peer's `API_SECRET` (required for non-health peer API calls)
+
+Expose peer URLs only over loopback, a private network, or your own authenticated
+HTTPS reverse proxy.
 
 !!! tip "You don't need bots.json"
     If you're running a single bot, just add `METABOT_PEERS` to your `.env` — no `bots.json` needed. The `bots.json` peers field is only a convenience for multi-bot setups.

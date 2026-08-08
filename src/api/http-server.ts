@@ -10,7 +10,13 @@ import type { DocSync } from '../sync/doc-sync.js';
 import type { PeerManager } from './peer-manager.js';
 
 import { AsyncTaskStore } from './async-task-store.js';
-import { setupWebSocketServer, timingSafeStrEqual, type WebSocketHandle } from '../web/ws-server.js';
+import {
+  bearerTokenFromAuthorization,
+  setupWebSocketServer,
+  timingSafeStrEqual,
+  type WebSocketHandle,
+} from '../web/ws-server.js';
+export { bearerTokenFromAuthorization } from '../web/ws-server.js';
 import { rateLimiterFromEnv, resolveClientIp } from './request-rate-limiter.js';
 import { IntentRouter } from './intent-router.js';
 import { CircuitBreaker } from './circuit-breaker.js';
@@ -67,6 +73,16 @@ const startTime = Date.now();
 (globalThis as any).__metabot_start_time = startTime;
 
 const WHOAMI_VERIFY_TIMEOUT_MS = 5_000;
+
+export function resolveApiHost(env: NodeJS.ProcessEnv = process.env): string {
+  return (env.API_HOST || env.METABOT_API_HOST || '127.0.0.1').trim() || '127.0.0.1';
+}
+
+export function isLocalSecretAuthorized(secret: string | undefined, authorization: string | string[] | undefined): boolean {
+  if (!secret) return false;
+  const bearer = bearerTokenFromAuthorization(authorization);
+  return timingSafeStrEqual(bearer, secret);
+}
 
 export function summarizeChannelStatuses(channelStatuses: BotChannelStatus[]) {
   return {
@@ -136,7 +152,7 @@ async function verifyBearerViaMetabotCore(
 
 export function startApiServer(options: ApiServerOptions): http.Server {
   const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager } = options;
-  const host = secret ? '0.0.0.0' : '127.0.0.1';
+  const host = resolveApiHost();
 
   // Initialize shared services
   const asyncTaskStore = new AsyncTaskStore();
@@ -308,17 +324,10 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     // GET /api/health is exempt: it returns only minimal liveness info (see
     // handler below) so probes/load-balancers can hit it without a secret.
     const isPublicHealth = method === 'GET' && url === '/api/health';
-    if (secret && !isPublicHealth && !url.startsWith('/api/files/')) {
+    if (!isPublicHealth) {
       const auth = req.headers.authorization;
-      const bearer = typeof auth === 'string' && /^Bearer\s+/i.test(auth)
-        ? auth.replace(/^Bearer\s+/i, '')
-        : undefined;
-      const urlToken = url.includes('token=')
-        ? new URL(url, `http://${req.headers.host || 'localhost'}`).searchParams.get('token')
-        : null;
       // Timing-safe comparison so the secret can't be recovered byte-by-byte.
-      const localOk = timingSafeStrEqual(bearer, secret)
-        || timingSafeStrEqual(urlToken, secret);
+      const localOk = isLocalSecretAuthorized(secret, auth);
 
       const rejectUnauthorized = () => {
         // Count this as a failed auth attempt; trips the per-IP lockout once the
@@ -328,7 +337,7 @@ export function startApiServer(options: ApiServerOptions): http.Server {
       };
 
       if (!localOk) {
-        const canCrossVerify = isCrossVerifyRoute(method, url) && typeof auth === 'string' && /^Bearer\s+/i.test(auth);
+        const canCrossVerify = isCrossVerifyRoute(method, url) && bearerTokenFromAuthorization(auth) !== undefined;
         if (!canCrossVerify) {
           rejectUnauthorized();
           return;
@@ -347,9 +356,9 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     try {
       // GET /api/health — minimal, unauthenticated-safe liveness probe.
       // Deliberately returns ONLY status + uptime so an unauthenticated caller
-      // (deploy/k8s probe, or anyone if no api.secret is set) can't enumerate
-      // peer count, peer health, or peer URLs for reconnaissance. Detailed
-      // topology lives behind the authenticated /api/status route.
+      // (deploy/k8s probe) can't enumerate peer count, peer health, or peer
+      // URLs for reconnaissance. Detailed topology lives behind the
+      // authenticated /api/status route.
       if (method === 'GET' && url === '/api/health') {
         jsonResponse(res, 200, {
           status: 'ok',

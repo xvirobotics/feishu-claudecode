@@ -30,6 +30,27 @@ export function timingSafeStrEqual(a: string | undefined | null, b: string | und
   return crypto.timingSafeEqual(ha, hb);
 }
 
+export function bearerTokenFromAuthorization(value: string | string[] | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  return /^Bearer\s+/i.test(value) ? value.replace(/^Bearer\s+/i, '') : undefined;
+}
+
+export function bearerTokenFromWebSocketProtocol(value: string | string[] | undefined): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  for (const item of value.split(',')) {
+    const protocol = item.trim();
+    const match = /^metabot-bearer\.(.+)$/i.exec(protocol);
+    if (match) return match[1];
+  }
+  return undefined;
+}
+
+export function isWebSocketSecretAuthorized(secret: string | undefined, req: IncomingMessage): boolean {
+  if (!secret) return false;
+  return timingSafeStrEqual(bearerTokenFromAuthorization(req.headers.authorization), secret)
+    || timingSafeStrEqual(bearerTokenFromWebSocketProtocol(req.headers['sec-websocket-protocol']), secret);
+}
+
 // ─── Client → Server messages ──────────────────────────────────────────────
 
 type ClientMessage =
@@ -139,15 +160,11 @@ export function setupWebSocketServer(
       return;
     }
 
-    // Auth via ?token=SECRET query parameter (if secret is configured)
-    if (secret) {
-      const token = url.searchParams.get('token');
-      if (!timingSafeStrEqual(token, secret)) {
-        socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-        socket.destroy();
-        wsLogger.warn('WebSocket connection rejected: invalid token');
-        return;
-      }
+    if (!isWebSocketSecretAuthorized(secret, req)) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      wsLogger.warn('WebSocket connection rejected: invalid token');
+      return;
     }
 
     wss.handleUpgrade(req, socket, head, (ws) => {

@@ -11,7 +11,8 @@ values you need.
 | `BOTS_CONFIG` | — | Path to multi-bot configuration, normally `./bots.json` |
 | `METABOT_ENGINE` | `codex` | Single-bot default: `codex`, `kimi`, or compatibility `claude` |
 | `API_PORT` | `9100` | Local Bridge API port |
-| `API_SECRET` | — | Bridge Bearer secret; empty keeps the API on localhost |
+| `API_SECRET` | — | Bridge Bearer secret; non-health API routes reject anonymous requests |
+| `API_HOST` / `METABOT_API_HOST` | `127.0.0.1` | Bridge bind address; use `0.0.0.0` only behind your own private/TLS boundary |
 | `METABOT_URL` | `http://localhost:9100` | Bridge URL used by local Bridge CLI commands |
 | `METABOT_CORE_URL` | `http://localhost:9200` | Core Console and delegated CLI URL |
 | `METABOT_CORE_TOKEN` | token file | Overrides `~/.metabot-core/token` |

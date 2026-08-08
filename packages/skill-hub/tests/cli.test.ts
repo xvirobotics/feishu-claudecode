@@ -4,7 +4,13 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { loadConfig, DEFAULT_URL } from '../src/config.js';
 import { request } from '../src/client.js';
-import { parseArgs, cmdInstall, cmdPublish } from '../src/commands.js';
+import {
+  parseArgs,
+  cmdInstall,
+  cmdPublish,
+  defaultInstallDir,
+  targetsEngineAutoloadDir,
+} from '../src/commands.js';
 
 describe('parseArgs', () => {
   it('handles --to flag value', () => {
@@ -96,6 +102,44 @@ describe('cmdInstall', () => {
       const dst = path.join(tmp, 'SKILL.md');
       expect(fs.existsSync(dst)).toBe(true);
       expect(fs.readFileSync(dst, 'utf8')).toBe(skillMd);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('defaults to a non-engine review directory', () => {
+    expect(defaultInstallDir('foo')).toBe(path.join('.metabot', 'skills', 'foo'));
+    expect(targetsEngineAutoloadDir(defaultInstallDir('foo'))).toBe(false);
+  });
+
+  it('refuses to install into engine auto-load directories without --trust', async () => {
+    const cfg = { url: 'http://ex', token: 't' };
+    await expect(cmdInstall(cfg, { positional: ['foo'], flags: { to: path.join(tmp, '.claude', 'skills', 'foo') } }))
+      .rejects.toThrow('without --trust');
+  });
+
+  it('allows engine auto-load install when --trust is explicit', async () => {
+    const skillMd = '---\nname: foo\n---\n# hi\n';
+    const cfg = { url: 'http://ex', token: 't' };
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ name: 'foo', version: 1, skillMd }), {
+        status: 200,
+      })) as unknown as typeof fetch;
+    try {
+      const stdoutSpy: string[] = [];
+      const origWrite = process.stdout.write.bind(process.stdout);
+      (process.stdout as { write: (s: string) => boolean }).write = (s: string) => {
+        stdoutSpy.push(s);
+        return true;
+      };
+      try {
+        const to = path.join(tmp, '.claude', 'skills', 'foo');
+        await cmdInstall(cfg, { positional: ['foo'], flags: { to, trust: true } });
+        expect(fs.readFileSync(path.join(to, 'SKILL.md'), 'utf8')).toBe(skillMd);
+      } finally {
+        process.stdout.write = origWrite;
+      }
     } finally {
       globalThis.fetch = origFetch;
     }

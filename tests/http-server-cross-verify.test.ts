@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { isCrossVerifyRoute, summarizeChannelStatuses } from '../src/api/http-server.js';
+import {
+  bearerTokenFromAuthorization,
+  isCrossVerifyRoute,
+  isLocalSecretAuthorized,
+  resolveApiHost,
+  summarizeChannelStatuses,
+} from '../src/api/http-server.js';
 
 describe('isCrossVerifyRoute', () => {
   it('accepts the talk RPC routes', () => {
@@ -41,6 +47,33 @@ describe('isCrossVerifyRoute', () => {
     expect(isCrossVerifyRoute('POST', '/api/schedule')).toBe(false);
     expect(isCrossVerifyRoute('GET', '/api/core-chat/runs')).toBe(false);
     expect(isCrossVerifyRoute('POST', '/api/core-chat/runs/run-123/events')).toBe(false);
+  });
+});
+
+describe('bridge API auth helpers', () => {
+  it('keeps the bridge API loopback-only unless a host is explicit', () => {
+    expect(resolveApiHost({})).toBe('127.0.0.1');
+    expect(resolveApiHost({ API_HOST: '0.0.0.0' })).toBe('0.0.0.0');
+    expect(resolveApiHost({ METABOT_API_HOST: '::1' })).toBe('::1');
+    expect(resolveApiHost({ API_HOST: '   ' })).toBe('127.0.0.1');
+  });
+
+  it('extracts only Authorization Bearer credentials', () => {
+    expect(bearerTokenFromAuthorization('Bearer secret')).toBe('secret');
+    expect(bearerTokenFromAuthorization('bearer secret')).toBe('secret');
+    expect(bearerTokenFromAuthorization('Basic secret')).toBeUndefined();
+    expect(bearerTokenFromAuthorization(undefined)).toBeUndefined();
+  });
+
+  it('does not authorize a local API when the bridge secret is unset', () => {
+    expect(isLocalSecretAuthorized(undefined, 'Bearer anything')).toBe(false);
+    expect(isLocalSecretAuthorized('', 'Bearer anything')).toBe(false);
+  });
+
+  it('accepts the bridge secret only through the Authorization header', () => {
+    expect(isLocalSecretAuthorized('secret', 'Bearer secret')).toBe(true);
+    expect(isLocalSecretAuthorized('secret', 'Bearer wrong')).toBe(false);
+    expect(isLocalSecretAuthorized('secret', undefined)).toBe(false);
   });
 });
 

@@ -35,7 +35,7 @@ describe('GET /api/skills/:name returns full SkillRecord (gap-check for Web UI)'
 
     const pub = await call(kit.baseUrl, 'POST', '/api/skills/shape-skill/publish', memberToken, {
       skillMd: SKILL_MD,
-      visibility: 'published',
+      visibility: 'private',
     });
     expect(pub.status).toBe(201);
 
@@ -56,7 +56,7 @@ describe('GET /api/skills/:name returns full SkillRecord (gap-check for Web UI)'
     expect(record.ownerBotName).toBe('shape-bot');
     expect(typeof record.ownerCredentialId).toBe('string');
     // Distribution
-    expect(record.visibility).toBe('published');
+    expect(record.visibility).toBe('private');
     expect(typeof record.contentHash).toBe('string');
     expect(record.contentHash.length).toBeGreaterThan(0);
     // Boolean flags

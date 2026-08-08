@@ -11,6 +11,8 @@ export interface RouteResult {
 }
 
 const MAX_REFERENCES_DECOMPRESSED_BYTES = 10 * 1024 * 1024;
+const MAX_SKILL_MD_BYTES = 256 * 1024;
+const VISIBILITIES = new Set(['private', 'published', 'shared']);
 
 function err(status: number, error: string): RouteResult {
   return { status, body: { error } };
@@ -20,6 +22,20 @@ function isBufferTooLargeError(error: unknown): boolean {
   return error instanceof Error
     && 'code' in error
     && error.code === 'ERR_BUFFER_TOO_LARGE';
+}
+
+function validateSkillMd(skillMd: string): string | null {
+  if (Buffer.byteLength(skillMd, 'utf8') > MAX_SKILL_MD_BYTES) return 'skillMd_too_large';
+  const frontmatter = skillMd.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!frontmatter) return 'skillMd_frontmatter_required';
+  if (!/^name:\s*\S+/m.test(frontmatter[1])) return 'skillMd_name_required';
+  return null;
+}
+
+function parseVisibility(value: unknown, cred: Credential): 'private' | 'published' | 'shared' | null {
+  const visibility = typeof value === 'string' ? value : cred.role === 'admin' ? 'published' : 'private';
+  if (!VISIBILITIES.has(visibility)) return null;
+  return visibility as 'private' | 'published' | 'shared';
 }
 
 export function listSkills(store: SkillStore, cred: Credential): RouteResult {
@@ -53,6 +69,12 @@ export function publishSkill(
 
   const skillMd = body.skillMd as string | undefined;
   if (!skillMd) return err(400, 'skillMd_required');
+  const skillMdError = validateSkillMd(skillMd);
+  if (skillMdError) return err(400, skillMdError);
+
+  const visibility = parseVisibility(body.visibility, cred);
+  if (!visibility) return err(400, 'visibility_invalid');
+  if (cred.role !== 'admin' && visibility !== 'private') return err(403, 'public_skill_publish_admin_required');
 
   const existing = store.get(name);
   if (existing && !canOverwriteSkill(existing, cred)) {
@@ -81,7 +103,7 @@ export function publishSkill(
     ownerBotName: cred.botName,
     ownerCredentialId: cred.id,
     ownerName: cred.ownerName || undefined,
-    visibility: (body.visibility as 'private' | 'published' | 'shared') || 'published',
+    visibility,
   });
 
   return { status: 201, body: { name: record.name, version: record.version, published: true } };

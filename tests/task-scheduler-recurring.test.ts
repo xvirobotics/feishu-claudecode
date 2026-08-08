@@ -20,8 +20,9 @@ vi.mock('../src/scheduler/cron-utils.js', () => ({
 import { nextCronOccurrence } from '../src/scheduler/cron-utils.js';
 const mockNextCron = vi.mocked(nextCronOccurrence);
 
-const PERSIST_DIR = path.join(os.homedir(), '.metabot');
-const PERSIST_FILE = path.join(PERSIST_DIR, 'scheduled-tasks.json');
+let persistDir: string;
+let persistFile: string;
+let originalSessionStoreDir: string | undefined;
 
 function createMockLogger(): Logger {
   return {
@@ -55,28 +56,23 @@ function createMockRegistry(botExists = true, isBusy = false): BotRegistry {
 }
 
 describe('TaskScheduler - Recurring Tasks', () => {
-  let originalPersist: string | undefined;
-
   beforeEach(() => {
     vi.useFakeTimers();
-    // Save and clear any existing persist file
-    try {
-      originalPersist = fs.readFileSync(PERSIST_FILE, 'utf-8');
-    } catch {
-      originalPersist = undefined;
-    }
-    try { fs.unlinkSync(PERSIST_FILE); } catch { /* ignore */ }
+    originalSessionStoreDir = process.env.SESSION_STORE_DIR;
+    persistDir = fs.mkdtempSync(path.join(os.tmpdir(), 'metabot-scheduler-test-'));
+    persistFile = path.join(persistDir, 'scheduled-tasks.json');
+    process.env.SESSION_STORE_DIR = persistDir;
     mockNextCron.mockImplementation(() => Date.now() + 60_000);
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    // Restore persist file
-    try { fs.unlinkSync(PERSIST_FILE); } catch { /* ignore */ }
-    if (originalPersist) {
-      fs.mkdirSync(PERSIST_DIR, { recursive: true });
-      fs.writeFileSync(PERSIST_FILE, originalPersist);
+    if (originalSessionStoreDir === undefined) {
+      delete process.env.SESSION_STORE_DIR;
+    } else {
+      process.env.SESSION_STORE_DIR = originalSessionStoreDir;
     }
+    fs.rmSync(persistDir, { recursive: true, force: true });
   });
 
   it('creates a recurring task with correct fields', () => {
@@ -273,7 +269,7 @@ describe('TaskScheduler - Recurring Tasks', () => {
 
   it('backward-compatible: loads old array format persist file', () => {
     // Write old-format persist file (plain array)
-    fs.mkdirSync(PERSIST_DIR, { recursive: true });
+    fs.mkdirSync(persistDir, { recursive: true });
     const oldData = [
       {
         id: 'old-task-1',
@@ -287,7 +283,7 @@ describe('TaskScheduler - Recurring Tasks', () => {
         retryCount: 0,
       },
     ];
-    fs.writeFileSync(PERSIST_FILE, JSON.stringify(oldData));
+    fs.writeFileSync(persistFile, JSON.stringify(oldData));
 
     const scheduler = new TaskScheduler(createMockRegistry(), createMockLogger());
 

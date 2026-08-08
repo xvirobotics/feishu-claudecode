@@ -44,14 +44,17 @@ stat -c '%a %n' ~/.metabot-core/token
 
 ## Bridge API
 
-当 `API_SECRET` 为空时，Bridge `9100` 端口只绑定 localhost。确实需要远程 Bridge
-命令时，应生成独立 Secret，并在自有代理终止 TLS：
+Bridge `9100` 默认只监听 `127.0.0.1`，除健康检查外的 API 都需要 Bearer 凭据。
+确实需要远程 Bridge 命令时，应生成独立 Secret，显式设置 `API_HOST`，并在自有代理终止 TLS：
 
 ```bash
 openssl rand -hex 32
 ```
 
 不要把原始 `9100` 或 `9200` 端口直接暴露到公网。
+不要通过 `token=` 查询参数传递 Bridge 凭据；HTTP 和非浏览器 WebSocket 客户端请使用
+`Authorization: Bearer ...`，浏览器 WebSocket 客户端可使用
+`metabot-bearer.<secret>` subprotocol。
 
 ## 渠道
 

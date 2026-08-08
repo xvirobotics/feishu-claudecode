@@ -92,8 +92,9 @@ const MAX_SETTIMEOUT_MS = 2_147_483_647; // 2^31 - 1 (~24.8 days)
 // Honor SESSION_STORE_DIR so a secondary metabot instance (same working tree,
 // different PM2 app) can isolate its scheduled-tasks.json instead of racing the
 // production instance over the same plain-JSON file (no WAL → full rewrites).
-const PERSIST_DIR = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
-const PERSIST_FILE = path.join(PERSIST_DIR, 'scheduled-tasks.json');
+function resolvePersistDir(): string {
+  return process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
+}
 
 /**
  * Manages scheduled tasks (one-time and recurring) with persistence and timers.
@@ -105,11 +106,15 @@ export class TaskScheduler {
   private recurringTasks = new Map<string, RecurringTask>();
   private recurringTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private wsHandle?: WebSocketHandle;
+  private persistDir: string;
+  private persistFile: string;
 
   constructor(
     private registry: BotRegistry,
     private logger: Logger,
   ) {
+    this.persistDir = resolvePersistDir();
+    this.persistFile = path.join(this.persistDir, 'scheduled-tasks.json');
     this.loadFromDisk();
   }
 
@@ -495,7 +500,7 @@ export class TaskScheduler {
 
   private saveToDisk(): void {
     try {
-      fs.mkdirSync(PERSIST_DIR, { recursive: true });
+      fs.mkdirSync(this.persistDir, { recursive: true });
       // Prune old completed/failed child tasks to prevent unbounded growth
       const tasks = Array.from(this.tasks.values()).filter((t) => {
         if (t.parentRecurringId && (t.status === 'completed' || t.status === 'failed')) {
@@ -508,7 +513,7 @@ export class TaskScheduler {
         tasks,
         recurringTasks: Array.from(this.recurringTasks.values()),
       };
-      fs.writeFileSync(PERSIST_FILE, JSON.stringify(data, null, 2));
+      fs.writeFileSync(this.persistFile, JSON.stringify(data, null, 2));
     } catch (err) {
       this.logger.error({ err }, 'Failed to save scheduled tasks to disk');
     }
@@ -516,9 +521,9 @@ export class TaskScheduler {
 
   private loadFromDisk(): void {
     try {
-      if (!fs.existsSync(PERSIST_FILE)) return;
+      if (!fs.existsSync(this.persistFile)) return;
 
-      const raw = fs.readFileSync(PERSIST_FILE, 'utf-8');
+      const raw = fs.readFileSync(this.persistFile, 'utf-8');
       const parsed = JSON.parse(raw);
       const now = Date.now();
 

@@ -4,11 +4,18 @@ MetaBot 在端口 `9100`（通过 `API_PORT` 配置）暴露 REST API。
 
 ## 认证
 
-如设置了 `API_SECRET`，所有请求需要：
+除健康检查外，Bridge API 请求都需要 Bearer 凭据：
 
 ```
 Authorization: Bearer <API_SECRET>
 ```
+
+不再接受 `token=` 查询参数传递凭据。Bridge 默认监听 `127.0.0.1`；只有放在
+自有私网/TLS 边界后，才应显式设置 `API_HOST`。
+
+Bridge WebSocket `/ws` 也遵循同一规则。非浏览器客户端应使用 `Authorization`
+Header；浏览器客户端可在需要时使用 `metabot-bearer.<API_SECRET>` WebSocket
+subprotocol。
 
 ## 端点
 
