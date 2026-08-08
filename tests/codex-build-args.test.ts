@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildCodexArgs, resolveCodexModelMetadata } from '../src/engines/codex/executor.js';
+import {
+  buildCodexArgs,
+  buildCodexSpawnCommand,
+  resolveCodexModelMetadata,
+} from '../src/engines/codex/executor.js';
 import type { CodexBotConfig } from '../src/config.js';
 
 describe('buildCodexArgs', () => {
@@ -96,5 +100,53 @@ describe('buildCodexArgs', () => {
       else process.env.CODEX_HOME = priorCodexHome;
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('buildCodexSpawnCommand', () => {
+  const args = ['exec', '--json', 'prompt with spaces & "quotes"'];
+
+  it('runs the npm Codex wrapper through Node when codex.js exists', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'metabot-codex-wrapper-'));
+    try {
+      const codexScript = join(dir, 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+      mkdirSync(join(dir, 'node_modules', '@openai', 'codex', 'bin'), { recursive: true });
+      writeFileSync(codexScript, '');
+
+      expect(buildCodexSpawnCommand(join(dir, 'codex.cmd'), args, 'win32')).toEqual({
+        command: process.execPath,
+        args: [codexScript, ...args],
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects other Windows command wrappers', () => {
+    expect(() => buildCodexSpawnCommand(
+      'C:\\tools\\custom-codex.cmd',
+      args,
+      'win32',
+    )).toThrow('Codex executable must be a native executable on Windows');
+  });
+
+  it('runs Windows native executables directly', () => {
+    expect(buildCodexSpawnCommand('C:\\tools\\codex.exe', args, 'win32')).toEqual({
+      command: 'C:\\tools\\codex.exe',
+      args,
+    });
+  });
+
+  it('leaves non-Windows commands unchanged', () => {
+    expect(buildCodexSpawnCommand('/usr/local/bin/codex', args, 'linux')).toEqual({
+      command: '/usr/local/bin/codex',
+      args,
+    });
+  });
+
+  it('rejects a Codex wrapper when its npm entrypoint is missing', () => {
+    expect(() => buildCodexSpawnCommand('codex.cmd', args, 'win32')).toThrow(
+      'Unable to resolve Codex npm entrypoint',
+    );
   });
 });
