@@ -1,6 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { BotsJsonNewFormat, FeishuBotJsonEntry, PeerJsonEntry, TelegramBotJsonEntry, WebBotJsonEntry, WechatBotJsonEntry } from '../config.js';
+import type {
+  BotsJsonNewFormat,
+  FeishuBotJsonEntry,
+  PeerJsonEntry,
+  SlackBotJsonEntry,
+  TelegramBotJsonEntry,
+  WebBotJsonEntry,
+  WechatBotJsonEntry,
+} from '../config.js';
 
 export function readBotsConfig(configPath: string): BotsJsonNewFormat {
   const raw = fs.readFileSync(configPath, 'utf-8');
@@ -28,13 +36,14 @@ function allBotNames(config: BotsJsonNewFormat): string[] {
     ...(config.telegramBots || []).map((b) => b.name),
     ...(config.webBots || []).map((b) => b.name),
     ...(config.wechatBots || []).map((b) => b.name),
+    ...(config.slackBots || []).map((b) => b.name),
   ];
 }
 
 export function addBot(
   configPath: string,
-  platform: 'feishu' | 'telegram' | 'web' | 'wechat',
-  entry: FeishuBotJsonEntry | TelegramBotJsonEntry | WebBotJsonEntry | WechatBotJsonEntry,
+  platform: 'feishu' | 'telegram' | 'web' | 'wechat' | 'slack',
+  entry: FeishuBotJsonEntry | TelegramBotJsonEntry | WebBotJsonEntry | WechatBotJsonEntry | SlackBotJsonEntry,
 ): void {
   const config = readBotsConfig(configPath);
 
@@ -49,14 +58,15 @@ export function addBot(
   } else if (platform === 'telegram') {
     if (!config.telegramBots) config.telegramBots = [];
     config.telegramBots.push(entry as TelegramBotJsonEntry);
+  } else if (platform === 'web') {
+    if (!config.webBots) config.webBots = [];
+    config.webBots.push(entry as WebBotJsonEntry);
+  } else if (platform === 'wechat') {
+    if (!config.wechatBots) config.wechatBots = [];
+    config.wechatBots.push(entry as WechatBotJsonEntry);
   } else {
-    if (platform === 'web') {
-      if (!config.webBots) config.webBots = [];
-      config.webBots.push(entry as WebBotJsonEntry);
-    } else {
-      if (!config.wechatBots) config.wechatBots = [];
-      config.wechatBots.push(entry as WechatBotJsonEntry);
-    }
+    if (!config.slackBots) config.slackBots = [];
+    config.slackBots.push(entry as SlackBotJsonEntry);
   }
 
   writeBotsConfig(configPath, config);
@@ -65,7 +75,12 @@ export function addBot(
 export function removeBot(configPath: string, name: string): boolean {
   const config = readBotsConfig(configPath);
 
-  const totalBots = (config.feishuBots?.length || 0) + (config.telegramBots?.length || 0) + (config.webBots?.length || 0) + (config.wechatBots?.length || 0);
+  const totalBots =
+    (config.feishuBots?.length || 0) +
+    (config.telegramBots?.length || 0) +
+    (config.webBots?.length || 0) +
+    (config.wechatBots?.length || 0) +
+    (config.slackBots?.length || 0);
 
   // Find and remove from feishu
   if (config.feishuBots) {
@@ -110,6 +125,16 @@ export function removeBot(configPath: string, name: string): boolean {
     }
   }
 
+  if (config.slackBots) {
+    const idx = config.slackBots.findIndex((b) => b.name === name);
+    if (idx !== -1) {
+      if (totalBots <= 1) throw new Error('Cannot remove the last bot');
+      config.slackBots.splice(idx, 1);
+      writeBotsConfig(configPath, config);
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -117,12 +142,7 @@ export function updateBot(configPath: string, name: string, updates: Record<stri
   const config = readBotsConfig(configPath);
 
   // Search each platform array and update the matching entry
-  const platforms = [
-    config.feishuBots,
-    config.telegramBots,
-    config.webBots,
-    config.wechatBots,
-  ];
+  const platforms = [config.feishuBots, config.telegramBots, config.webBots, config.wechatBots, config.slackBots];
   for (const bots of platforms) {
     if (!bots) continue;
     const idx = bots.findIndex((b: any) => b.name === name);
@@ -180,7 +200,10 @@ export function removePeer(configPath: string, name: string): boolean {
 export function getBotEntry(
   configPath: string,
   name: string,
-): { platform: 'feishu' | 'telegram' | 'web' | 'wechat'; entry: FeishuBotJsonEntry | TelegramBotJsonEntry | WebBotJsonEntry | WechatBotJsonEntry } | null {
+): {
+  platform: 'feishu' | 'telegram' | 'web' | 'wechat' | 'slack';
+  entry: FeishuBotJsonEntry | TelegramBotJsonEntry | WebBotJsonEntry | WechatBotJsonEntry | SlackBotJsonEntry;
+} | null {
   const config = readBotsConfig(configPath);
 
   const feishu = config.feishuBots?.find((b) => b.name === name);
@@ -194,6 +217,9 @@ export function getBotEntry(
 
   const wechat = config.wechatBots?.find((b) => b.name === name);
   if (wechat) return { platform: 'wechat', entry: wechat };
+
+  const slack = config.slackBots?.find((b) => b.name === name);
+  if (slack) return { platform: 'slack', entry: slack };
 
   return null;
 }

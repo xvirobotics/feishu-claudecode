@@ -100,6 +100,7 @@ export class SessionRegistry {
   static detectPlatform(chatId: string): string {
     if (chatId.startsWith('oc_') || chatId.startsWith('ou_')) return 'feishu';
     if (/^\d+$/.test(chatId)) return 'telegram';
+    if (/^[CDG][A-Z0-9]+$/.test(chatId)) return 'slack';
     if (chatId.startsWith('ios_')) return 'ios';
     return 'web';
   }
@@ -141,7 +142,10 @@ export class SessionRegistry {
       // Also check session_links for linked chatIds
       const linkRow = this.db.prepare('SELECT session_id FROM session_links WHERE chat_id = ?').get(chatId) as any;
       if (linkRow) {
-        this.db.prepare('UPDATE sessions SET updated_at = ?, claude_session_id = COALESCE(?, claude_session_id) WHERE id = ?')
+        this.db
+          .prepare(
+            'UPDATE sessions SET updated_at = ?, claude_session_id = COALESCE(?, claude_session_id) WHERE id = ?',
+          )
           .run(now, claudeSessionId || null, linkRow.session_id);
         session = this.getSession(linkRow.session_id)!;
       }
@@ -149,18 +153,35 @@ export class SessionRegistry {
       // Check if this chatId is a linked chatId
       const linkRow = this.db.prepare('SELECT session_id FROM session_links WHERE chat_id = ?').get(chatId) as any;
       if (linkRow) {
-        this.db.prepare('UPDATE sessions SET updated_at = ?, claude_session_id = COALESCE(?, claude_session_id) WHERE id = ?')
+        this.db
+          .prepare(
+            'UPDATE sessions SET updated_at = ?, claude_session_id = COALESCE(?, claude_session_id) WHERE id = ?',
+          )
           .run(now, claudeSessionId || null, linkRow.session_id);
         session = this.getSession(linkRow.session_id)!;
       } else {
         // Create new session
         const id = crypto.randomUUID();
         const title = prompt.slice(0, 60).replace(/\n/g, ' ');
-        this.db.prepare(`
+        this.db
+          .prepare(
+            `
           INSERT INTO sessions (id, bot_name, claude_session_id, working_directory, title, platform, chat_id, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, botName, claudeSessionId || null, workingDirectory, title, platform, chatId, now, now);
-        session = { id, botName, claudeSessionId, workingDirectory, title, platform, chatId, createdAt: now, updatedAt: now };
+        `,
+          )
+          .run(id, botName, claudeSessionId || null, workingDirectory, title, platform, chatId, now, now);
+        session = {
+          id,
+          botName,
+          claudeSessionId,
+          workingDirectory,
+          title,
+          platform,
+          chatId,
+          createdAt: now,
+          updatedAt: now,
+        };
       }
     }
 
@@ -185,33 +206,47 @@ export class SessionRegistry {
     durationMs?: number,
   ): void {
     const now = Date.now();
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT INTO session_messages (session_id, role, text, platform, cost_usd, duration_ms, timestamp)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(sessionId, role, text, platform, costUsd || null, durationMs || null, now);
+    `,
+      )
+      .run(sessionId, role, text, platform, costUsd || null, durationMs || null, now);
 
     // Trim old messages if over limit
-    const count = (this.db.prepare('SELECT COUNT(*) as count FROM session_messages WHERE session_id = ?').get(sessionId) as any).count;
+    const count = (
+      this.db.prepare('SELECT COUNT(*) as count FROM session_messages WHERE session_id = ?').get(sessionId) as any
+    ).count;
     if (count > MAX_MESSAGES_PER_SESSION) {
       const excess = count - MAX_MESSAGES_PER_SESSION;
-      this.db.prepare(`
+      this.db
+        .prepare(
+          `
         DELETE FROM session_messages WHERE id IN (
           SELECT id FROM session_messages WHERE session_id = ? ORDER BY timestamp ASC LIMIT ?
         )
-      `).run(sessionId, excess);
+      `,
+        )
+        .run(sessionId, excess);
     }
   }
 
   /** List sessions for a bot, ordered by most recent first. */
   listSessions(botName: string): SessionRecord[] {
-    const rows = this.db.prepare(`
+    const rows = this.db
+      .prepare(
+        `
       SELECT s.*,
         (SELECT text FROM session_messages WHERE session_id = s.id ORDER BY timestamp DESC LIMIT 1) as last_message_preview
       FROM sessions s
       WHERE s.bot_name = ?
       ORDER BY s.updated_at DESC
       LIMIT 100
-    `).all(botName) as any[];
+    `,
+      )
+      .all(botName) as any[];
 
     return rows.map(this.mapRow);
   }
@@ -277,10 +312,14 @@ export class SessionRegistry {
     const resolvedPlatform = platform || SessionRegistry.detectPlatform(chatId);
     const now = Date.now();
 
-    this.db.prepare(`
+    this.db
+      .prepare(
+        `
       INSERT OR IGNORE INTO session_links (session_id, chat_id, platform, linked_at)
       VALUES (?, ?, ?, ?)
-    `).run(sessionId, chatId, resolvedPlatform, now);
+    `,
+      )
+      .run(sessionId, chatId, resolvedPlatform, now);
 
     this.db.prepare('UPDATE sessions SET updated_at = ? WHERE id = ?').run(now, sessionId);
 
@@ -290,7 +329,8 @@ export class SessionRegistry {
 
   /** Rename a session. */
   renameSession(id: string, newTitle: string): boolean {
-    const result = this.db.prepare('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?')
+    const result = this.db
+      .prepare('UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?')
       .run(newTitle, Date.now(), id);
     return result.changes > 0;
   }

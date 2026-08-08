@@ -59,7 +59,10 @@ openssl rand -hex 32
 ## 渠道
 
 - 限制飞书/Lark 应用可见范围，只发布必要权限。
-- 不要在 `bots.json` 副本、截图或 Issue 中泄露 Telegram、微信 Token。
+- 不要在 `bots.json` 副本、截图或 Issue 中泄露 Telegram、Slack、微信 Token
+  或 Slack Signing Secret。
+- Slack Events API 请求只有通过 Slack HMAC 签名和 timestamp 校验后才会进入
+  Bridge。
 - 群聊使用精确 `@Bot` 路由；回复模式变更由群主控制，无法验证群主时 fail-closed。
 
 ## Memory 共享

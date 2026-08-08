@@ -208,6 +208,18 @@ export interface WechatBotConfig extends BotConfigBase {
   };
 }
 
+/** Slack bot config (Events API + Web API). */
+export interface SlackBotConfig extends BotConfigBase {
+  slack: {
+    botToken: string;
+    signingSecret: string;
+    /** Optional bot user ID. If omitted, startup tries Slack auth.test. */
+    botUserId?: string;
+  };
+  /** When true, respond to all channel/group messages without requiring @mention. */
+  groupNoMention?: boolean;
+}
+
 export interface PeerConfig {
   name: string;
   url: string;
@@ -219,6 +231,7 @@ export interface AppConfig {
   telegramBots: TelegramBotConfig[];
   webBots: BotConfigBase[];
   wechatBots: WechatBotConfig[];
+  slackBots: SlackBotConfig[];
   /** Dedicated Feishu service app for wiki sync & doc reader (independent of chat bots). */
   feishuService?: {
     appId: string;
@@ -485,6 +498,61 @@ function wechatBotFromJson(entry: WechatBotJsonEntry): WechatBotConfig {
   };
 }
 
+// --- Slack JSON entry (used in bots.json) ---
+
+export interface SlackBotJsonEntry extends EngineJsonFields {
+  name: string;
+  description?: string;
+  specialties?: string[];
+  icon?: string;
+  maxConcurrentTasks?: number;
+  budgetLimitDaily?: number;
+  ttsVoice?: string;
+  voiceReply?: VoiceReplyConfig;
+  /** See BotConfigBase.visible — defaults to true if omitted. */
+  visible?: boolean;
+  /** See BotConfigBase.memoryPublic — defaults to true if omitted. */
+  memoryPublic?: boolean;
+  slackBotToken: string;
+  slackSigningSecret: string;
+  slackBotUserId?: string;
+  defaultWorkingDirectory: string;
+  maxTurns?: number;
+  maxBudgetUsd?: number;
+  model?: string;
+  apiKey?: string;
+  outputsBaseDir?: string;
+  downloadsDir?: string;
+  /** When true, respond to all channel/group messages without requiring @mention. */
+  groupNoMention?: boolean;
+}
+
+function slackBotFromJson(entry: SlackBotJsonEntry): SlackBotConfig {
+  const codex = buildCodexConfig(entry.codex);
+  return {
+    name: entry.name,
+    ...(entry.description ? { description: entry.description } : {}),
+    ...(entry.specialties?.length ? { specialties: entry.specialties } : {}),
+    ...(entry.icon ? { icon: entry.icon } : {}),
+    ...(entry.maxConcurrentTasks != null ? { maxConcurrentTasks: entry.maxConcurrentTasks } : {}),
+    ...(entry.budgetLimitDaily != null ? { budgetLimitDaily: entry.budgetLimitDaily } : {}),
+    ...(entry.ttsVoice ? { ttsVoice: entry.ttsVoice } : {}),
+    ...(entry.voiceReply ? { voiceReply: entry.voiceReply } : {}),
+    ...(entry.visible !== undefined ? { visible: entry.visible } : {}),
+    ...(entry.memoryPublic !== undefined ? { memoryPublic: entry.memoryPublic } : {}),
+    ...(entry.groupNoMention ? { groupNoMention: true } : {}),
+    ...(entry.engine ? { engine: entry.engine } : {}),
+    ...(entry.kimi ? { kimi: entry.kimi } : {}),
+    ...(codex ? { codex } : {}),
+    slack: {
+      botToken: entry.slackBotToken,
+      signingSecret: entry.slackSigningSecret,
+      ...(entry.slackBotUserId ? { botUserId: entry.slackBotUserId } : {}),
+    },
+    claude: buildClaudeConfig(entry),
+  };
+}
+
 // --- Shared Claude config builder ---
 
 function buildClaudeConfig(entry: {
@@ -502,11 +570,19 @@ function buildClaudeConfig(entry: {
     defaultWorkingDirectory: expandUserPath(entry.defaultWorkingDirectory),
     backend: entry.backend ?? (backendEnv === 'sdk' ? 'sdk' : 'pty'),
     maxTurns: entry.maxTurns ?? (process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined),
-    maxBudgetUsd: entry.maxBudgetUsd ?? (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
+    maxBudgetUsd:
+      entry.maxBudgetUsd ??
+      (process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined),
     model: entry.model || process.env.CLAUDE_MODEL || process.env.ANTHROPIC_MODEL || 'claude-fable-5',
     apiKey: entry.apiKey || undefined,
-    outputsBaseDir: entry.outputsBaseDir || process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
-    downloadsDir: entry.downloadsDir || process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+    outputsBaseDir:
+      entry.outputsBaseDir ||
+      process.env.OUTPUTS_BASE_DIR ||
+      path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+    downloadsDir:
+      entry.downloadsDir ||
+      process.env.DOWNLOADS_DIR ||
+      path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
   };
 }
 
@@ -517,11 +593,19 @@ function buildCodexConfig(entry?: CodexJsonConfig): BotConfigBase['codex'] | und
     ...(process.env.CODEX_MODEL ? { model: process.env.CODEX_MODEL } : {}),
     ...(process.env.CODEX_DISPLAY_MODEL ? { displayModel: process.env.CODEX_DISPLAY_MODEL } : {}),
     ...(process.env.CODEX_PROFILE ? { profile: process.env.CODEX_PROFILE } : {}),
-    ...(process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY ? { apiKey: process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY } : {}),
-    ...(process.env.CODEX_BASE_URL || process.env.OPENAI_BASE_URL ? { baseUrl: process.env.CODEX_BASE_URL || process.env.OPENAI_BASE_URL } : {}),
-    ...(process.env.CODEX_APPROVAL_POLICY ? { approvalPolicy: process.env.CODEX_APPROVAL_POLICY as CodexJsonConfig['approvalPolicy'] } : {}),
+    ...(process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY
+      ? { apiKey: process.env.CODEX_API_KEY || process.env.OPENAI_API_KEY }
+      : {}),
+    ...(process.env.CODEX_BASE_URL || process.env.OPENAI_BASE_URL
+      ? { baseUrl: process.env.CODEX_BASE_URL || process.env.OPENAI_BASE_URL }
+      : {}),
+    ...(process.env.CODEX_APPROVAL_POLICY
+      ? { approvalPolicy: process.env.CODEX_APPROVAL_POLICY as CodexJsonConfig['approvalPolicy'] }
+      : {}),
     ...(process.env.CODEX_SANDBOX ? { sandbox: process.env.CODEX_SANDBOX as CodexJsonConfig['sandbox'] } : {}),
-    ...(process.env.CODEX_BYPASS_APPROVALS_AND_SANDBOX === 'true' ? { dangerouslyBypassApprovalsAndSandbox: true } : {}),
+    ...(process.env.CODEX_BYPASS_APPROVALS_AND_SANDBOX === 'true'
+      ? { dangerouslyBypassApprovalsAndSandbox: true }
+      : {}),
     ...(process.env.CODEX_CONTEXT_WINDOW ? { contextWindow: parseInt(process.env.CODEX_CONTEXT_WINDOW, 10) } : {}),
     ...(envReasoningEffort ? { reasoningEffort: envReasoningEffort } : {}),
     ...(entry ?? {}),
@@ -547,7 +631,8 @@ function feishuBotFromEnv(): BotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-fable-5',
       apiKey: undefined,
-      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      outputsBaseDir:
+        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
       backend: process.env.CLAUDE_BACKEND === 'sdk' ? 'sdk' : 'pty',
     },
@@ -569,7 +654,8 @@ function telegramBotFromEnv(): TelegramBotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-fable-5',
       apiKey: undefined,
-      outputsBaseDir: process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      outputsBaseDir:
+        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
       downloadsDir: process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
       backend: process.env.CLAUDE_BACKEND === 'sdk' ? 'sdk' : 'pty',
     },
@@ -591,8 +677,41 @@ function wechatBotFromEnv(): WechatBotConfig {
       maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
       model: process.env.CLAUDE_MODEL || 'claude-fable-5',
       apiKey: undefined,
-      outputsBaseDir: expandUserPath(process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`)),
-      downloadsDir: expandUserPath(process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`)),
+      outputsBaseDir: expandUserPath(
+        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      ),
+      downloadsDir: expandUserPath(
+        process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+      ),
+      backend: process.env.CLAUDE_BACKEND === 'sdk' ? 'sdk' : 'pty',
+    },
+  };
+}
+
+function slackBotFromEnv(): SlackBotConfig {
+  const codex = buildCodexConfig();
+  return {
+    name: 'slack-default',
+    ...(process.env.METABOT_ENGINE ? { engine: process.env.METABOT_ENGINE as EngineName } : {}),
+    ...(codex ? { codex } : {}),
+    slack: {
+      botToken: required('SLACK_BOT_TOKEN'),
+      signingSecret: required('SLACK_SIGNING_SECRET'),
+      ...(process.env.SLACK_BOT_USER_ID ? { botUserId: process.env.SLACK_BOT_USER_ID } : {}),
+    },
+    ...(process.env.SLACK_GROUP_NO_MENTION === 'true' ? { groupNoMention: true } : {}),
+    claude: {
+      defaultWorkingDirectory: expandUserPath(required('CLAUDE_DEFAULT_WORKING_DIRECTORY')),
+      maxTurns: process.env.CLAUDE_MAX_TURNS ? parseInt(process.env.CLAUDE_MAX_TURNS, 10) : undefined,
+      maxBudgetUsd: process.env.CLAUDE_MAX_BUDGET_USD ? parseFloat(process.env.CLAUDE_MAX_BUDGET_USD) : undefined,
+      model: process.env.CLAUDE_MODEL || 'claude-fable-5',
+      apiKey: undefined,
+      outputsBaseDir: expandUserPath(
+        process.env.OUTPUTS_BASE_DIR || path.join(os.tmpdir(), `metabot-outputs-${os.userInfo().username}`),
+      ),
+      downloadsDir: expandUserPath(
+        process.env.DOWNLOADS_DIR || path.join(os.tmpdir(), `metabot-downloads-${os.userInfo().username}`),
+      ),
       backend: process.env.CLAUDE_BACKEND === 'sdk' ? 'sdk' : 'pty',
     },
   };
@@ -611,6 +730,7 @@ export interface BotsJsonNewFormat {
   telegramBots?: TelegramBotJsonEntry[];
   webBots?: WebBotJsonEntry[];
   wechatBots?: WechatBotJsonEntry[];
+  slackBots?: SlackBotJsonEntry[];
   peers?: PeerJsonEntry[];
   agentTeams?: AgentTeamConfig[];
 }
@@ -622,6 +742,7 @@ export function loadAppConfig(): AppConfig {
   let telegramBots: TelegramBotConfig[] = [];
   let webBots: BotConfigBase[] = [];
   let wechatBots: WechatBotConfig[] = [];
+  let slackBots: SlackBotConfig[] = [];
   let agentTeams: AgentTeamConfig[] = [];
   let parsedConfig: unknown;
 
@@ -652,10 +773,19 @@ export function loadAppConfig(): AppConfig {
       if (cfg.wechatBots) {
         wechatBots = cfg.wechatBots.map(wechatBotFromJson);
       }
+      if (cfg.slackBots) {
+        slackBots = cfg.slackBots.map(slackBotFromJson);
+      }
       if (cfg.agentTeams) {
         agentTeams = cfg.agentTeams.map(normalizeAgentTeamConfig);
       }
-      if (feishuBots.length === 0 && telegramBots.length === 0 && webBots.length === 0 && wechatBots.length === 0) {
+      if (
+        feishuBots.length === 0 &&
+        telegramBots.length === 0 &&
+        webBots.length === 0 &&
+        wechatBots.length === 0 &&
+        slackBots.length === 0
+      ) {
         throw new Error(`BOTS_CONFIG file must define at least one bot: ${resolved}`);
       }
     } else {
@@ -672,8 +802,13 @@ export function loadAppConfig(): AppConfig {
     if (process.env.WECHAT_BOT_TOKEN || process.env.WECHAT_ILINK_ENABLED === 'true') {
       wechatBots = [wechatBotFromEnv()];
     }
-    if (feishuBots.length === 0 && telegramBots.length === 0 && wechatBots.length === 0) {
-      throw new Error('No bot configured. Set FEISHU_APP_ID/FEISHU_APP_SECRET, TELEGRAM_BOT_TOKEN, or WECHAT_ILINK_ENABLED=true, or use BOTS_CONFIG for multi-bot mode.');
+    if (process.env.SLACK_BOT_TOKEN) {
+      slackBots = [slackBotFromEnv()];
+    }
+    if (feishuBots.length === 0 && telegramBots.length === 0 && wechatBots.length === 0 && slackBots.length === 0) {
+      throw new Error(
+        'No bot configured. Set FEISHU_APP_ID/FEISHU_APP_SECRET, TELEGRAM_BOT_TOKEN, WECHAT_ILINK_ENABLED=true, SLACK_BOT_TOKEN/SLACK_SIGNING_SECRET, or use BOTS_CONFIG for multi-bot mode.',
+      );
     }
   }
 
@@ -711,7 +846,9 @@ export function loadAppConfig(): AppConfig {
     }
   }
   if (process.env.METABOT_PEERS) {
-    const urls = process.env.METABOT_PEERS.split(',').map((u) => u.trim()).filter(Boolean);
+    const urls = process.env.METABOT_PEERS.split(',')
+      .map((u) => u.trim())
+      .filter(Boolean);
     const secrets = (process.env.METABOT_PEER_SECRETS || '').split(',').map((s) => s.trim());
     const names = (process.env.METABOT_PEER_NAMES || '').split(',').map((s) => s.trim());
     for (let i = 0; i < urls.length; i++) {
@@ -728,6 +865,7 @@ export function loadAppConfig(): AppConfig {
     telegramBots,
     webBots,
     wechatBots,
+    slackBots,
     feishuService,
     log: {
       level: process.env.LOG_LEVEL || 'info',
@@ -746,32 +884,51 @@ function normalizeAgentTeamConfig(team: AgentTeamConfig): AgentTeamConfig {
     name: team.name,
     ...(team.description ? { description: team.description } : {}),
     ...(team.status === 'active' || team.status === 'stopped' ? { status: team.status } : {}),
-    ...(Array.isArray(team.chatIds) ? { chatIds: team.chatIds.filter((v): v is string => typeof v === 'string' && !!v.trim()) } : {}),
-    ...(Array.isArray(team.displayChatIds) ? { displayChatIds: team.displayChatIds.filter((v): v is string => typeof v === 'string' && !!v.trim()) } : {}),
-    ...(Array.isArray(team.agents) ? {
-      agents: team.agents
-        .filter((agent) => agent && typeof agent.name === 'string' && !!agent.name.trim())
-        .map((agent) => ({
-          name: agent.name.trim(),
-          ...(agent.role ? { role: agent.role } : {}),
-          ...(agent.engine === 'claude' || agent.engine === 'codex' || agent.engine === 'kimi' ? { engine: agent.engine } : {}),
-          ...(agent.prompt ? { prompt: agent.prompt } : {}),
-          ...(agent.sessionId ? { sessionId: agent.sessionId } : {}),
-          ...(agent.status === 'idle' || agent.status === 'working' || agent.status === 'stopped' ? { status: agent.status } : {}),
-        })),
-    } : {}),
-    ...(Array.isArray(team.tasks) ? {
-      tasks: team.tasks
-        .filter((task) => task && typeof task.subject === 'string' && !!task.subject.trim())
-        .map((task) => ({
-          ...(typeof task.id === 'number' ? { id: task.id } : {}),
-          subject: task.subject.trim(),
-          ...(task.description ? { description: task.description } : {}),
-          ...(task.owner ? { owner: task.owner } : {}),
-          ...(Array.isArray(task.blockedBy) ? { blockedBy: task.blockedBy.filter((v): v is number => typeof v === 'number') } : {}),
-          ...(task.status === 'pending' || task.status === 'in_progress' || task.status === 'completed' || task.status === 'deleted' ? { status: task.status } : {}),
-          ...(task.result ? { result: task.result } : {}),
-        })),
-    } : {}),
+    ...(Array.isArray(team.chatIds)
+      ? { chatIds: team.chatIds.filter((v): v is string => typeof v === 'string' && !!v.trim()) }
+      : {}),
+    ...(Array.isArray(team.displayChatIds)
+      ? { displayChatIds: team.displayChatIds.filter((v): v is string => typeof v === 'string' && !!v.trim()) }
+      : {}),
+    ...(Array.isArray(team.agents)
+      ? {
+          agents: team.agents
+            .filter((agent) => agent && typeof agent.name === 'string' && !!agent.name.trim())
+            .map((agent) => ({
+              name: agent.name.trim(),
+              ...(agent.role ? { role: agent.role } : {}),
+              ...(agent.engine === 'claude' || agent.engine === 'codex' || agent.engine === 'kimi'
+                ? { engine: agent.engine }
+                : {}),
+              ...(agent.prompt ? { prompt: agent.prompt } : {}),
+              ...(agent.sessionId ? { sessionId: agent.sessionId } : {}),
+              ...(agent.status === 'idle' || agent.status === 'working' || agent.status === 'stopped'
+                ? { status: agent.status }
+                : {}),
+            })),
+        }
+      : {}),
+    ...(Array.isArray(team.tasks)
+      ? {
+          tasks: team.tasks
+            .filter((task) => task && typeof task.subject === 'string' && !!task.subject.trim())
+            .map((task) => ({
+              ...(typeof task.id === 'number' ? { id: task.id } : {}),
+              subject: task.subject.trim(),
+              ...(task.description ? { description: task.description } : {}),
+              ...(task.owner ? { owner: task.owner } : {}),
+              ...(Array.isArray(task.blockedBy)
+                ? { blockedBy: task.blockedBy.filter((v): v is number => typeof v === 'number') }
+                : {}),
+              ...(task.status === 'pending' ||
+              task.status === 'in_progress' ||
+              task.status === 'completed' ||
+              task.status === 'deleted'
+                ? { status: task.status }
+                : {}),
+              ...(task.result ? { result: task.result } : {}),
+            })),
+        }
+      : {}),
   };
 }

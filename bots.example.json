@@ -65,6 +65,20 @@
       "defaultWorkingDirectory": "/home/user/project"
     }
   ],
+  "slackBots": [
+    {
+      "name": "slack-codex",
+      "description": "Codex-powered assistant via Slack DM or @mention",
+      "engine": "codex",
+      "slackBotToken": "xoxb-...",
+      "slackSigningSecret": "slack-signing-secret",
+      "defaultWorkingDirectory": "/home/user/project",
+      "codex": {
+        "approvalPolicy": "never",
+        "sandbox": "workspace-write"
+      }
+    }
+  ],
   "peers": [
     {
       "name": "alice",

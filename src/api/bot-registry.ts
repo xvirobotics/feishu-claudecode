@@ -6,7 +6,7 @@ import type { IMessageSender } from '../bridge/message-sender.interface.js';
 
 export interface RegisteredBot {
   name: string;
-  platform: 'feishu' | 'telegram' | 'web' | 'wechat';
+  platform: 'feishu' | 'telegram' | 'web' | 'wechat' | 'slack';
   config: BotConfigBase;
   bridge: MessageBridge;
   sender: IMessageSender;
@@ -69,7 +69,7 @@ export class BotRegistry {
 
   get(name: string): RegisteredBot | undefined {
     // Try platform-qualified keys first
-    for (const prefix of ['feishu', 'telegram', 'web', 'wechat']) {
+    for (const prefix of ['feishu', 'telegram', 'web', 'wechat', 'slack']) {
       const bot = this.bots.get(`${prefix}:${name}`);
       if (bot) return bot;
     }
@@ -88,7 +88,7 @@ export class BotRegistry {
 
   deregister(name: string): boolean {
     // Try all platform-qualified keys
-    for (const prefix of ['feishu', 'telegram', 'web', 'wechat']) {
+    for (const prefix of ['feishu', 'telegram', 'web', 'wechat', 'slack']) {
       if (this.bots.delete(`${prefix}:${name}`)) return true;
     }
     return false;

@@ -30,6 +30,7 @@ import { AgentTeamStore } from '../agent-teams/team-store.js';
 import { AgentTeamSupervisor } from '../agent-teams/team-supervisor.js';
 import { metrics as _metrics } from '../utils/metrics.js';
 import type { SessionRegistry } from '../session/session-registry.js';
+import { handleSlackEventsRoute, isSlackEventsRoute } from '../slack/slack-bot.js';
 import {
   jsonResponse,
   acceptCoreChatRun,
@@ -79,7 +80,10 @@ export function resolveApiHost(env: NodeJS.ProcessEnv = process.env): string {
   return (env.API_HOST || env.METABOT_API_HOST || '127.0.0.1').trim() || '127.0.0.1';
 }
 
-export function isLocalSecretAuthorized(secret: string | undefined, authorization: string | string[] | undefined): boolean {
+export function isLocalSecretAuthorized(
+  secret: string | undefined,
+  authorization: string | string[] | undefined,
+): boolean {
   if (!secret) return false;
   const bearer = bearerTokenFromAuthorization(authorization);
   return timingSafeStrEqual(bearer, secret);
@@ -128,15 +132,10 @@ function metabotCoreBaseUrl(): string | undefined {
  * Verify a Bearer header against metabot-core `GET /api/whoami`. Returns true
  * only on HTTP 200. Fails closed on any error (network, non-200, timeout).
  */
-async function verifyBearerViaMetabotCore(
-  authHeader: string,
-  logger: Logger,
-): Promise<boolean> {
+async function verifyBearerViaMetabotCore(authHeader: string, logger: Logger): Promise<boolean> {
   const base = metabotCoreBaseUrl();
   if (!base) {
-    logger.warn(
-      'cross-bridge talk attempted but METABOT_CORE_AGENT_BUS_URL/METABOT_CORE_URL is unset — cannot verify',
-    );
+    logger.warn('cross-bridge talk attempted but METABOT_CORE_AGENT_BUS_URL/METABOT_CORE_URL is unset — cannot verify');
     return false;
   }
   try {
@@ -152,7 +151,8 @@ async function verifyBearerViaMetabotCore(
 }
 
 export function startApiServer(options: ApiServerOptions): http.Server {
-  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager } = options;
+  const { port, secret, registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient, peerManager } =
+    options;
   const host = resolveApiHost();
 
   // Initialize shared services
@@ -190,10 +190,20 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
   // Build route context (shared across all route handlers)
   const ctx: RouteContext = {
-    registry, scheduler, logger, botsConfigPath, docSync, feishuServiceClient,
+    registry,
+    scheduler,
+    logger,
+    botsConfigPath,
+    docSync,
+    feishuServiceClient,
     peerManager,
-    asyncTaskStore, intentRouter, circuitBreaker, budgetManager,
-    teamManager, meetingService, voiceIdentityStore,
+    asyncTaskStore,
+    intentRouter,
+    circuitBreaker,
+    budgetManager,
+    teamManager,
+    meetingService,
+    voiceIdentityStore,
     rtcService: rtcService.isConfigured() ? rtcService : undefined,
     ws,
     sessionRegistry: options.sessionRegistry,
@@ -206,17 +216,24 @@ export function startApiServer(options: ApiServerOptions): http.Server {
     peerManager.setRelayHandler(async (message) => {
       const parsedContent = parseRelayContent(message.content);
       if (parsedContent && parsedContent.type === 'core-chat-run') {
-        const payload = typeof parsedContent.request === 'object' && parsedContent.request !== null
-          ? parsedContent.request as Record<string, unknown>
-          : parsedContent;
+        const payload =
+          typeof parsedContent.request === 'object' && parsedContent.request !== null
+            ? (parsedContent.request as Record<string, unknown>)
+            : parsedContent;
         const parsed = parseCoreChatRunRequest(payload);
         if (!parsed.request) {
-          logger.warn({ messageId: message.id, targetBot: message.targetBot, error: parsed.error }, 'invalid core-chat relay payload');
+          logger.warn(
+            { messageId: message.id, targetBot: message.targetBot, error: parsed.error },
+            'invalid core-chat relay payload',
+          );
           return;
         }
         const accepted = acceptCoreChatRun(ctx, parsed.request);
         if (accepted.status >= 400) {
-          logger.warn({ messageId: message.id, targetBot: message.targetBot, status: accepted.status, body: accepted.body }, 'core-chat relay rejected');
+          logger.warn(
+            { messageId: message.id, targetBot: message.targetBot, status: accepted.status, body: accepted.body },
+            'core-chat relay rejected',
+          );
         }
         return;
       }
@@ -239,22 +256,31 @@ export function startApiServer(options: ApiServerOptions): http.Server {
         return;
       }
 
-      const botName = typeof parsedContent?.botName === 'string' && parsedContent.botName
-        ? parsedContent.botName
-        : message.targetBot;
-      const prompt = typeof parsedContent?.prompt === 'string' && parsedContent.prompt
-        ? parsedContent.prompt
-        : (typeof parsedContent?.content === 'string' && parsedContent.content ? parsedContent.content : message.content);
-      const chatId = typeof parsedContent?.chatId === 'string' && parsedContent.chatId
-        ? parsedContent.chatId
-        : (message.chatId || `agent-inbox-${botName}`);
+      const botName =
+        typeof parsedContent?.botName === 'string' && parsedContent.botName ? parsedContent.botName : message.targetBot;
+      const prompt =
+        typeof parsedContent?.prompt === 'string' && parsedContent.prompt
+          ? parsedContent.prompt
+          : typeof parsedContent?.content === 'string' && parsedContent.content
+            ? parsedContent.content
+            : message.content;
+      const chatId =
+        typeof parsedContent?.chatId === 'string' && parsedContent.chatId
+          ? parsedContent.chatId
+          : message.chatId || `agent-inbox-${botName}`;
       const sendCards = typeof parsedContent?.sendCards === 'boolean' ? parsedContent.sendCards : true;
       const bot = registry.get(botName);
       if (!bot) {
-        logger.warn({ messageId: message.id, botName, targetBot: message.targetBot }, 'relay inbox target bot not found locally');
+        logger.warn(
+          { messageId: message.id, botName, targetBot: message.targetBot },
+          'relay inbox target bot not found locally',
+        );
         return;
       }
-      logger.info({ messageId: message.id, botName, chatId, fromBot: message.fromBot, fromOwner: message.fromOwner }, 'executing relay inbox talk message');
+      logger.info(
+        { messageId: message.id, botName, chatId, fromBot: message.fromBot, fromOwner: message.fromOwner },
+        'executing relay inbox talk message',
+      );
       await bot.bridge.executeApiTask({
         prompt,
         chatId,
@@ -306,12 +332,27 @@ export function startApiServer(options: ApiServerOptions): http.Server {
 
     // Rate limiting (global per-IP ceiling + failed-auth backoff). GET
     // /api/health is exempt so liveness/readiness probes are never throttled.
+    // Slack Events API uses its own HMAC signature gate but still shares the
+    // same per-IP flood ceiling.
     const isHealthProbe = method === 'GET' && url === '/api/health';
     if (!isHealthProbe) {
       const decision = rateLimiter.check(clientIp);
       if (decision) {
         res.setHeader('Retry-After', String(decision.retryAfterSec));
         jsonResponse(res, decision.status, { error: 'Too Many Requests', reason: decision.reason });
+        return;
+      }
+    }
+
+    if (isSlackEventsRoute(method, url)) {
+      try {
+        if (await handleSlackEventsRoute(registry, logger, req, res, url)) return;
+      } catch (err: any) {
+        const statusCode = err.statusCode || 500;
+        if (statusCode >= 500) {
+          logger.error({ err, method, url }, 'Slack events request error');
+        }
+        jsonResponse(res, statusCode, { error: err.message || 'Internal server error' });
         return;
       }
     }
@@ -458,7 +499,7 @@ function parseRelayContent(content: string): Record<string, any> | undefined {
   if (!trimmed.startsWith('{')) return undefined;
   try {
     const parsed = JSON.parse(trimmed);
-    return typeof parsed === 'object' && parsed !== null ? parsed as Record<string, any> : undefined;
+    return typeof parsed === 'object' && parsed !== null ? (parsed as Record<string, any>) : undefined;
   } catch {
     return undefined;
   }
@@ -488,7 +529,10 @@ function watchAgentTeamsConfig(options: {
     watcher.unref?.();
     return watcher;
   } catch (err: any) {
-    options.logger.warn({ err: err?.message || err, botsConfigPath: options.botsConfigPath }, 'Agent teams hot reload watcher failed');
+    options.logger.warn(
+      { err: err?.message || err, botsConfigPath: options.botsConfigPath },
+      'Agent teams hot reload watcher failed',
+    );
     return undefined;
   }
 }

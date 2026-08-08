@@ -1,13 +1,13 @@
 # Architecture
 
 MetaBot is a Node.js >= 22.19 TypeScript ESM monorepo. The Bridge connects
-Feishu/Lark, Telegram, WeChat, and Web clients to an engine-neutral message
+Feishu/Lark, Telegram, Slack, WeChat, and Web clients to an engine-neutral message
 pipeline; each bot or chat can run Codex, Kimi Code, or Claude compatibility.
 
 ## System Overview
 
 ```text
-Feishu/Lark · Telegram · WeChat · Web
+Feishu/Lark · Telegram · Slack · WeChat · Web
                     │
           Event and API adapters
                     │
@@ -41,11 +41,11 @@ compatibility engine for existing bots and workspaces.
 
 ## Three Pillars
 
-| Pillar | Components | What they do |
-|---|---|---|
-| **Supervised** | IM Bridge + Web UI | Stream tool activity and state so the user can monitor, stop, answer, and redirect supported engines. |
-| **Self-Improving** | MetaMemory + Skills + T5T | Preserve reusable knowledge, workflows, and project checkpoints outside a single model session. |
-| **Agent Organization** | Agent Teams + Agent Bus + Scheduler | Coordinate durable teammates, tasks, runs, cross-agent messages, and optional recurring work. |
+| Pillar                 | Components                          | What they do                                                                                          |
+| ---------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| **Supervised**         | IM Bridge + Web UI                  | Stream tool activity and state so the user can monitor, stop, answer, and redirect supported engines. |
+| **Self-Improving**     | MetaMemory + Skills + T5T           | Preserve reusable knowledge, workflows, and project checkpoints outside a single model session.       |
+| **Agent Organization** | Agent Teams + Agent Bus + Scheduler | Coordinate durable teammates, tasks, runs, cross-agent messages, and optional recurring work.         |
 
 ## Message Flow
 
@@ -81,26 +81,26 @@ All adapters implement the shared `Engine` / `Executor` contract and translate
 their native protocol into the event shape consumed by the Bridge and card
 renderer.
 
-| Engine | Native protocol | Session behavior |
-|---|---|---|
-| Codex | `codex exec --json` JSONL | `codex exec resume` continues a saved session |
-| Kimi Code | Official `/api/v1` local Server API | Durable Kimi Sessions and atomic frontend snapshots |
-| Claude compatibility | Claude CLI / Agent SDK | Existing Claude sessions and persistent-executor behavior |
+| Engine               | Native protocol                     | Session behavior                                          |
+| -------------------- | ----------------------------------- | --------------------------------------------------------- |
+| Codex                | `codex exec --json` JSONL           | `codex exec resume` continues a saved session             |
+| Kimi Code            | Official `/api/v1` local Server API | Durable Kimi Sessions and atomic frontend snapshots       |
+| Claude compatibility | Claude CLI / Agent SDK              | Existing Claude sessions and persistent-executor behavior |
 
 ## Key Modules
 
-| Module | Description |
-|---|---|
-| `src/index.ts` | Entrypoint; creates channel clients, registries, stores, and shutdown handlers. |
-| `src/config.ts` | Loads engine, channel, Core, workspace, and per-bot configuration. |
-| `src/bridge/message-bridge.ts` | Core orchestrator for commands, queues, tasks, sessions, media, and engine execution. |
-| `src/engines/index.ts` | Engine selection and shared boundary. |
-| `src/engines/codex/executor.ts` | Spawns Codex exec/resume and translates JSONL events. |
-| `src/engines/kimi/daemon-client.ts` | Starts or connects to the Kimi Code local Server API. |
-| `src/engines/kimi/executor.ts` | Drives Kimi Sessions, snapshots, steering, questions, goals, and completion. |
-| `src/engines/claude/` | Claude compatibility executor, session, and stream-processing code. |
-| `src/feishu/event-handler.ts` | Feishu event parsing, media cache, group modes, and exact mention routing. |
-| `src/telegram/` / `src/wechat/` | Telegram and WeChat channel adapters. |
-| `src/agent-teams/` | Durable local team, task, member, and run orchestration. |
-| `packages/server/` | Personal Core HTTP backend and token authentication. |
-| `packages/web-ui/` | Personal Core browser application. |
+| Module                                         | Description                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `src/index.ts`                                 | Entrypoint; creates channel clients, registries, stores, and shutdown handlers.       |
+| `src/config.ts`                                | Loads engine, channel, Core, workspace, and per-bot configuration.                    |
+| `src/bridge/message-bridge.ts`                 | Core orchestrator for commands, queues, tasks, sessions, media, and engine execution. |
+| `src/engines/index.ts`                         | Engine selection and shared boundary.                                                 |
+| `src/engines/codex/executor.ts`                | Spawns Codex exec/resume and translates JSONL events.                                 |
+| `src/engines/kimi/daemon-client.ts`            | Starts or connects to the Kimi Code local Server API.                                 |
+| `src/engines/kimi/executor.ts`                 | Drives Kimi Sessions, snapshots, steering, questions, goals, and completion.          |
+| `src/engines/claude/`                          | Claude compatibility executor, session, and stream-processing code.                   |
+| `src/feishu/event-handler.ts`                  | Feishu event parsing, media cache, group modes, and exact mention routing.            |
+| `src/telegram/` / `src/slack/` / `src/wechat/` | Telegram, Slack, and WeChat channel adapters.                                         |
+| `src/agent-teams/`                             | Durable local team, task, member, and run orchestration.                              |
+| `packages/server/`                             | Personal Core HTTP backend and token authentication.                                  |
+| `packages/web-ui/`                             | Personal Core browser application.                                                    |

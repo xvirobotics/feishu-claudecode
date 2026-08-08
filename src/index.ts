@@ -16,6 +16,7 @@ import type { IMessageSender } from './bridge/message-sender.interface.js';
 import type { BotConfigBase } from './config.js';
 import { startTelegramBot } from './telegram/telegram-bot.js';
 import { startWechatBot } from './wechat/wechat-bot.js';
+import { startSlackBot } from './slack/slack-bot.js';
 import { BotRegistry } from './api/bot-registry.js';
 import { NullSender } from './web/null-sender.js';
 import { PeerManager } from './api/peer-manager.js';
@@ -94,10 +95,15 @@ async function startFeishuBot(
     if (botOpenId) {
       botLogger.info({ botOpenId }, 'Bot info fetched');
     } else {
-      botLogger.warn('Could not get bot open_id. Ensure the Feishu app has Bot capability enabled and the app version is published.');
+      botLogger.warn(
+        'Could not get bot open_id. Ensure the Feishu app has Bot capability enabled and the app version is published.',
+      );
     }
   } catch (err: any) {
-    botLogger.warn({ err: err?.message || err }, 'Failed to fetch bot info. Check: 1) Bot capability is enabled in Feishu app 2) App is published 3) App credentials are correct');
+    botLogger.warn(
+      { err: err?.message || err },
+      'Failed to fetch bot info. Check: 1) Bot capability is enabled in Feishu app 2) App is published 3) App credentials are correct',
+    );
   }
 
   // Create sender and bridge (FeishuSenderAdapter wraps the Feishu-specific MessageSender)
@@ -150,11 +156,14 @@ async function startFeishuBot(
   await wsClient.start({ eventDispatcher: dispatcher });
 
   botLogger.info('Feishu bot channel initialized');
-  botLogger.info({
-    defaultWorkingDirectory: botConfig.claude.defaultWorkingDirectory,
-    maxTurns: botConfig.claude.maxTurns ?? 'unlimited',
-    maxBudgetUsd: botConfig.claude.maxBudgetUsd ?? 'unlimited',
-  }, 'Configuration');
+  botLogger.info(
+    {
+      defaultWorkingDirectory: botConfig.claude.defaultWorkingDirectory,
+      maxTurns: botConfig.claude.maxTurns ?? 'unlimited',
+      maxBudgetUsd: botConfig.claude.maxBudgetUsd ?? 'unlimited',
+    },
+    'Configuration',
+  );
 
   return { name: botConfig.name, bridge, wsClient, config: botConfig, sender, feishuClient: client };
 }
@@ -171,7 +180,12 @@ async function startFeishuBot(
  */
 function applyBotFilter(appConfig: ReturnType<typeof loadAppConfig>, logger: Logger): void {
   const parse = (v?: string) =>
-    new Set((v ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+    new Set(
+      (v ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    );
   const only = parse(process.env.METABOT_ONLY_BOTS);
   const exclude = parse(process.env.METABOT_EXCLUDE_BOTS);
   if (only.size === 0 && exclude.size === 0) return;
@@ -186,11 +200,13 @@ function applyBotFilter(appConfig: ReturnType<typeof loadAppConfig>, logger: Log
     telegram: appConfig.telegramBots.length,
     web: appConfig.webBots.length,
     wechat: appConfig.wechatBots.length,
+    slack: appConfig.slackBots.length,
   };
   appConfig.feishuBots = appConfig.feishuBots.filter((b) => keep(b.name));
   appConfig.telegramBots = appConfig.telegramBots.filter((b) => keep(b.name));
   appConfig.webBots = appConfig.webBots.filter((b) => keep(b.name));
   appConfig.wechatBots = appConfig.wechatBots.filter((b) => keep(b.name));
+  appConfig.slackBots = appConfig.slackBots.filter((b) => keep(b.name));
   logger.info(
     {
       only: [...only],
@@ -201,6 +217,7 @@ function applyBotFilter(appConfig: ReturnType<typeof loadAppConfig>, logger: Log
         telegram: appConfig.telegramBots.length,
         web: appConfig.webBots.length,
         wechat: appConfig.wechatBots.length,
+        slack: appConfig.slackBots.length,
       },
     },
     'Bot filter applied (METABOT_ONLY_BOTS / METABOT_EXCLUDE_BOTS)',
@@ -220,7 +237,11 @@ async function main() {
   const feishuCount = appConfig.feishuBots.length;
   const telegramCount = appConfig.telegramBots.length;
   const wechatCount = appConfig.wechatBots.length;
-  logger.info({ feishuBots: feishuCount, telegramBots: telegramCount, wechatBots: wechatCount }, 'Starting MetaBot bridge...');
+  const slackCount = appConfig.slackBots.length;
+  logger.info(
+    { feishuBots: feishuCount, telegramBots: telegramCount, wechatBots: wechatCount, slackBots: slackCount },
+    'Starting MetaBot bridge...',
+  );
 
   // Create bot registry
   const registry = new BotRegistry();
@@ -229,38 +250,34 @@ async function main() {
   // so no Feishu socket ever goes out the default route.
   const feishuLocalAgent = setupFeishuLocalAddress(logger);
   // Avoid creating Feishu-specific state for Telegram/WeChat/Web-only installs.
-  const groupReplyModeStore = feishuCount > 0
-    ? new FeishuGroupReplyModeStore(logger)
-    : undefined;
+  const groupReplyModeStore = feishuCount > 0 ? new FeishuGroupReplyModeStore(logger) : undefined;
 
   // Start bots independently so a single platform/API timeout does not
   // take down the whole MetaBot process.
-  const feishuHandles = feishuCount > 0
-    ? await startBotsSafely(
-      appConfig.feishuBots,
-      (bot) => startFeishuBot(bot, logger, groupReplyModeStore!, feishuLocalAgent),
-      logger,
-      'feishu',
-    )
-    : [];
+  const feishuHandles =
+    feishuCount > 0
+      ? await startBotsSafely(
+          appConfig.feishuBots,
+          (bot) => startFeishuBot(bot, logger, groupReplyModeStore!, feishuLocalAgent),
+          logger,
+          'feishu',
+        )
+      : [];
 
-  const telegramHandles = telegramCount > 0
-    ? await startBotsSafely(
-      appConfig.telegramBots,
-      (bot) => startTelegramBot(bot, logger),
-      logger,
-      'telegram',
-    )
-    : [];
+  const telegramHandles =
+    telegramCount > 0
+      ? await startBotsSafely(appConfig.telegramBots, (bot) => startTelegramBot(bot, logger), logger, 'telegram')
+      : [];
 
-  const wechatHandles = wechatCount > 0
-    ? await startBotsSafely(
-      appConfig.wechatBots,
-      (bot) => startWechatBot(bot, logger),
-      logger,
-      'wechat',
-    )
-    : [];
+  const wechatHandles =
+    wechatCount > 0
+      ? await startBotsSafely(appConfig.wechatBots, (bot) => startWechatBot(bot, logger), logger, 'wechat')
+      : [];
+
+  const slackHandles =
+    slackCount > 0
+      ? await startBotsSafely(appConfig.slackBots, (bot) => startSlackBot(bot, logger), logger, 'slack')
+      : [];
 
   // Register all bots in the registry
   for (const handle of feishuHandles) {
@@ -303,11 +320,23 @@ async function main() {
     });
   }
 
+  for (const handle of slackHandles) {
+    registry.register({
+      name: handle.name,
+      platform: 'slack',
+      config: handle.config,
+      bridge: handle.bridge,
+      sender: handle.sender,
+      connectionStatus: () => ({ state: 'idle' as const, reconnectAttempts: 0 }),
+    });
+  }
+
   const allNames = [
     ...feishuHandles.map((h) => h.name),
     ...telegramHandles.map((h) => h.name),
     ...appConfig.webBots.map((b) => b.name),
     ...wechatHandles.map((h) => h.name),
+    ...slackHandles.map((h) => h.name),
   ];
   logger.info({ bots: allNames }, 'All bots started');
 
@@ -326,6 +355,7 @@ async function main() {
     ...appConfig.telegramBots.map((b) => ({ name: b.name, visible: b.visible, memoryPublic: b.memoryPublic })),
     ...appConfig.webBots.map((b) => ({ name: b.name, visible: b.visible, memoryPublic: b.memoryPublic })),
     ...appConfig.wechatBots.map((b) => ({ name: b.name, visible: b.visible, memoryPublic: b.memoryPublic })),
+    ...appConfig.slackBots.map((b) => ({ name: b.name, visible: b.visible, memoryPublic: b.memoryPublic })),
   ];
   let peerManager: PeerManager | undefined;
   if (
@@ -386,9 +416,7 @@ async function main() {
   }
 
   // Resolve bots config path for API-driven bot CRUD
-  const botsConfigPath = process.env.BOTS_CONFIG
-    ? path.resolve(process.env.BOTS_CONFIG)
-    : undefined;
+  const botsConfigPath = process.env.BOTS_CONFIG ? path.resolve(process.env.BOTS_CONFIG) : undefined;
 
   // Start API server
   const apiServer = startApiServer({
@@ -435,11 +463,11 @@ async function main() {
       teardowns.push(handle.bridge.destroyAsync());
       handle.stop();
     }
+    for (const handle of slackHandles) {
+      teardowns.push(handle.bridge.destroyAsync());
+    }
     // Cap teardown wait so a hung executor can't block exit indefinitely
-    await Promise.race([
-      Promise.allSettled(teardowns),
-      new Promise((resolve) => setTimeout(resolve, 15_000)),
-    ]);
+    await Promise.race([Promise.allSettled(teardowns), new Promise((resolve) => setTimeout(resolve, 15_000))]);
     groupReplyModeStore?.close();
     process.exit(0);
   };
@@ -452,7 +480,7 @@ async function startBotsSafely<TConfig extends BotConfigBase, THandle>(
   bots: TConfig[],
   starter: (bot: TConfig) => Promise<THandle>,
   logger: Logger,
-  platform: 'feishu' | 'telegram' | 'wechat',
+  platform: 'feishu' | 'telegram' | 'wechat' | 'slack',
 ): Promise<THandle[]> {
   const results = await Promise.allSettled(bots.map((bot) => starter(bot)));
   const handles: THandle[] = [];

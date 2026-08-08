@@ -2,7 +2,7 @@
 
 # 🤖 MetaBot
 
-### Run Codex and Kimi Code from Feishu/Lark, Telegram, WeChat, or the Web
+### Run Codex and Kimi Code from Feishu/Lark, Telegram, Slack, WeChat, or the Web
 
 _A self-hosted personal agent workspace. Claude Code remains available for compatibility._
 
@@ -113,10 +113,13 @@ share the same token-authenticated console.
 | --------------- | ------------------------------------------------------- | ------------------------------------------------------------ |
 | **Feishu/Lark** | Workspaces, streaming cards, files, group routing       | [Feishu App Setup](docs/getting-started/feishu-app-setup.md) |
 | **Telegram**    | Fast personal setup; no public IP required              | [Quick Setup](docs/getting-started/quick-setup.md)           |
+| **Slack**       | DM and @mention routing for existing Slack workspaces   | [Slack Guide](docs/features/slack.md)                        |
 | **WeChat**      | Personal WeChat through ClawBot; currently gray testing | [WeChat Guide](docs/features/wechat.md)                      |
 | **Web**         | Browser chat, Core, Memory, Teams, and settings         | `http://localhost:9200`                                      |
 
-Feishu uses a persistent WebSocket; Telegram and WeChat use long polling. None requires an inbound public port.
+Feishu uses a persistent WebSocket; Telegram and WeChat use long polling.
+Slack uses Events API and requires a Slack-reachable HTTPS reverse-proxied
+`/api/slack/events/<botName>` endpoint.
 
 In Feishu groups, normal messages route to the exact bot that was @mentioned.
 The group owner can select mention-only or all-message mode per bot and group
@@ -146,6 +149,15 @@ in mention-only mode. See [Chat Commands](docs/usage/chat-commands.md#group-repl
       "defaultWorkingDirectory": "/home/me/project-b",
       "kimi": { "thinking": true }
     }
+  ],
+  "slackBots": [
+    {
+      "name": "slack-codex",
+      "engine": "codex",
+      "slackBotToken": "xoxb-...",
+      "slackSigningSecret": "...",
+      "defaultWorkingDirectory": "/home/me/project-c"
+    }
   ]
 }
 ```
@@ -162,9 +174,6 @@ Each bot has its own channel credentials, engine, workspace, and sessions. Bots 
 - **Unified Core Console** — token-authenticated Chat, Agents, Memory, Skills, T5T, Teams, CLI Access, and diagnostics, with no second Bridge Web UI to maintain.
 - **Channels and media** — text, rich posts, images, files, audio, smart batching, and exact @Bot routing.
 - **Peers, scheduling, and voice** — optional capabilities for larger personal setups. [Feature docs](docs/)
-
-Slack as a first-class IM channel is tracked as later platform work. The current
-personal edition focuses on Web, Feishu/Lark, Telegram, and WeChat.
 
 ## Essential Commands
 
@@ -186,7 +195,7 @@ See [Chat Commands](docs/usage/chat-commands.md), the [CLI Reference](docs/refer
 ## Documentation
 
 - Start: [Installation](docs/getting-started/installation.md) · [Quick Setup](docs/getting-started/quick-setup.md) · [Troubleshooting](docs/troubleshooting.md)
-- Product: [Core Console](docs/features/web-ui.md) · [Multi-Bot and Engines](docs/configuration/multi-bot.md) · [MetaMemory](docs/features/metamemory.md) · [Agent Teams](docs/features/agent-teams.md)
+- Product: [Core Console](docs/features/web-ui.md) · [Multi-Bot and Engines](docs/configuration/multi-bot.md) · [Slack](docs/features/slack.md) · [MetaMemory](docs/features/metamemory.md) · [Agent Teams](docs/features/agent-teams.md)
 - Reference: [Chat Commands](docs/usage/chat-commands.md) · [CLI](docs/reference/cli-metabot.md) · [REST API](docs/reference/api.md) · [Environment Variables](docs/configuration/environment-variables.md)
 - Operations and development: [Architecture](docs/concepts/architecture.md) · [Production](docs/deployment/production.md) · [Contributing](CONTRIBUTING.md)
 

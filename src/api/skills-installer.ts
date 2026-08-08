@@ -58,7 +58,7 @@ function selectedLarkSkills(profile = process.env.METABOT_LARK_SKILLS || 'minima
 
 export interface InstallSkillsOptions {
   /** Bot platform — Feishu-only Skills are skipped for other platforms. */
-  platform?: 'feishu' | 'telegram' | 'web' | 'wechat';
+  platform?: 'feishu' | 'telegram' | 'web' | 'wechat' | 'slack';
   /** Feishu app credentials for optional lark-cli auto-config. */
   feishuAppId?: string;
   feishuAppSecret?: string;

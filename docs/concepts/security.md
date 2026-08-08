@@ -64,8 +64,10 @@ Do not pass Bridge credentials in `token=` query strings; use
 ## Channels
 
 - Restrict Feishu/Lark app visibility and publish only required permissions.
-- Keep Telegram and WeChat tokens out of `bots.json` copies, screenshots, and
-  issues.
+- Keep Telegram, Slack, and WeChat tokens or Slack signing secrets out of
+  `bots.json` copies, screenshots, and issues.
+- Slack Events API requests are accepted only after Slack HMAC signature and
+  timestamp verification.
 - Group replies use exact `@Bot` routing. Reply-mode changes are group-owner
   gated and fail closed when ownership cannot be verified.
 
