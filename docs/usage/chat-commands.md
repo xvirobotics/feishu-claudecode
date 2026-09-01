@@ -9,7 +9,11 @@ Commands you can send to MetaBot in Feishu or Telegram.
 | `/reset` | Clear session — starts a fresh conversation |
 | `/stop` | Abort the currently running task |
 | `/status` | Show session info (session ID, working directory) |
+| `/model` | Show or switch the current engine and model. Use `/model list` for available options |
+| `/effort low\|medium\|high\|xhigh\|max\|ultra` | Set the Codex reasoning effort for this chat. Use `/effort reset` to clear the override |
+| `/resume` | List and switch to a previous Claude, Codex, or Kimi session; `/resume <id>` resumes a session by ID prefix |
 | `/goal <condition>` | Set a goal the agent keeps pursuing across turns. `/goal clear` stops it. |
+| `/background <prompt>` | Run a task in the background while you continue chatting; use `/background list\|logs <id>\|stop <id>` to manage Codex background tasks |
 | `/memory list` | Browse MetaMemory knowledge tree |
 | `/memory search <query>` | Search MetaMemory knowledge base |
 | `/sync` | Trigger MetaMemory → Feishu Wiki sync |
@@ -18,7 +22,7 @@ Commands you can send to MetaBot in Feishu or Telegram.
 | `/help` | Show available commands |
 | `/metaskill ...` | Generate agent teams, agents, or skills |
 | `/metabot` | Load Agent Bus docs (scheduling, bot management, cross-instance talk) |
-| `/anything` | Any unrecognized command is forwarded to Claude Code as a skill |
+| `/anything` | Any unrecognized command is forwarded to the current Agent engine as a skill |
 
 ## Notes
 

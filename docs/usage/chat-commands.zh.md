@@ -9,7 +9,11 @@
 | `/reset` | 清除会话 — 开始全新对话 |
 | `/stop` | 中止当前任务 |
 | `/status` | 查看会话信息（会话 ID、工作目录） |
+| `/model` | 查看或切换当前引擎和模型；使用 `/model list` 查看可用选项 |
+| `/effort low\|medium\|high\|xhigh\|max\|ultra` | 设置本聊天的 Codex 推理强度；使用 `/effort reset` 清除覆盖设置 |
+| `/resume` | 列出并切换到此前的 Claude、Codex 或 Kimi 会话；`/resume <id>` 可按 ID 前缀直接恢复 |
 | `/goal <条件>` | 设置目标，Agent 跨多轮持续推进直到达成。`/goal clear` 停止。 |
+| `/background <提示词>` | 在继续聊天的同时后台运行任务；使用 `/background list\|logs <id>\|stop <id>` 管理 Codex 后台任务 |
 | `/memory list` | 浏览 MetaMemory 知识库目录 |
 | `/memory search 关键词` | 搜索 MetaMemory 知识库 |
 | `/sync` | 触发 MetaMemory → 飞书知识库同步 |
@@ -18,7 +22,7 @@
 | `/help` | 显示可用命令 |
 | `/metaskill ...` | 生成 Agent 团队、Agent 或 Skill |
 | `/metabot` | 加载 Agent 总线文档（调度、Bot 管理、跨实例对话） |
-| `/任意命令` | 非内置命令自动转发给 Claude Code 作为 skill |
+| `/任意命令` | 非内置命令自动转发给当前 Agent 引擎作为 skill |
 
 ## 说明
 
