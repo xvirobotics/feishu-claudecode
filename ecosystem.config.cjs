@@ -32,6 +32,7 @@ module.exports = {
       // Environment
       env: {
         NODE_ENV: 'production',
+        BOTS_CONFIG: process.env.BOTS_CONFIG || path.join(__dirname, 'bots.json'),
         CLAUDE_MAX_TURNS: '',  // unlimited turns (override any inherited shell env)
       },
     },
