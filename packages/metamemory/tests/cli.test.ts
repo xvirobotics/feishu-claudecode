@@ -26,14 +26,19 @@ describe('parseArgs', () => {
 describe('loadConfig', () => {
   let tmpHome: string;
   let origHome: string | undefined;
+  let origUserProfile: string | undefined;
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cfg-'));
     origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
     process.env.HOME = tmpHome;
+    process.env.USERPROFILE = tmpHome;
   });
   afterEach(() => {
     if (origHome !== undefined) process.env.HOME = origHome;
     else delete process.env.HOME;
+    if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+    else delete process.env.USERPROFILE;
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
@@ -48,6 +53,21 @@ describe('loadConfig', () => {
     fs.writeFileSync(path.join(tmpHome, '.metabot-core', 'token'), 'file-tok\n');
     const cfg = loadConfig({});
     expect(cfg.url).toBe(DEFAULT_URL);
+    expect(cfg.token).toBe('file-tok');
+  });
+
+  it('falls back to the metabot-core bootstrap token', () => {
+    fs.mkdirSync(path.join(tmpHome, '.metabot-core', 'data'), { recursive: true });
+    fs.writeFileSync(path.join(tmpHome, '.metabot-core', 'data', 'admin-bootstrap-token.txt'), 'bootstrap-tok\n');
+    const cfg = loadConfig({});
+    expect(cfg.token).toBe('bootstrap-tok');
+  });
+
+  it('prefers ~/.metabot-core/token over the bootstrap token', () => {
+    fs.mkdirSync(path.join(tmpHome, '.metabot-core', 'data'), { recursive: true });
+    fs.writeFileSync(path.join(tmpHome, '.metabot-core', 'data', 'admin-bootstrap-token.txt'), 'bootstrap-tok\n');
+    fs.writeFileSync(path.join(tmpHome, '.metabot-core', 'token'), 'file-tok\n');
+    const cfg = loadConfig({});
     expect(cfg.token).toBe('file-tok');
   });
 
