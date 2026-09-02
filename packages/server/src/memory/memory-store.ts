@@ -358,6 +358,13 @@ export class MemoryStore {
   }
 
   deleteFolder(folderIdOrPath: string, cred: Credential): void {
+    const deleteRecursively = this.db.transaction(
+      (idOrPath: string) => this.deleteFolderRecursively(idOrPath, cred),
+    );
+    deleteRecursively(folderIdOrPath);
+  }
+
+  private deleteFolderRecursively(folderIdOrPath: string, cred: Credential): void {
     const folder = this.resolveFolder(folderIdOrPath);
     if (!folder) throw Object.assign(new Error('not_found'), { statusCode: 404 });
     if (folder.id === 'root') throw Object.assign(new Error('cannot_delete_root'), { statusCode: 400 });
@@ -366,7 +373,7 @@ export class MemoryStore {
     // recurse
     this.db.prepare('DELETE FROM documents WHERE folder_id = ?').run(folder.id);
     const children = this.db.prepare('SELECT id FROM folders WHERE parent_id = ?').all(folder.id) as { id: string }[];
-    for (const child of children) this.deleteFolder(child.id, cred);
+    for (const child of children) this.deleteFolderRecursively(child.id, cred);
     this.db.prepare('DELETE FROM folders WHERE id = ?').run(folder.id);
   }
 
@@ -378,6 +385,13 @@ export class MemoryStore {
   // ---- Document operations ----
 
   createDocument(data: DocumentCreateInput, cred: Credential): Document {
+    const insertDocument = this.db.transaction(
+      (input: DocumentCreateInput) => this.insertDocument(input, cred),
+    );
+    return insertDocument(data);
+  }
+
+  private insertDocument(data: DocumentCreateInput, cred: Credential): Document {
     let folderId: string;
     let docPath: string;
     let title = data.title;

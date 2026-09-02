@@ -1,7 +1,7 @@
 import type { MemoryStore } from './memory-store.js';
 import type { AgentStore } from '../agents/agent-store.js';
 import type { Credential } from '../auth/credentials.js';
-import { isHiddenFromMemoryView } from './hidden-paths.js';
+import { canReadFolder, isHiddenFromMemoryView, isHiddenIdOrPath, pruneHiddenSubtrees } from './view-policy.js';
 
 export interface RouteResult {
   status: number;
@@ -15,23 +15,6 @@ function err(status: number, error: string): RouteResult {
 function statusFromException(e: unknown): number {
   const s = (e as { statusCode?: number }).statusCode;
   return typeof s === 'number' ? s : 400;
-}
-
-function isHiddenIdOrPath(store: MemoryStore, idOrPath: string, kind: 'folder' | 'document'): boolean {
-  if (idOrPath.startsWith('/')) return isHiddenFromMemoryView(idOrPath);
-  const path = kind === 'folder'
-    ? store.findFolderById(idOrPath)?.path ?? null
-    : store.findDocumentPathById(idOrPath);
-  return path !== null && isHiddenFromMemoryView(path);
-}
-
-function pruneHiddenSubtrees<T extends { path: string; children: T[] }>(node: T): T {
-  return {
-    ...node,
-    children: node.children
-      .filter((c) => !isHiddenFromMemoryView(c.path))
-      .map(pruneHiddenSubtrees),
-  };
 }
 
 // ---- Folder handlers ----
@@ -185,11 +168,4 @@ export function search(store: MemoryStore, query: URLSearchParams, cred: Credent
   const offset = Math.max(parseInt(query.get('offset') || '0', 10) || 0, 0);
   const results = store.searchDocuments(q, limit, cred, offset).filter((r) => !isHiddenFromMemoryView(r.path));
   return { status: 200, body: { results } };
-}
-
-function canReadFolder(store: MemoryStore, folder: { path: string }, cred: Credential): boolean {
-  return store.accessibleRoots(cred).some((root) => {
-    if (root === '/') return true;
-    return folder.path === root || folder.path.startsWith(root + '/');
-  }) || folder.path.startsWith('/shared');
 }

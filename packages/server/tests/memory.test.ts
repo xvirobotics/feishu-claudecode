@@ -152,3 +152,58 @@ describe('MemoryStore + ACL', () => {
     expect(list.some((f) => f.path === '/shared/teamx')).toBe(false);
   });
 });
+
+describe('MemoryStore transactional writes', () => {
+  it('rolls back auto-created folders when the document insert fails', () => {
+    kit = makeKit('mem-tx-create');
+    const admin = issue(kit, 'admin', 'admin');
+    const db = kit.db as any;
+    const originalPrepare = db.prepare.bind(db);
+    db.prepare = (sql: string) => {
+      if (sql.startsWith('INSERT INTO documents')) {
+        return { run: () => { throw new Error('insert failed'); } };
+      }
+      return originalPrepare(sql);
+    };
+
+    expect(() => kit.memory.createDocument({
+      title: 'tx doc',
+      path: '/tx-rollback/nested/doc',
+      content: 'x',
+    }, admin)).toThrow('insert failed');
+    db.prepare = originalPrepare;
+
+    expect(kit.memory.findFolderByPath('/tx-rollback')).toBeNull();
+    expect(kit.memory.findFolderByPath('/tx-rollback/nested')).toBeNull();
+  });
+
+  it('rolls back recursive folder deletion when a child delete fails', () => {
+    kit = makeKit('mem-tx-delete');
+    const admin = issue(kit, 'admin', 'admin');
+    const parent = kit.memory.createFolder({ path: '/tx-parent' }, admin);
+    kit.memory.createFolder({ path: '/tx-parent/child-a' }, admin);
+    kit.memory.createFolder({ path: '/tx-parent/child-b' }, admin);
+    kit.memory.createDocument({ title: 'a', path: '/tx-parent/child-a/a', content: 'x' }, admin);
+
+    const db = kit.db as any;
+    const originalPrepare = db.prepare.bind(db);
+    let folderDeletes = 0;
+    db.prepare = (sql: string) => {
+      const statement = originalPrepare(sql);
+      if (sql.startsWith('DELETE FROM folders')) {
+        folderDeletes++;
+        if (folderDeletes === 2) {
+          return { run: () => { throw new Error('delete failed'); } };
+        }
+      }
+      return statement;
+    };
+
+    expect(() => kit.memory.deleteFolder(parent.id, admin)).toThrow('delete failed');
+    db.prepare = originalPrepare;
+
+    expect(kit.memory.findFolderByPath('/tx-parent')).toBeTruthy();
+    expect(kit.memory.findFolderByPath('/tx-parent/child-a')).toBeTruthy();
+    expect(kit.memory.getDocument('/tx-parent/child-a/a', admin)).toBeTruthy();
+  });
+});
