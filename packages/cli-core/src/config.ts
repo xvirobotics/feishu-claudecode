@@ -25,11 +25,16 @@ export function tokenFilePath(): string {
   return path.join(os.homedir(), '.metabot-core', 'token');
 }
 
+export function adminBootstrapTokenFilePath(): string {
+  return path.join(os.homedir(), '.metabot-core', 'data', 'admin-bootstrap-token.txt');
+}
+
 /**
  * Resolve URL + token.
  *
  * URL precedence:   METABOT_CORE_URL → DEFAULT_URL.
- * Token precedence: METABOT_CORE_TOKEN → ~/.metabot-core/token (first line).
+ * Token precedence: METABOT_CORE_TOKEN → ~/.metabot-core/token (first line)
+ *                  → metabot-core bootstrap token (first line).
  *
  * Throws when no token is configured.
  */
@@ -41,8 +46,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (fromFile) token = fromFile;
   }
   if (!token) {
+    const fromBootstrapFile = readFirstLine(adminBootstrapTokenFilePath());
+    if (fromBootstrapFile) token = fromBootstrapFile;
+  }
+  if (!token) {
     throw new Error(
-      `no token configured — set METABOT_CORE_TOKEN env var, or write the token to ${tokenFilePath()}`,
+      `no token configured — set METABOT_CORE_TOKEN env var, write the token to ${tokenFilePath()}, or start metabot-core once to generate ${adminBootstrapTokenFilePath()}`,
     );
   }
   return { url, token };
