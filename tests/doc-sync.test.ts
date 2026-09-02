@@ -212,6 +212,22 @@ describe('DocSync', () => {
     expect(result.deleted).toBe(1);
   });
 
+  it('keeps mappings when document verification fails during cleanup', async () => {
+    const doc = makeSampleDoc();
+    setup([doc]);
+
+    await docSync.syncAll();
+
+    (docSync as any).fetchDocument = vi.fn().mockRejectedValue(new Error('metabot-core 503: unavailable'));
+    mockMemory.listDocuments.mockResolvedValue([]);
+
+    const result = await docSync.syncAll();
+    expect(result.deleted).toBe(0);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain('503');
+    expect((docSync as any).store.getAllDocMappings()).toHaveLength(1);
+  });
+
   it('finds existing wiki space by name', async () => {
     setup();
     const spaceId = await (docSync as any).ensureWikiSpace();

@@ -525,10 +525,15 @@ export class DocSync {
           // Note: We don't delete the wiki page itself to avoid data loss.
           // The orphaned page can be manually cleaned up.
         }
-      } catch {
-        // If we can't fetch, assume it's deleted
-        this.store.deleteDocMapping(mapping.memoryDocId);
-        if (result) result.deleted++;
+      } catch (error) {
+        // Fetch failures (network/auth/5xx) are not deletions; keep the
+        // mapping so a later sync can reconcile once the service recovers.
+        const message = error instanceof Error ? error.message : String(error);
+        if (result) result.errors.push(`Cleanup "${mapping.memoryPath}": ${message}`);
+        this.logger.warn(
+          { doc: mapping.memoryPath, err: message },
+          'Document verification failed during cleanup; keeping mapping',
+        );
       }
     }
   }

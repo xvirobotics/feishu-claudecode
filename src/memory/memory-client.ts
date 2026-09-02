@@ -23,6 +23,16 @@ import { proxyFetch } from '../utils/http.js';
 
 const DEFAULT_BASE_URL = 'http://localhost:9200';
 
+export class MemoryClientError extends Error {
+  constructor(
+    message: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'MemoryClientError';
+  }
+}
+
 export interface FolderTreeNode {
   id: string;
   name: string;
@@ -130,7 +140,7 @@ export class MemoryClient {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(`metabot-core ${res.status}: ${body}`);
+      throw new MemoryClientError(`metabot-core ${res.status}: ${body}`, res.status);
     }
     return res.json() as Promise<T>;
   }
@@ -197,8 +207,11 @@ export class MemoryClient {
         };
       }
       return null;
-    } catch {
-      return null;
+    } catch (error) {
+      if (error instanceof MemoryClientError && error.status === 404) {
+        return null;
+      }
+      throw error;
     }
   }
 
