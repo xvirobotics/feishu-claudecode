@@ -26,14 +26,19 @@ describe('parseArgs', () => {
 describe('loadConfig', () => {
   let tmpHome: string;
   let origHome: string | undefined;
+  let origUserProfile: string | undefined;
   beforeEach(() => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'mm-cfg-'));
     origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
     process.env.HOME = tmpHome;
+    process.env.USERPROFILE = tmpHome;
   });
   afterEach(() => {
     if (origHome !== undefined) process.env.HOME = origHome;
     else delete process.env.HOME;
+    if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+    else delete process.env.USERPROFILE;
     fs.rmSync(tmpHome, { recursive: true, force: true });
   });
 
