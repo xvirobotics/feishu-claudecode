@@ -1,0 +1,1468 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Run Codex and Kimi Code from one self-hosted Core Console, the Web, Feishu/Lark, Telegram, Slack, and WeChat.">
+      
+      
+      
+        <link rel="canonical" href="https://xvirobotics.com/metabot/">
+      
+      
+      
+        <link rel="next" href="getting-started/installation/">
+      
+      
+        
+          <link rel="alternate" href="/metabot/" hreflang="en">
+        
+          <link rel="alternate" href="/metabot/zh/" hreflang="zh">
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>MetaBot — Self-hosted Core Console for Codex and Kimi Code - MetaBot</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/docs-theme.css">
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+
+<link rel="stylesheet" href="assets/stylesheets/landing.css">
+
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="." title="MetaBot" class="md-header__button md-logo" aria-label="MetaBot" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            MetaBot
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              MetaBot — Self-hosted Core Console for Codex and Kimi Code
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+      <div class="md-header__option">
+  <div class="md-select">
+    
+    <button class="md-header__button md-icon" aria-label="Select language">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m12.87 15.07-2.54-2.51.03-.03A17.5 17.5 0 0 0 14.07 6H17V4h-7V2H8v2H1v2h11.17C11.5 7.92 10.44 9.75 9 11.35 8.07 10.32 7.3 9.19 6.69 8h-2c.73 1.63 1.73 3.17 2.98 4.56l-5.09 5.02L4 19l5-5 3.11 3.11zM18.5 10h-2L12 22h2l1.12-3h4.75L21 22h2zm-2.62 7 1.62-4.33L19.12 17z"/></svg>
+    </button>
+    <div class="md-select__inner">
+      <ul class="md-select__list">
+        
+          <li class="md-select__item">
+            <a href="/metabot/" hreflang="en" class="md-select__link">
+              English
+            </a>
+          </li>
+        
+          <li class="md-select__item">
+            <a href="/metabot/zh/" hreflang="zh" class="md-select__link">
+              中文
+            </a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+</div>
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/xvirobotics/metabot" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    xvirobotics/metabot
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="features/web-ui/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Product
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="usage/chat-commands/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="concepts/architecture/" class="md-tabs__link">
+          
+  
+  
+    
+  
+  Operations and Development
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="." title="MetaBot" class="md-nav__button md-logo" aria-label="MetaBot" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    MetaBot
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/xvirobotics/metabot" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    xvirobotics/metabot
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+      <a href="." class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="getting-started/quick-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="getting-started/feishu-app-setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Feishu App Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Product
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Product
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="features/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core Console
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="configuration/multi-bot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Bot and Engines
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="features/metamemory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MetaMemory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="features/metaskill/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MetaSkill
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="features/agent-teams/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Agent Teams
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="features/slack/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Slack
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="features/wechat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WeChat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="usage/chat-commands/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Chat Commands
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/cli-metabot/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    metabot CLI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="reference/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    REST API
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="configuration/environment-variables/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Environment Variables
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations and Development
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operations and Development
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="concepts/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="concepts/security/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="deployment/production/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Production
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="development/contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+                
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" hidden>
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+<div class="md-content md-content--landing" data-md-component="content">
+  <article class="md-content__inner md-typeset md-typeset--landing">
+    <div class="mb-landing">
+    <section class="mb-hero" aria-labelledby="mb-hero-title">
+  <div class="mb-container mb-hero-inner">
+    <div class="mb-badge mb-reveal"><span class="mb-badge-dot" aria-hidden="true"></span> Open source · MIT · Self-hosted</div>
+    <h1 class="mb-hero-title mb-reveal" id="mb-hero-title">One console for your <em>agent fleet.</em></h1>
+    <p class="mb-hero-sub mb-reveal">MetaBot Personal Edition runs <strong>Codex by default</strong> and <strong>Kimi Code 0.27+</strong> as a first-class engine — from the Web, Feishu/Lark, Telegram, Slack, and WeChat. Claude Code stays compatible; your logins stay on your machine.</p>
+    <div class="mb-hero-ctas mb-reveal">
+      <a class="mb-btn mb-btn-primary" href="getting-started/installation/">Install MetaBot <span class="mb-btn-arrow" aria-hidden="true">→</span></a>
+      <a class="mb-btn" href="https://github.com/xvirobotics/metabot">View on GitHub <span class="mb-btn-arrow" aria-hidden="true">↗</span></a>
+      <a class="mb-textlink" href="features/web-ui/">Explore the Core Console</a>
+    </div>
+    <div class="mb-install mb-reveal" aria-label="Install MetaBot on Linux or macOS">
+      <div class="mb-install-cmd"><span class="mb-prompt" aria-hidden="true">$</span><code>curl -fsSL https://github.com/xvirobotics/metabot/releases/latest/download/install.sh | bash</code></div>
+      <button class="mb-copy" type="button" data-mb-copy="curl -fsSL https://github.com/xvirobotics/metabot/releases/latest/download/install.sh | bash" data-mb-copied="copied"><span aria-hidden="true">⧉</span><span data-mb-copy-label>copy</span></button>
+    </div>
+    <div class="mb-hero-meta mb-reveal"><span>Node.js ≥ 22.19</span><span>No SSO / OIDC</span><span>Token mode 0600</span><span>SHA256 verified</span></div>
+    <figure class="mb-hero-figure mb-reveal">
+      <svg class="mb-console" viewBox="0 0 1120 620" role="img" aria-labelledby="console-title console-desc">
+        <title id="console-title">MetaBot Core Console Chat</title>
+        <desc id="console-desc">A stylized view of the unified Core Console showing conversations, a live Kimi Code run, tool activity, output files, an agent question, and the message composer.</desc>
+        <rect width="1120" height="620" fill="#08090b"/>
+        <rect x="1" y="1" width="1118" height="618" fill="none" stroke="#c8c5b8" stroke-opacity=".22"/>
+        <rect x="1" y="1" width="1118" height="52" fill="#0d0f12"/>
+        <path d="M1 53h1118M282 53v566" stroke="#c8c5b8" stroke-opacity=".14"/>
+        <text x="24" y="34" fill="#84ffb0" font-family="monospace" font-size="15">▮</text>
+        <text x="47" y="34" fill="#d9d6ca" font-family="monospace" font-size="13" font-weight="700" letter-spacing="2">METABOT</text>
+        <text x="143" y="34" fill="#8a8778" font-family="monospace" font-size="10" letter-spacing="1.5">CORE CONSOLE</text>
+        <rect x="408" y="15" width="300" height="25" fill="#14171c" stroke="#c8c5b8" stroke-opacity=".14"/>
+        <text x="423" y="32" fill="#84ffb0" font-family="monospace" font-size="11">&gt;</text>
+        <text x="440" y="32" fill="#8a8778" font-family="monospace" font-size="10">search chats, agents, memory…</text>
+        <circle class="mb-pulse" cx="973" cy="27" r="4" fill="#84ffb0"/>
+        <text x="988" y="31" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="1.2">CONNECTED · TOKEN 0600</text>
+        <rect x="18" y="72" width="132" height="29" fill="none" stroke="#4ec98a"/>
+        <text x="84" y="91" text-anchor="middle" fill="#84ffb0" font-family="monospace" font-size="10" letter-spacing="1.4">+ NEW CHAT</text>
+        <text x="18" y="128" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="2">CHATS</text>
+        <text x="260" y="128" text-anchor="end" fill="#4ec98a" font-family="monospace" font-size="9">4</text>
+        <rect x="1" y="141" width="281" height="56" fill="#14171c"/>
+        <rect x="1" y="141" width="3" height="56" fill="#84ffb0"/>
+        <text x="18" y="163" fill="#d9d6ca" font-family="monospace" font-size="11" font-weight="700">kimi-reviewer</text>
+        <text x="260" y="163" text-anchor="end" fill="#8a8778" font-family="monospace" font-size="9">09:41</text>
+        <text x="18" y="183" fill="#8a8778" font-family="monospace" font-size="9">goal: scheduler retry, open PR</text>
+        <text x="18" y="220" fill="#b3b0a3" font-family="monospace" font-size="11">codex-dev</text>
+        <text x="18" y="239" fill="#8a8778" font-family="monospace" font-size="9">outputs patch ready</text>
+        <text x="18" y="276" fill="#b3b0a3" font-family="monospace" font-size="11">nightly-research</text>
+        <text x="18" y="295" fill="#8a8778" font-family="monospace" font-size="9">memory sync · 3 findings</text>
+        <text x="18" y="332" fill="#b3b0a3" font-family="monospace" font-size="11">docs-polish</text>
+        <text x="18" y="351" fill="#8a8778" font-family="monospace" font-size="9">zh landing proofread</text>
+        <path d="M18 374h244" stroke="#c8c5b8" stroke-opacity=".1"/>
+        <text x="18" y="399" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="2">SYSTEM</text>
+        <text x="18" y="430" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="1.3">AGENTS</text><text x="260" y="430" text-anchor="end" fill="#4ec98a" font-family="monospace" font-size="9">3</text>
+        <text x="18" y="459" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="1.3">MEMORY</text><text x="260" y="459" text-anchor="end" fill="#4ec98a" font-family="monospace" font-size="9">128</text>
+        <text x="18" y="488" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="1.3">SKILLS</text><text x="260" y="488" text-anchor="end" fill="#4ec98a" font-family="monospace" font-size="9">12</text>
+        <text x="18" y="517" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="1.3">T5T / TEAMS</text><text x="260" y="517" text-anchor="end" fill="#4ec98a" font-family="monospace" font-size="9">LIVE</text>
+        <text x="314" y="91" fill="#d9d6ca" font-family="monospace" font-size="20" font-weight="700">Chat</text>
+        <text x="1083" y="91" text-anchor="end" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="1.3">CORE / CHAT / KIMI-REVIEWER</text>
+        <path d="M314 107h769" stroke="#c8c5b8" stroke-opacity=".1"/>
+        <rect x="314" y="122" width="120" height="23" fill="none" stroke="#4ec98a"/>
+        <text x="374" y="137" text-anchor="middle" fill="#84ffb0" font-family="monospace" font-size="9">kimi-reviewer</text>
+        <rect x="444" y="122" width="54" height="23" fill="none" stroke="#c8c5b8" stroke-opacity=".18"/>
+        <text x="471" y="137" text-anchor="middle" fill="#b3b0a3" font-family="monospace" font-size="9">you</text>
+        <rect x="586" y="168" width="497" height="72" fill="#14171c" stroke="#c8c5b8" stroke-opacity=".12"/>
+        <text x="607" y="191" fill="#8a8778" font-family="monospace" font-size="9" letter-spacing="1">YOU · 09:38</text>
+        <text x="607" y="216" fill="#d9d6ca" font-family="sans-serif" font-size="13">Review the scheduler retry logic, run the tests, and open a PR.</text>
+        <rect x="314" y="265" width="603" height="197" fill="#0d0f12" stroke="#c8c5b8" stroke-opacity=".2"/>
+        <circle class="mb-pulse" cx="338" cy="291" r="5" fill="#84ffb0"/>
+        <text x="354" y="295" fill="#d9d6ca" font-family="monospace" font-size="10" font-weight="700">KIMI-REVIEWER</text>
+        <text x="493" y="295" fill="#84ffb0" font-family="monospace" font-size="9">RUNNING · 00:42</text>
+        <text x="893" y="295" text-anchor="end" fill="#8a8778" font-family="monospace" font-size="9">SESSION 7f3a…d9e1</text>
+        <path d="M338 310h555" stroke="#c8c5b8" stroke-opacity=".1"/>
+        <text x="338" y="337" fill="#b3b0a3" font-family="sans-serif" font-size="12">Retry backoff now uses capped exponential jitter;</text>
+        <text x="338" y="358" fill="#b3b0a3" font-family="sans-serif" font-size="12">tests pass — preparing the patch.</text>
+        <text x="338" y="388" fill="#8a8778" font-family="monospace" font-size="8" letter-spacing="1.6">TOOLS</text>
+        <rect x="338" y="399" width="174" height="25" fill="#14171c"/><text x="349" y="416" fill="#b3b0a3" font-family="monospace" font-size="8">✓ read scheduler/retry.ts</text>
+        <rect x="521" y="399" width="122" height="25" fill="#14171c"/><text x="532" y="416" fill="#b3b0a3" font-family="monospace" font-size="8">✓ npm test</text>
+        <rect x="652" y="399" width="122" height="25" fill="#14171c" stroke="#c98556"/><text x="663" y="416" fill="#ffb46b" font-family="monospace" font-size="8">● edit retry.ts</text>
+        <text x="338" y="447" fill="#84ffb0" font-family="monospace" font-size="9">▸ outputs/scheduler-retry.patch</text>
+        <rect x="314" y="480" width="603" height="54" fill="#14171c" stroke="#c98556" stroke-opacity=".6"/>
+        <circle class="mb-pulse" cx="338" cy="507" r="4" fill="#ffb46b"/>
+        <text x="353" y="510" fill="#ffb46b" font-family="monospace" font-size="8" letter-spacing="1">QUESTION</text>
+        <text x="424" y="510" fill="#d9d6ca" font-family="sans-serif" font-size="11">Bump max retries to 5?</text>
+        <text x="785" y="510" fill="#84ffb0" font-family="monospace" font-size="8">[ approve ]</text><text x="851" y="510" fill="#b3b0a3" font-family="monospace" font-size="8">[ edit ]</text>
+        <rect x="314" y="553" width="769" height="42" fill="#0d0f12" stroke="#c8c5b8" stroke-opacity=".2"/>
+        <text x="335" y="578" fill="#8a8778" font-family="sans-serif" font-size="11">Ask, answer, or steer the run…</text>
+        <text x="934" y="578" fill="#8a8778" font-family="monospace" font-size="8">/goal  /model  /effort</text>
+        <rect x="1028" y="560" width="42" height="28" fill="#84ffb0"/><text x="1049" y="578" text-anchor="middle" fill="#07130c" font-family="monospace" font-size="9">SEND</text>
+      </svg>
+      <figcaption class="mb-hero-caption"><b>Core Console Chat</b> · streaming runs · tools · files · questions · voice</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="mb-section" aria-labelledby="engines-title">
+  <div class="mb-container">
+    <header class="mb-section-head mb-reveal"><div class="mb-kicker">01 <span class="mb-kicker-dim">Engines</span></div><h2 class="mb-display" id="engines-title">Codex-first, with <em>Kimi Code</em> as a first-class peer.</h2><p class="mb-lede">Every bot chooses its own engine and workspace. MetaBot keeps the channel, session, memory, and supervision layer consistent.</p></header>
+    <div class="mb-engine-grid">
+      <article class="mb-engine mb-engine-codex mb-reveal"><div class="mb-engine-top"><span class="mb-engine-name">Codex CLI</span><span class="mb-engine-tag">default</span></div><div class="mb-engine-role">Built for the coding loop.</div><p class="mb-engine-desc"><code>codex exec --json</code> and resume provide structured turns, tools, models, and reasoning effort through the public CLI.</p><div class="mb-engine-feat"><b>Sessions</b> · resume<br><b>Control</b> · model / effort<br><b>Auth</b> · codex login or profile</div></article>
+      <article class="mb-engine mb-engine-kimi mb-reveal" style="--reveal-delay:.08s"><div class="mb-engine-top"><span class="mb-engine-name">Kimi Code 0.27+</span><span class="mb-engine-tag">first-class</span></div><div class="mb-engine-role">A durable local Agent server.</div><p class="mb-engine-desc">MetaBot connects to Kimi's official loopback Server API — the same session surface used by Kimi's own Web UI.</p><div class="mb-engine-feat"><b>Sessions</b> · durable snapshots<br><b>Control</b> · ask / stop / resume<br><b>Teams</b> · subagent state</div></article>
+      <article class="mb-engine mb-engine-claude mb-reveal" style="--reveal-delay:.16s"><div class="mb-engine-top"><span class="mb-engine-name">Claude Code</span><span class="mb-engine-tag">compat</span></div><div class="mb-engine-role">Keep existing workspaces moving.</div><p class="mb-engine-desc">Existing Claude bots, skills, and sessions remain available through the compatibility CLI and SDK paths.</p><div class="mb-engine-feat"><b>Backends</b> · CLI / SDK<br><b>Skills</b> · preserved<br><b>Auth</b> · claude login</div></article>
+    </div>
+    <p class="mb-section-note mb-reveal">Engine and workspace are configured per bot in <code class="mb-inline-code">bots.json</code>. <a class="mb-textlink" href="configuration/multi-bot/">See multi-bot configuration →</a></p>
+  </div>
+</section>
+
+<section class="mb-section" aria-labelledby="console-story-title">
+  <div class="mb-container mb-console-grid">
+    <div><header class="mb-section-head mb-reveal"><div class="mb-kicker">02 <span class="mb-kicker-dim">Core Console</span></div><h2 class="mb-display" id="console-story-title">One product. <em>One browser UI.</em></h2><p class="mb-lede">Core Console Chat brings live Agent execution and the rest of the workspace into one navigation.</p></header><div class="mb-console-points"><article class="mb-point mb-reveal"><span class="mb-point-num">01</span><div><h3>See the run, not just the answer</h3><p>Streaming responses, tool activity, generated files, questions, cancel controls, voice input, and durable conversations.</p></div></article><article class="mb-point mb-reveal"><span class="mb-point-num">02</span><div><h3>Manage the whole workspace</h3><p>Agents, Memory, Skills, T5T, Teams, CLI Access, and diagnostics share one navigation and one local token.</p></div></article><article class="mb-point mb-reveal"><span class="mb-point-num">03</span><div><h3>Stay local by default</h3><p>Open <code class="mb-inline-code">http://localhost:9200</code>. Put a reverse proxy in front only when you choose to expose it.</p></div></article></div></div>
+    <aside class="mb-navstrip mb-reveal" aria-label="Core Console areas"><div class="mb-navstrip-label">Core Console · localhost:9200</div><div class="mb-navstrip-grid"><div class="mb-navitem"><span class="mb-navitem-key"><i>▮</i> Chat</span><span class="mb-navitem-note">live runs + conversations</span></div><div class="mb-navitem"><span class="mb-navitem-key"><i>▮</i> Agents</span><span class="mb-navitem-note">engines + visibility</span></div><div class="mb-navitem"><span class="mb-navitem-key"><i>▮</i> Memory</span><span class="mb-navitem-note">searchable knowledge</span></div><div class="mb-navitem"><span class="mb-navitem-key"><i>▮</i> Skills</span><span class="mb-navitem-note">shared capabilities</span></div><div class="mb-navitem"><span class="mb-navitem-key"><i>▮</i> T5T</span><span class="mb-navitem-note">durable progress</span></div><div class="mb-navitem"><span class="mb-navitem-key"><i>▮</i> Teams</span><span class="mb-navitem-note">tasks + runs</span></div><div class="mb-navitem"><span class="mb-navitem-key"><i>▮</i> CLI</span><span class="mb-navitem-note">token access</span></div><div class="mb-navitem"><span class="mb-navitem-key"><i>▮</i> Health</span><span class="mb-navitem-note">runtime diagnostics</span></div></div><div class="mb-navstrip-foot">Token stored at <code>~/.metabot-core/token</code><br>Default file mode <code>0600</code></div></aside>
+  </div>
+</section>
+
+<section class="mb-section" aria-labelledby="capabilities-title"><div class="mb-container"><header class="mb-section-head mb-center mb-reveal"><div class="mb-kicker">03 <span class="mb-kicker-dim">System</span></div><h2 class="mb-display" id="capabilities-title">More than a chat bridge.</h2><p class="mb-lede">A complete personal Agent workspace, with every layer visible and supervised.</p></header><div class="mb-cap-grid"><article class="mb-cap mb-reveal"><span class="mb-cap-tag">01 / Chat</span><h3>Live execution</h3><p>Stream replies, tool calls, questions, output files, and stop controls across channels.</p></article><article class="mb-cap mb-reveal"><span class="mb-cap-tag">02 / Agents</span><h3>Independent bots</h3><p>Each bot owns an engine, workspace, credentials, sessions, and visibility policy.</p></article><article class="mb-cap mb-reveal"><span class="mb-cap-tag">03 / Memory</span><h3>MetaMemory</h3><p>Searchable knowledge across runs, with optional Feishu Wiki synchronization.</p></article><article class="mb-cap mb-reveal"><span class="mb-cap-tag">04 / Skills</span><h3>Shared capability</h3><p>Install and mirror complete Skill bundles into Codex, Kimi, Claude, and Agent paths.</p></article><article class="mb-cap mb-reveal"><span class="mb-cap-tag">05 / T5T</span><h3>Durable progress</h3><p>Record milestones, blockers, verification, releases, and final evidence.</p></article><article class="mb-cap mb-reveal"><span class="mb-cap-tag">06 / Teams</span><h3>Parallel teammates</h3><p>Delegate through durable tasks and runs while the lead owns integration.</p></article><article class="mb-cap mb-reveal"><span class="mb-cap-tag">07 / Files</span><h3>Visible artifacts</h3><p>Generated outputs and tool activity stay attached to the run that created them.</p></article><article class="mb-cap mb-reveal"><span class="mb-cap-tag">08 / Sessions</span><h3>Engine-native state</h3><p>Codex resume, durable Kimi Sessions and subagents, plus Claude compatibility.</p></article></div></div></section>
+
+<section class="mb-section" aria-labelledby="channels-title"><div class="mb-container"><header class="mb-section-head mb-center mb-reveal"><div class="mb-kicker">04 <span class="mb-kicker-dim">Channels</span></div><h2 class="mb-display" id="channels-title">Meet your agents <em>where you work.</em></h2><p class="mb-lede">The same bots and sessions, from the browser or the chats already on your phone.</p></header><div class="mb-channel-grid"><article class="mb-channel mb-reveal"><span class="mb-channel-glyph" aria-hidden="true">W</span><h3>Web<span>Core Console</span></h3><p>Full Chat, Agents, Memory, Skills, T5T and Team control at localhost:9200.</p><div class="mb-channel-foot">token authenticated</div></article><article class="mb-channel mb-reveal"><span class="mb-channel-glyph" aria-hidden="true">飞</span><h3>Feishu / Lark<span>Streaming cards</span></h3><p>Files, voice, exact @Bot routing, and owner-gated group reply controls.</p><div class="mb-channel-foot">websocket · no inbound port</div></article><article class="mb-channel mb-reveal"><span class="mb-channel-glyph" aria-hidden="true">TG</span><h3>Telegram<span>Personal setup</span></h3><p>Bring your Bot token and reach the same Agent workspace through long polling.</p><div class="mb-channel-foot">no public ip required</div></article><article class="mb-channel mb-reveal"><span class="mb-channel-glyph" aria-hidden="true">S</span><h3>Slack<span>DM + mentions</span></h3><p>Route Slack DMs and app mentions through signed Events API requests.</p><div class="mb-channel-foot">signed https events</div></article><article class="mb-channel mb-reveal"><span class="mb-channel-glyph" aria-hidden="true">微</span><h3>WeChat<span>ClawBot bridge</span></h3><p>Connect a personal WeChat surface while the capability remains in grey rollout.</p><div class="mb-channel-foot">optional channel</div></article></div><p class="mb-channel-note mb-reveal">Start on your phone. Finish in the browser. <b>The conversation remains yours.</b></p></div></section>
+
+<section class="mb-section" id="install" aria-labelledby="install-title"><div class="mb-container"><header class="mb-section-head mb-reveal"><div class="mb-kicker">05 <span class="mb-kicker-dim">Install</span></div><h2 class="mb-display" id="install-title">From zero to <em>local Agent workspace.</em></h2><p class="mb-lede">One release package installs the Bridge, local Core, unified Web UI, CLI, and bundled Skills.</p></header><div class="mb-install-grid"><div class="mb-terminal mb-reveal" role="region" aria-label="MetaBot installation commands"><div class="mb-terminal-head"><span class="mb-term-dot" aria-hidden="true"></span> terminal · install and update</div><div class="mb-terminal-body"><div class="mb-row c"># install — checksum and manifest verified</div><div class="mb-row"><span class="p">$</span> curl -fsSL https://github.com/xvirobotics/metabot/releases/latest/download/install.sh | bash</div><div class="mb-row c"># authenticate one or both engines</div><div class="mb-row"><span class="p">$</span> <span class="g">codex login</span></div><div class="mb-row"><span class="p">$</span> <span class="a">kimi login</span></div><div class="mb-row c"># later — preserve config and data, refresh code</div><div class="mb-row"><span class="p">$</span> metabot update</div></div></div><div class="mb-steps"><article class="mb-step mb-reveal"><span class="mb-step-num">01</span><div><h3>Run the Release installer</h3><p>MetaBot verifies <code>SHA256SUMS</code> and the complete Personal Edition manifest before extraction.</p></div></article><article class="mb-step mb-reveal"><span class="mb-step-num">02</span><div><h3>Login to your engine</h3><p>Use your existing Codex or Kimi Code subscription login. Keys are not copied into the website.</p></div></article><article class="mb-step mb-reveal"><span class="mb-step-num">03</span><div><h3>Open the console</h3><p>Visit <code>http://localhost:9200</code> and use the token stored at <code>~/.metabot-core/token</code>.</p></div></article><div class="mb-install-alt"><a class="mb-textlink" href="getting-started/installation/">Linux, macOS and Windows installation details →</a></div></div></div></div></section>
+
+<section class="mb-section" aria-labelledby="trust-title"><div class="mb-container"><header class="mb-section-head mb-center mb-reveal"><div class="mb-kicker">06 <span class="mb-kicker-dim">Trust</span></div><h2 class="mb-display" id="trust-title">Your machine is the cloud.</h2><p class="mb-lede">The Personal Edition is designed around local ownership and explicit exposure.</p></header><div class="mb-trust-grid"><article class="mb-trust mb-reveal"><h3><span class="mb-trust-key">Data</span>Local state</h3><p>Core data lives under <code>~/.metabot-core</code>; Bridge sessions and user state stay under <code>~/.metabot</code>.</p></article><article class="mb-trust mb-reveal"><h3><span class="mb-trust-key">Auth</span>Token-only console</h3><p>The local token is saved with mode <code>0600</code>, never printed by the installer, and can sit behind your own proxy.</p></article><article class="mb-trust mb-reveal"><h3><span class="mb-trust-key">Supply</span>Verified update</h3><p>The updater checks release SHA256 and manifest identity before code files are overlaid.</p></article><article class="mb-trust mb-reveal"><h3><span class="mb-trust-key">IM</span>Exact routing</h3><p>Allowlists and exact @Bot matching keep multi-bot group behavior explicit.</p></article><article class="mb-trust mb-reveal"><h3><span class="mb-trust-key">Network</span>No forced exposure</h3><p>Feishu and Telegram connect outbound. Publish local ports only behind authentication or a private network.</p></article><article class="mb-trust mb-reveal"><h3><span class="mb-trust-key">Edition</span>Personal by design</h3><p>No corporate SSO, OIDC, VPN, employee directory, or internal service is required.</p></article></div></div></section>
+
+<section class="mb-final" aria-labelledby="final-title"><div class="mb-container"><h2 class="mb-final-title mb-reveal" id="final-title">Build your agent workspace <em>tonight.</em></h2><p class="mb-final-sub mb-reveal">Self-host Codex and Kimi Code, keep every run visible, and carry the same Agent into every chat you use.</p><div class="mb-final-ctas mb-reveal"><a class="mb-btn mb-btn-primary" href="getting-started/installation/">Get started <span aria-hidden="true">→</span></a><a class="mb-btn" href="https://github.com/xvirobotics/metabot">Star on GitHub <span aria-hidden="true">↗</span></a></div></div></section>
+    </div>
+  </article>
+</div>
+
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/xvirobotics/metabot" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "navigation.indexes", "content.code.copy", "content.tabs.link", "search.highlight", "search.suggest"], "search": "assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+
+      <script src="assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+<script defer src="assets/javascripts/landing.js"></script>
+
+  </body>
+</html>

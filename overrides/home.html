@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{#- Product landing shell for the root index pages (en + zh).
+    The localized markup lives in docs/index.md / docs/index.zh.md as raw HTML;
+    this template only provides the chrome-free content area and the
+    landing-only assets. Docs navigation, search, tabs and the language
+    switcher all come from base.html and stay fully functional. -#}
+
+{% block extrahead %}
+{{ super() }}
+<link rel="stylesheet" href="{{ 'assets/stylesheets/landing.css' | url }}">
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script defer src="{{ 'assets/javascripts/landing.js' | url }}"></script>
+{% endblock %}
+
+{% block container %}
+<div class="md-content md-content--landing" data-md-component="content">
+  <article class="md-content__inner md-typeset md-typeset--landing">
+    <div class="mb-landing">
+    {{ page.content }}
+    </div>
+  </article>
+</div>
+{% endblock %}

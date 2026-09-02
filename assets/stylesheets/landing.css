@@ -1,0 +1,912 @@
+/* ============================================================
+   MetaBot product landing — loaded only on the root index pages
+   (via docs/overrides/home.html). Extends the product's own
+   "terminal archive" palette into a dark editorial system.
+   Palette: deep ink + phosphor green + amber + bone.
+   ============================================================ */
+
+/* Full-bleed content area — safe: this stylesheet exists only on
+   the landing pages, so docs pages are untouched. */
+.md-main__inner { max-width: none; margin: 0; }
+.md-content { max-width: none; }
+.md-content__inner { padding: 0; margin: 0; }
+.md-content__inner::before { display: none; }
+.md-main { background: #08090b; }
+
+.mb-landing {
+  /* product palette (mirrors packages/web-ui global.css) */
+  --ink-000: #08090b;
+  --ink-050: #0d0f12;
+  --ink-100: #14171c;
+  --ink-200: #1c2027;
+  --ink-300: #262b34;
+  --bone-100: #d9d6ca;
+  --bone-200: #b3b0a3;
+  --bone-300: #8a8778;
+  --phosphor: #84ffb0;
+  --phosphor-dim: #4ec98a;
+  --amber: #ffb46b;
+  --amber-dim: #c98556;
+  --rust: #ff6b4a;
+  --hairline: rgba(200, 197, 184, 0.1);
+  --hairline-strong: rgba(200, 197, 184, 0.22);
+  --mono: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+
+  /* Keep Material's generic heading/code rules stable inside the always-dark
+     landing canvas when the documentation palette is toggled. */
+  --md-default-fg-color--light: rgba(226, 228, 233, 0.56);
+  --md-code-bg-color: #272a35;
+  --md-code-fg-color: rgba(213, 216, 226, 0.82);
+
+  position: relative;
+  overflow: clip;
+  background: var(--ink-000);
+  color: var(--bone-100);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Layered atmosphere: phosphor + amber glow, hairline grid, film noise.
+   Noise is an inline SVG turbulence — no external assets. */
+.mb-landing::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(640px 420px at 18% -4%, rgba(132, 255, 176, 0.09), transparent 70%),
+    radial-gradient(760px 520px at 86% 8%, rgba(255, 180, 107, 0.06), transparent 70%),
+    radial-gradient(900px 620px at 50% 46%, rgba(132, 255, 176, 0.045), transparent 70%);
+  z-index: 0;
+}
+.mb-landing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+.mb-landing > * { position: relative; z-index: 1; }
+
+.mb-landing *, .mb-landing *::before, .mb-landing *::after { box-sizing: border-box; }
+
+.mb-landing h1, .mb-landing h2, .mb-landing h3, .mb-landing h4,
+.mb-landing p, .mb-landing ul, .mb-landing ol, .mb-landing figure {
+  margin: 0; padding: 0;
+}
+.mb-landing img, .mb-landing svg { max-width: 100%; }
+.mb-landing a { color: inherit; }
+
+/* Keyboard-visible focus everywhere on the landing */
+.mb-landing a:focus-visible,
+.mb-landing button:focus-visible,
+.mb-landing summary:focus-visible {
+  outline: 2px solid var(--phosphor);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* ---------- layout primitives ---------- */
+
+.mb-container {
+  max-width: 1180px;
+  margin-inline: auto;
+  padding-inline: clamp(20px, 4vw, 48px);
+}
+
+.mb-section {
+  padding-block: clamp(72px, 10vw, 128px);
+  border-top: 1px solid var(--hairline);
+  position: relative;
+}
+
+.mb-section-head { max-width: 720px; margin-bottom: clamp(40px, 5vw, 64px); }
+.mb-section-head.mb-center { margin-inline: auto; text-align: center; }
+
+.mb-kicker {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: var(--phosphor);
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.mb-center .mb-kicker { justify-content: center; }
+.mb-kicker::before {
+  content: '';
+  width: 28px; height: 1px;
+  background: var(--phosphor-dim);
+  flex: 0 0 auto;
+}
+.mb-center .mb-kicker::after {
+  content: '';
+  width: 28px; height: 1px;
+  background: var(--phosphor-dim);
+  flex: 0 0 auto;
+}
+.mb-kicker .mb-kicker-dim { color: var(--bone-300); letter-spacing: 0.22em; }
+
+.mb-display {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(2rem, 4.6vw, 3.4rem);
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  color: #eceadf;
+}
+.mb-display em {
+  font-style: italic;
+  color: var(--phosphor);
+}
+
+.mb-lede {
+  margin-top: 20px;
+  font-size: clamp(1rem, 1.4vw, 1.13rem);
+  line-height: 1.75;
+  color: var(--bone-200);
+  max-width: 62ch;
+}
+.mb-center .mb-lede { margin-inline: auto; }
+
+/* ---------- buttons & links ---------- */
+
+.mb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 15px 26px;
+  border: 1px solid var(--hairline-strong);
+  color: var(--bone-100);
+  background: var(--ink-100);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+.mb-btn:hover {
+  border-color: var(--phosphor-dim);
+  background: var(--ink-200);
+  transform: translateY(-1px);
+  text-decoration: none;
+  color: var(--bone-100);
+}
+.mb-btn:active { transform: translateY(0); }
+
+/* Scoped one level deeper than the `.mb-landing a { color: inherit }` reset
+   (0-2-0 vs 0-1-1) so the primary button keeps its dark text on phosphor. */
+.mb-landing .mb-btn-primary {
+  background: var(--phosphor);
+  border-color: var(--phosphor);
+  color: #07130c;
+  box-shadow: 0 0 0 rgba(132, 255, 176, 0);
+}
+.mb-btn-primary:hover {
+  background: #9dffc2;
+  border-color: #9dffc2;
+  color: #07130c;
+  box-shadow: 0 8px 32px rgba(132, 255, 176, 0.22);
+}
+.mb-btn .mb-btn-arrow { font-weight: 400; }
+
+/* Same specificity guard as the primary button: keep the dimmed bone-200
+   tone instead of inheriting bone-100 from the reset. */
+.mb-landing .mb-textlink {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: 0.1em;
+  color: var(--bone-200);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--hairline-strong);
+  padding-bottom: 2px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.mb-textlink:hover { color: var(--phosphor); border-bottom-color: var(--phosphor); }
+
+/* ---------- hero ---------- */
+
+.mb-hero {
+  position: relative;
+  padding-top: clamp(72px, 9vw, 128px);
+  padding-bottom: clamp(56px, 7vw, 96px);
+}
+.mb-hero::before {
+  /* hairline graph grid, fading at the edges */
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    repeating-linear-gradient(to right, var(--hairline) 0 1px, transparent 1px 72px),
+    repeating-linear-gradient(to bottom, var(--hairline) 0 1px, transparent 1px 72px);
+  -webkit-mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 78%);
+  mask-image: radial-gradient(120% 90% at 50% 0%, #000 30%, transparent 78%);
+  opacity: 0.5;
+}
+
+.mb-hero-inner { position: relative; text-align: center; }
+
+.mb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--bone-200);
+  border: 1px solid var(--hairline-strong);
+  background: rgba(13, 15, 18, 0.7);
+  padding: 9px 18px;
+  margin-bottom: 34px;
+}
+.mb-badge-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--phosphor);
+  box-shadow: 0 0 10px var(--phosphor);
+  animation: mb-pulse 2.4s ease-in-out infinite;
+}
+
+.mb-hero-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(2.5rem, 6.4vw, 4.9rem);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  color: #f0eee4;
+  max-width: 15ch;
+  margin-inline: auto;
+  text-wrap: balance;
+}
+.mb-hero-title em { font-style: italic; color: var(--phosphor); }
+.mb-hero-title .mb-amber { font-style: italic; color: var(--amber); }
+
+.mb-hero-sub {
+  margin: 26px auto 0;
+  max-width: 66ch;
+  font-size: clamp(1rem, 1.5vw, 1.16rem);
+  line-height: 1.8;
+  color: var(--bone-200);
+  text-wrap: pretty;
+}
+.mb-hero-sub strong { color: var(--bone-100); font-weight: 600; }
+
+.mb-hero-ctas {
+  margin-top: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
+
+.mb-install {
+  margin: 34px auto 0;
+  max-width: 720px;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--hairline-strong);
+  background: rgba(8, 9, 11, 0.85);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(132, 255, 176, 0.05);
+}
+.mb-install-cmd {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--bone-100);
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+.mb-install-cmd .mb-prompt { color: var(--phosphor); user-select: none; }
+.mb-install-cmd code { font-family: inherit; }
+.mb-copy {
+  flex: 0 0 auto;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-left: 1px solid var(--hairline-strong);
+  background: var(--ink-100);
+  color: var(--bone-200);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 0 18px;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.mb-copy:hover { color: var(--phosphor); background: var(--ink-200); }
+html.js .mb-copy { display: inline-flex; }
+.mb-copy.is-copied { color: var(--phosphor); }
+
+.mb-hero-meta {
+  margin-top: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bone-300);
+}
+.mb-hero-meta span { display: inline-flex; align-items: center; }
+.mb-hero-meta span + span::before {
+  content: '▪';
+  margin-inline: 14px;
+  color: var(--ink-300);
+}
+
+/* ---------- hero console figure ---------- */
+
+.mb-landing .mb-hero-figure {
+  position: relative;
+  margin-top: clamp(48px, 6vw, 80px);
+  width: 100%;
+  max-width: none;
+  display: block;
+}
+.mb-landing .mb-hero-figure::before {
+  content: '';
+  position: absolute;
+  inset: -8% -6%;
+  background:
+    radial-gradient(46% 52% at 30% 42%, rgba(132, 255, 176, 0.13), transparent 70%),
+    radial-gradient(40% 46% at 76% 60%, rgba(255, 180, 107, 0.08), transparent 70%);
+  filter: blur(28px);
+  pointer-events: none;
+}
+.mb-console {
+  position: relative;
+  width: 100%;
+  height: auto;
+  display: block;
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-000);
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.6), 0 0 90px rgba(132, 255, 176, 0.05);
+}
+.mb-hero-caption {
+  margin-top: 18px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bone-300);
+}
+.mb-hero-caption b { color: var(--bone-200); font-weight: 600; }
+
+.mb-pulse { animation: mb-pulse 2.4s ease-in-out infinite; }
+@keyframes mb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ---------- engine story ---------- */
+
+.mb-engine-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.mb-engine {
+  position: relative;
+  border: 1px solid var(--hairline);
+  background: linear-gradient(180deg, var(--ink-050), var(--ink-000));
+  padding: 30px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.mb-engine:hover { border-color: var(--hairline-strong); transform: translateY(-3px); }
+.mb-engine::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: var(--engine-accent, var(--bone-300));
+  opacity: 0.85;
+}
+.mb-engine-codex { --engine-accent: var(--phosphor); }
+.mb-engine-kimi { --engine-accent: var(--amber); }
+.mb-engine-claude { --engine-accent: var(--bone-300); }
+
+.mb-engine-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mb-engine-name {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--bone-100);
+}
+.mb-engine-tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  border: 1px solid var(--engine-accent, var(--bone-300));
+  color: var(--engine-accent, var(--bone-300));
+  white-space: nowrap;
+}
+.mb-engine-role {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 1.22rem;
+  color: #e6e4d9;
+}
+.mb-engine-desc { font-size: 0.92rem; color: var(--bone-200); line-height: 1.7; }
+.mb-engine-desc code,
+.mb-inline-code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  color: var(--phosphor);
+  background: rgba(132, 255, 176, 0.07);
+  padding: 1px 5px;
+  border: 1px solid rgba(132, 255, 176, 0.12);
+}
+.mb-engine-feat {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--hairline);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.9;
+  color: var(--bone-300);
+  letter-spacing: 0.04em;
+}
+.mb-engine-feat b { color: var(--bone-200); font-weight: 600; }
+
+.mb-section-note {
+  margin-top: 28px;
+  font-size: 0.92rem;
+  color: var(--bone-300);
+}
+.mb-section-note a { color: var(--bone-200); }
+
+/* ---------- console section ---------- */
+
+.mb-console-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: start;
+}
+.mb-console-points { display: grid; gap: 0; }
+.mb-point {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 18px;
+  padding: 22px 0;
+  border-top: 1px solid var(--hairline);
+}
+.mb-point:first-child { border-top: 0; padding-top: 4px; }
+.mb-point-num {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--phosphor-dim);
+  padding-top: 4px;
+}
+.mb-point h3 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #e6e4d9;
+  margin-bottom: 6px;
+}
+.mb-point p { font-size: 0.92rem; color: var(--bone-200); line-height: 1.7; }
+
+.mb-navstrip {
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-050);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+  position: sticky;
+  top: 96px;
+}
+.mb-navstrip-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--bone-300);
+  padding: 8px 10px 4px;
+}
+.mb-navstrip-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+.mb-navitem {
+  border: 1px solid var(--hairline);
+  background: var(--ink-000);
+  padding: 14px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.mb-navitem:hover { border-color: var(--phosphor-dim); background: var(--ink-100); }
+.mb-navitem .mb-navitem-key {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--bone-100);
+}
+.mb-navitem .mb-navitem-key i { color: var(--phosphor); font-style: normal; }
+.mb-navitem .mb-navitem-note { font-size: 11.5px; color: var(--bone-300); line-height: 1.5; }
+.mb-navstrip-foot {
+  border-top: 1px dashed var(--hairline);
+  padding: 12px 10px 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--bone-300);
+}
+.mb-navstrip-foot code { color: var(--phosphor); }
+
+/* ---------- capabilities ---------- */
+
+.mb-cap-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+}
+.mb-cap {
+  background: var(--ink-000);
+  padding: 26px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 190px;
+  transition: background 0.2s ease;
+}
+.mb-cap:hover { background: var(--ink-050); }
+.mb-cap-tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--phosphor-dim);
+}
+.mb-cap h3 {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 1.3rem;
+  color: #e6e4d9;
+}
+.mb-cap p { font-size: 0.88rem; color: var(--bone-200); line-height: 1.65; }
+
+/* ---------- channels ---------- */
+
+.mb-channel-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+.mb-channel {
+  border: 1px solid var(--hairline);
+  background: linear-gradient(180deg, var(--ink-050), var(--ink-000));
+  padding: 26px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.mb-channel:hover { border-color: var(--hairline-strong); transform: translateY(-3px); }
+.mb-channel-glyph {
+  width: 42px; height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hairline-strong);
+  background: var(--ink-000);
+  color: var(--phosphor);
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 700;
+}
+.mb-channel h3 { font-size: 1.05rem; font-weight: 600; color: #e6e4d9; }
+.mb-channel h3 span {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bone-300);
+}
+.mb-channel p { font-size: 0.88rem; color: var(--bone-200); line-height: 1.65; }
+.mb-channel-foot {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--hairline);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--bone-300);
+  text-transform: uppercase;
+}
+.mb-channel-note {
+  margin-top: 34px;
+  text-align: center;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+  color: var(--bone-200);
+}
+.mb-channel-note b { color: var(--phosphor); font-weight: 500; }
+
+/* ---------- install ---------- */
+
+.mb-install-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: clamp(32px, 5vw, 64px);
+  align-items: start;
+}
+.mb-terminal {
+  border: 1px solid var(--hairline-strong);
+  background: #060708;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+}
+.mb-terminal-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--ink-050);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--bone-300);
+}
+.mb-terminal-head .mb-term-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--phosphor-dim);
+}
+.mb-terminal-body {
+  padding: 22px 22px 26px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 2.05;
+  overflow-x: auto;
+}
+.mb-terminal-body .mb-row { white-space: nowrap; }
+.mb-terminal-body .c { color: var(--bone-300); }
+.mb-terminal-body .p { color: var(--phosphor); user-select: none; }
+.mb-terminal-body .g { color: var(--phosphor); }
+.mb-terminal-body .a { color: var(--amber); }
+
+.mb-steps { display: grid; gap: 0; counter-reset: step; }
+.mb-step {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 18px;
+  padding: 20px 0;
+  border-top: 1px solid var(--hairline);
+}
+.mb-step:first-child { border-top: 0; padding-top: 0; }
+.mb-step-num {
+  width: 34px; height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--phosphor-dim);
+  color: var(--phosphor);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+.mb-step h3 { font-size: 1rem; font-weight: 600; color: #e6e4d9; margin-bottom: 6px; }
+.mb-step p { font-size: 0.9rem; color: var(--bone-200); line-height: 1.7; }
+.mb-step p code { font-family: var(--mono); font-size: 0.85em; color: var(--phosphor); }
+.mb-install-alt { margin-top: 22px; }
+
+/* ---------- trust ---------- */
+
+.mb-trust-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--hairline);
+  border: 1px solid var(--hairline);
+}
+.mb-trust {
+  background: var(--ink-000);
+  padding: 26px 26px 24px;
+}
+.mb-trust h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: #e6e4d9;
+  margin-bottom: 10px;
+}
+.mb-trust h3 .mb-trust-key {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--phosphor-dim);
+  text-transform: uppercase;
+}
+.mb-trust p { font-size: 0.88rem; color: var(--bone-200); line-height: 1.7; }
+.mb-trust p code { font-family: var(--mono); font-size: 0.85em; color: var(--amber); }
+
+/* ---------- final band ---------- */
+
+.mb-final {
+  border-top: 1px solid var(--hairline);
+  padding-block: clamp(80px, 10vw, 140px);
+  text-align: center;
+  position: relative;
+}
+.mb-final::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(520px 320px at 50% 100%, rgba(132, 255, 176, 0.09), transparent 70%);
+  pointer-events: none;
+}
+.mb-final .mb-container { position: relative; }
+.mb-final-title {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: clamp(1.9rem, 4.4vw, 3.2rem);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  color: #f0eee4;
+  max-width: 24ch;
+  margin-inline: auto;
+  text-wrap: balance;
+}
+.mb-final-title em { font-style: italic; color: var(--phosphor); }
+.mb-final-sub {
+  margin: 20px auto 0;
+  max-width: 56ch;
+  color: var(--bone-200);
+  font-size: 1rem;
+  line-height: 1.75;
+}
+.mb-final-ctas {
+  margin-top: 36px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+}
+
+/* ---------- progressive motion ----------
+   Content never starts hidden: crawlers, full-page screenshots and readers
+   that jump to an anchor must always see the complete landing. */
+
+@media (prefers-reduced-motion: no-preference) {
+  html.js .mb-reveal {
+    opacity: 1;
+    transform: none;
+  }
+  html.js .mb-hero-figure::before {
+    transform: translate3d(var(--gx, 0), var(--gy, 0), 0);
+    transition: transform 0.8s cubic-bezier(0.22, 0.61, 0.21, 1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mb-badge-dot, .mb-pulse { animation: none; }
+  .mb-btn, .mb-engine, .mb-channel, .mb-cap { transition: none; }
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1080px) {
+  .mb-cap-grid { grid-template-columns: repeat(2, 1fr); }
+  .mb-channel-grid { grid-template-columns: repeat(2, 1fr); }
+  .mb-engine-grid { grid-template-columns: 1fr; }
+  .mb-trust-grid { grid-template-columns: 1fr; }
+  .mb-console-grid, .mb-install-grid { grid-template-columns: 1fr; }
+  .mb-navstrip { position: static; }
+}
+
+@media (max-width: 560px) {
+  .mb-landing { font-size: 15px; }
+  .mb-cap-grid, .mb-channel-grid { grid-template-columns: 1fr; }
+  .mb-hero-ctas .mb-btn { width: 100%; justify-content: center; }
+  .mb-install { flex-direction: column; }
+  .mb-install-cmd { padding: 14px 16px; }
+  .mb-copy { border-left: 0; border-top: 1px solid var(--hairline-strong); padding: 12px; justify-content: center; }
+  .mb-hero-meta { letter-spacing: 0.08em; }
+  .mb-hero-meta span + span::before { margin-inline: 8px; }
+  .mb-terminal-body { font-size: 12px; }
+  .mb-point, .mb-step { grid-template-columns: 34px 1fr; gap: 14px; }
+}
+
+/* ---------- site chrome: dark header + tabs (landing only) ----------
+   These rules live in landing.css, which home.html loads after the global
+   docs theme on root index pages, so the landing remains the final override.
+   Colors are literals because the header/tabs sit outside .mb-landing,
+   where the palette custom properties are scoped. Layout, sticky
+   behavior and structure stay untouched — colors and hairlines only. */
+
+.md-header {
+  background-color: #0d0f12;
+  color: #d9d6ca;
+  border-bottom: 1px solid rgba(200, 197, 184, 0.14);
+  box-shadow: none;
+}
+.md-header--shadow { box-shadow: 0 1px 24px rgba(0, 0, 0, 0.55); }
+.md-header__topic + .md-header__topic { color: #8a8778; }
+
+.md-header .md-search__form {
+  background-color: #14171c;
+  border: 1px solid rgba(200, 197, 184, 0.22);
+  box-shadow: none;
+  color: #d9d6ca;
+}
+.md-header .md-search__input { color: #d9d6ca; }
+.md-header .md-search__input::placeholder { color: #8a8778; }
+.md-header .md-search__icon { color: #8a8778; }
+
+.md-tabs {
+  background-color: #08090b;
+  color: #8a8778;
+  border-bottom: 1px solid rgba(200, 197, 184, 0.1);
+}
+.md-tabs__link { color: #8a8778; }
+.md-tabs__link:hover, .md-tabs__link:focus { color: #d9d6ca; opacity: 1; }
+.md-tabs__item--active .md-tabs__link { color: #84ffb0; opacity: 1; }
+
+.md-header :is(a, button, label, input):focus-visible,
+.md-tabs a:focus-visible {
+  outline: 2px solid #84ffb0;
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+
+/* ---------- print: keep it legible ---------- */
+
+@media print {
+  .mb-landing::before, .mb-landing::after, .mb-hero::before { display: none; }
+  .mb-landing { background: #fff; color: #111; }
+}
