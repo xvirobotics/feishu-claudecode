@@ -248,6 +248,7 @@ async function answerQuestions(
     );
     if (!ready) {
       logger.warn({ qIndex: i, header: q.header }, 'pty-driver: AskUserQuestion menu never rendered');
+      await submitAnswersAsPrompt(session, answers, questions, i, logger);
       return;
     }
     await sleep(250);
@@ -290,6 +291,32 @@ async function answerQuestions(
   await sleep(300);
   logger.info('pty-driver: confirming AskUserQuestion (Submit answers)');
   session.sendKeys('\r'); // "Submit answers" is the focused default
+}
+
+/**
+ * Fallback when the AskUserQuestion menu cannot be driven — typically a
+ * resumed session replaying a historical question frame that never becomes
+ * interactive again. Submit the user's answers as a plain follow-up prompt so
+ * the reply still reaches the session instead of wedging the turn.
+ */
+async function submitAnswersAsPrompt(
+  session: PtyClaudeSession,
+  answers: Record<string, string>,
+  questions: PtyParsedQuestion[],
+  fromIndex: number,
+  logger: Logger,
+): Promise<void> {
+  const parts: string[] = [];
+  for (let i = fromIndex; i < questions.length; i++) {
+    const question = questions[i];
+    const answer = (answers[question.header] ?? answers[question.question] ?? '').trim();
+    if (!answer) continue;
+    parts.push(question.header ? `${question.header}: ${answer}` : answer);
+  }
+  const text = parts.join('; ');
+  if (!text) return;
+  logger.info({ text }, 'pty-driver: AskUserQuestion unavailable — submitting answers as prompt');
+  await session.typePrompt(text);
 }
 
 /** Use the "Type something" free-text option: digit → type text → Enter. */
