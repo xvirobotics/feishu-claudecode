@@ -205,6 +205,7 @@ describe('CommandHandler /model', () => {
   it('lists codex models on /model list when engine is codex', async () => {
     const { handler, notices } = buildHandler({ engine: 'codex' });
     await handler.handle(msg('/model list'));
+    expect(notices[0].content).toContain('gpt-6-astra');
     expect(notices[0].content).toContain('gpt-5.6');
     expect(notices[0].content).toContain('gpt-5.6-terra');
     expect(notices[0].content).toContain('gpt-5.6-luna');

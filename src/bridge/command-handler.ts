@@ -416,6 +416,8 @@ export class CommandHandler {
         { id: 'kimi-code/kimi-for-coding-highspeed', label: 'Kimi for Coding Highspeed', note: 'Low-latency coding model when enabled for your account' },
       ];
       const codexModels = [
+        { id: 'gpt-6-astra', label: 'GPT 6 Astra', note: 'Flagship Codex model · persistent context across windows (Codex ≥0.153)' },
+        { id: 'gpt-6-astra-pro', label: 'GPT 6 Astra Pro', note: 'Higher-capability Astra tier for Pro/Business/Enterprise accounts' },
         { id: 'gpt-5.6', label: 'GPT 5.6', note: 'General GPT-5.6 Codex model' },
         { id: 'gpt-5.6-sol', label: 'GPT 5.6 Sol', note: 'Flagship GPT-5.6 capability model' },
         { id: 'gpt-5.6-terra', label: 'GPT 5.6 Terra', note: 'Stronger speed/cost balance for Codex workers' },
@@ -653,7 +655,7 @@ export class CommandHandler {
       case 'kimi':
         return '`kimi-code/k3`, `kimi-code/kimi-for-coding-highspeed`';
       case 'codex':
-        return '`gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`';
+        return '`gpt-6-astra`, `gpt-6-astra-pro`, `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`';
     }
   }
 
