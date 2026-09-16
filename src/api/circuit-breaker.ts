@@ -13,6 +13,7 @@ interface BotCircuit {
   failures: number;
   lastFailure: number;
   halfOpenSuccesses: number;
+  halfOpenProbeInFlight: boolean;
 }
 
 export class CircuitBreaker {
@@ -32,7 +33,13 @@ export class CircuitBreaker {
   private getCircuit(botName: string): BotCircuit {
     let circuit = this.circuits.get(botName);
     if (!circuit) {
-      circuit = { state: 'closed', failures: 0, lastFailure: 0, halfOpenSuccesses: 0 };
+      circuit = {
+        state: 'closed',
+        failures: 0,
+        lastFailure: 0,
+        halfOpenSuccesses: 0,
+        halfOpenProbeInFlight: false,
+      };
       this.circuits.set(botName, circuit);
     }
     return circuit;
@@ -47,12 +54,17 @@ export class CircuitBreaker {
       if (Date.now() - circuit.lastFailure >= this.config.resetTimeoutMs) {
         circuit.state = 'half-open';
         circuit.halfOpenSuccesses = 0;
+        circuit.halfOpenProbeInFlight = true;
         this.logger.info({ botName }, 'Circuit half-open, allowing probe request');
         return true;
       }
       return false;
     }
-    // half-open: allow requests
+    // Only one request may probe a half-open circuit at a time. Without this
+    // guard, a traffic burst can bypass the recovery test and overload a bot
+    // that has not actually recovered yet.
+    if (circuit.halfOpenProbeInFlight) return false;
+    circuit.halfOpenProbeInFlight = true;
     return true;
   }
 
@@ -60,6 +72,7 @@ export class CircuitBreaker {
   recordSuccess(botName: string): void {
     const circuit = this.getCircuit(botName);
     if (circuit.state === 'half-open') {
+      circuit.halfOpenProbeInFlight = false;
       circuit.halfOpenSuccesses++;
       if (circuit.halfOpenSuccesses >= this.config.halfOpenMaxAttempts) {
         circuit.state = 'closed';
@@ -80,6 +93,7 @@ export class CircuitBreaker {
 
     if (circuit.state === 'half-open') {
       // Failure during half-open -> back to open
+      circuit.halfOpenProbeInFlight = false;
       circuit.state = 'open';
       this.logger.warn({ botName, failures: circuit.failures }, 'Circuit re-opened (half-open probe failed)');
     } else if (circuit.failures >= this.config.failureThreshold) {
