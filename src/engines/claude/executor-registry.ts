@@ -76,6 +76,12 @@ export interface AcquireOptions {
   onTeamEvent?: (event: TeamEvent) => void;
   /** Override per-acquire model (else uses registry default). */
   model?: string;
+  /**
+   * Ignore the registry's defaultModel for this acquire and spawn/respawn
+   * with no model flag, so the endpoint resolves its own default. Used by the
+   * unknown-model self-heal when the configured model itself is unroutable.
+   */
+  ignoreRegistryDefaultModel?: boolean;
   /** MetaBot bot/chat context baked into the executor's system prompt. */
   apiContext?: ApiContext;
   /** Stable per-chat outputs directory. */
@@ -166,7 +172,9 @@ export class ExecutorRegistry extends EventEmitter {
       try { await pending; } catch { /* shutdown errors are logged at the source */ }
     }
 
-    const effectiveModel = opts.model ?? this.opts.defaultModel;
+    const effectiveModel = opts.ignoreRegistryDefaultModel
+      ? undefined
+      : (opts.model ?? this.opts.defaultModel);
     const existing = this.executors.get(chatId);
     if (existing) {
       const state = existing.executor.getState();
@@ -370,7 +378,9 @@ export class ExecutorRegistry extends EventEmitter {
     if (waitMs > 0) {
       await new Promise<void>((r) => setTimeout(r, waitMs));
     }
-    const effectiveModel = opts.model ?? this.opts.defaultModel;
+    const effectiveModel = opts.ignoreRegistryDefaultModel
+      ? undefined
+      : (opts.model ?? this.opts.defaultModel);
     entry.respawnAttempts++;
     const resume = entry.resumeSessionId ?? opts.resumeSessionId;
     this.opts.logger.info(

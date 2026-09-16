@@ -9,6 +9,7 @@ export type AuditEvent =
   | 'task_stopped'
   | 'task_queued'
   | 'queue_cleared'
+  | 'task_model_fallback'
   | 'command'
   | 'auth_denied'
   | 'api_task_start'

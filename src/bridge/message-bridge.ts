@@ -47,7 +47,7 @@ import {
 } from './bridge-constants.js';
 import { CodexCommandController } from './codex-command-controller.js';
 import { buildCodexGoalPrompt } from './codex-goal-policy.js';
-import { isContextOverflowError, isStaleSessionError } from './error-classifiers.js';
+import { isContextOverflowError, isStaleSessionError, isUnknownModelError } from './error-classifiers.js';
 import { sendFinalCardWithRetry, sendPlanContent } from './final-delivery.js';
 import { isDefaultMediaText, mergeBatchMessages, mergeBatchWithText, type PendingBatch } from './media-batch.js';
 import { sendCompletionNotice } from './notification-policy.js';
@@ -58,7 +58,7 @@ import type { AgentTeamStore } from '../agent-teams/team-store.js';
 import { buildAgentTeamCardSnapshot } from '../agent-teams/card-snapshot.js';
 import { buildAgentTeamPromptContextForChat } from '../agent-teams/prompt-context.js';
 
-export { isContextOverflowError, isStaleSessionError } from './error-classifiers.js';
+export { isContextOverflowError, isStaleSessionError, isUnknownModelError } from './error-classifiers.js';
 export { normalizePromptForEngine } from './prompt-normalizer.js';
 export { extractSpontaneousSnippet, formatSpontaneousCardBody } from './spontaneous-activity.js';
 
@@ -1459,6 +1459,8 @@ export class MessageBridge {
       maxTurns?: number;
       allowedTools?: string[];
       freshSession?: boolean;
+      /** Retry with no model flag so the endpoint resolves its own default. */
+      forceEndpointDefaultModel?: boolean;
     },
   ): Promise<ExecutionHandle> {
     const session = this.sessionManager.getSession(chatId);
@@ -1485,6 +1487,7 @@ export class MessageBridge {
         resumeSessionId: opts.freshSession ? undefined : session.sessionId,
         onTeamEvent: opts.onTeamEvent,
         model: opts.model,
+        ignoreRegistryDefaultModel: opts.forceEndpointDefaultModel,
         apiContext: opts.apiContext,
         outputsDir: opts.outputsDir,
       });
@@ -1500,12 +1503,101 @@ export class MessageBridge {
       abortController: opts.abortController,
       outputsDir: opts.outputsDir,
       apiContext: opts.apiContext,
-      model: opts.model,
+      model: opts.forceEndpointDefaultModel ? undefined : opts.model,
       reasoningEffort: engineName === 'codex' ? opts.reasoningEffort ?? session.reasoningEffort : undefined,
       onTeamEvent: opts.onTeamEvent,
       maxTurns: opts.maxTurns,
       allowedTools: opts.allowedTools,
     });
+  }
+
+  /**
+   * A session-level model override can outlive the endpoint that routed it
+   * (an Anthropic-compatible gateway whose alias set changed, a retired
+   * model). Clear the override and retry the same turn with no model flag so
+   * the endpoint resolves its own default, instead of failing every later
+   * turn with the same 400.
+   */
+  private async retryAfterUnknownModel(input: {
+    chatId: string;
+    engineName: EngineName;
+    prompt: string;
+    cwd: string;
+    abortController: AbortController;
+    outputsDir: string;
+    processor: StreamProcessor;
+    rateLimiter: RateLimiter;
+    messageId?: string;
+    sendCards: boolean;
+    runningTask: RunningTask;
+    executionHandle: ExecutionHandle;
+    apiContext: ApiContext;
+    onTeamEvent?: (event: TeamEvent) => void;
+    resetIdleTimer: () => void;
+    badModel: string;
+  }): Promise<CardState | undefined> {
+    const { chatId, engineName, badModel } = input;
+    this.logger.warn(
+      { chatId, model: badModel },
+      'Unknown model rejected upstream; clearing override and retrying on the endpoint default',
+    );
+    this.sessionManager.setSessionModel(chatId, undefined);
+    this.audit.log({
+      event: 'task_model_fallback',
+      botName: this.config.name,
+      chatId,
+      meta: { unavailableModel: badModel },
+    });
+
+    let lastState: CardState = {
+      status: 'running',
+      userPrompt: input.prompt,
+      responseText: `_Model \`${badModel}\` is unavailable on this endpoint; cleared the override and retrying with the endpoint default..._`,
+      toolCalls: [],
+    };
+
+    try {
+      if (input.sendCards && input.messageId) {
+        await this.sender.updateCard(input.messageId, lastState);
+      }
+      const retryHandle = await this.runOneTurn(chatId, engineName, {
+        prompt: input.prompt,
+        cwd: input.cwd,
+        abortController: input.abortController,
+        outputsDir: input.outputsDir,
+        apiContext: input.apiContext,
+        // Bypass every model layer so the endpoint resolves its own default.
+        forceEndpointDefaultModel: true,
+        onTeamEvent: input.onTeamEvent,
+      });
+      input.executionHandle.finish();
+      input.runningTask.executionHandle = retryHandle;
+
+      for await (const message of retryHandle.stream) {
+        if (input.abortController.signal.aborted) break;
+        input.resetIdleTimer();
+        const state = input.processor.processMessage(message);
+        lastState = state;
+        const newSid = input.processor.getSessionId();
+        if (newSid) this.sessionManager.setSessionId(chatId, newSid, engineName);
+        if (state.status === 'complete' || state.status === 'error') break;
+        if (input.sendCards && input.messageId) {
+          input.rateLimiter.schedule(() => {
+            this.sender.updateCard(input.messageId!, this.enrichWithAgentTeams(state, chatId));
+          });
+        }
+      }
+      await input.rateLimiter.cancelAndWait();
+      return lastState;
+    } catch (err) {
+      this.logger.error({ err, chatId }, 'Retry after unknown model also failed');
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        ...lastState,
+        status: 'error',
+        errorMessage: `Model \`${badModel}\` is unavailable on this endpoint and the retry without a model flag also failed: ${message}`,
+      };
+    }
   }
 
   /**
@@ -2524,6 +2616,20 @@ export class MessageBridge {
         }
       }
 
+      // Self-heal an unroutable model (session override or bot default) before
+      // falling through to the error card, so the failure doesn't repeat on
+      // every later turn.
+      if (lastState.status === 'error' && isUnknownModelError(lastState.errorMessage)) {
+        const recovered = await this.retryAfterUnknownModel({
+          chatId, engineName, prompt, cwd, abortController, outputsDir,
+          processor, rateLimiter, messageId, sendCards: true,
+          runningTask, executionHandle, apiContext: buildApiContext(),
+          onTeamEvent, resetIdleTimer,
+          badModel: session.model ?? this.config.claude.model ?? '_default_',
+        });
+        if (recovered) lastState = recovered;
+      }
+
       // Auto-retry with fresh session when Claude can't find the conversation
       if (lastState.status === 'error' && isStaleSessionError(lastState.errorMessage) && session.sessionId) {
         this.logger.info({ chatId }, 'Stale session detected, retrying with fresh session');
@@ -2632,6 +2738,23 @@ export class MessageBridge {
       );
     } catch (err: any) {
       this.logger.error({ err, chatId, userId }, 'Claude execution error');
+
+      // Some engines surface the unknown-model rejection as a thrown error
+      // rather than an error card — self-heal the same way.
+      if (isUnknownModelError(err?.message)) {
+        const recovered = await this.retryAfterUnknownModel({
+          chatId, engineName, prompt, cwd, abortController, outputsDir,
+          processor, rateLimiter, messageId, sendCards: true,
+          runningTask, executionHandle, apiContext: buildApiContext(),
+          onTeamEvent, resetIdleTimer,
+          badModel: session.model ?? this.config.claude.model ?? '_default_',
+        });
+        if (recovered && recovered.status !== 'error') {
+          await this.sendFinalCard(messageId, recovered, chatId);
+          return;
+        }
+        lastState = recovered ?? lastState;
+      }
 
       // Auto-retry with fresh session when Claude can't find the conversation or context overflows
       const errMsg: string = err.message || '';
@@ -3023,6 +3146,19 @@ export class MessageBridge {
             errorMessage: lastState.responseText ? undefined : 'Claude session ended unexpectedly',
           };
         }
+      }
+
+      // Self-heal an unroutable model (session override or bot default) by
+      // retrying with no model flag.
+      if (lastState.status === 'error' && isUnknownModelError(lastState.errorMessage)) {
+        const recovered = await this.retryAfterUnknownModel({
+          chatId, engineName, prompt, cwd, abortController, outputsDir,
+          processor, rateLimiter, messageId, sendCards: Boolean(sendCards && messageId),
+          runningTask, executionHandle, apiContext: buildApiContext(),
+          onTeamEvent, resetIdleTimer,
+          badModel: session.model ?? this.config.claude.model ?? '_default_',
+        });
+        if (recovered) lastState = recovered;
       }
 
       // Auto-retry with fresh session when Claude can't find the conversation or context overflows
