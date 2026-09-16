@@ -10,7 +10,7 @@ import { FeishuGroupReplyModeStore } from './feishu/group-reply-mode-store.js';
 import { MessageSender } from './feishu/message-sender.js';
 import { FeishuTurnStore } from './feishu/turn-store.js';
 import { FeishuSenderAdapter } from './feishu/feishu-sender-adapter.js';
-import { resolveFeishuWsRecoveryOptions } from './feishu/ws-recovery.js';
+import { installFeishuWsTerminateGuard, resolveFeishuWsRecoveryOptions } from './feishu/ws-recovery.js';
 import { MessageBridge } from './bridge/message-bridge.js';
 import { loadRestartBreadcrumb } from './bridge/restart-notice.js';
 import { recoverControlledRestartAfterStartup } from './bridge/restart-coordinator.js';
@@ -140,6 +140,7 @@ async function startFeishuBot(
   );
 
   // Create WebSocket client with bounded liveness/reconnect controls.
+  installFeishuWsTerminateGuard();
   const wsRecovery = resolveFeishuWsRecoveryOptions();
   const wsClient = new lark.WSClient({
     appId: botConfig.feishu.appId,

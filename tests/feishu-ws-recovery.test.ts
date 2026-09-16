@@ -1,8 +1,11 @@
 import * as lark from '@larksuiteoapi/node-sdk';
+import { EventEmitter } from 'node:events';
+import WebSocket from 'ws';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FEISHU_WS_HANDSHAKE_TIMEOUT_MS,
   DEFAULT_FEISHU_WS_PING_TIMEOUT_SEC,
+  guardConnectingWebSocketTermination,
   resolveFeishuWsRecoveryOptions,
 } from '../src/feishu/ws-recovery.js';
 import { BotRegistry } from '../src/api/bot-registry.js';
@@ -51,6 +54,25 @@ describe('Feishu WebSocket network-switch recovery', () => {
     internals.armLiveness();
     await vi.advanceTimersByTimeAsync(DEFAULT_FEISHU_WS_PING_TIMEOUT_SEC * 1_000);
     expect(terminate).toHaveBeenCalledTimes(1);
+  });
+
+  it('absorbs the connect-time error emitted after a guarded terminate', () => {
+    const socket = new EventEmitter() as EventEmitter & { readyState: number };
+    socket.readyState = WebSocket.CONNECTING;
+
+    guardConnectingWebSocketTermination(socket);
+
+    expect(socket.listenerCount('error')).toBe(1);
+    expect(() => socket.emit('error', new Error('WebSocket was closed before the connection was established'))).not.toThrow();
+  });
+
+  it('leaves an established socket untouched', () => {
+    const socket = new EventEmitter() as EventEmitter & { readyState: number };
+    socket.readyState = WebSocket.OPEN;
+
+    guardConnectingWebSocketTermination(socket);
+
+    expect(socket.listenerCount('error')).toBe(0);
   });
 
   it('surfaces live channel state without exposing credentials', () => {
