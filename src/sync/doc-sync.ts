@@ -5,7 +5,7 @@
  * creating wiki nodes for folders and docx pages for documents.
  */
 import * as lark from '@larksuiteoapi/node-sdk';
-import type { Logger } from '../utils/logger.js';
+import { createLarkSdkLogger, type Logger } from '../utils/logger.js';
 import type { MemoryClient, FolderTreeNode } from '../memory/memory-client.js';
 import { SyncStore } from './sync-store.js';
 import { markdownToBlocks, batchBlocks, contentHash } from './markdown-to-blocks.js';
@@ -66,6 +66,7 @@ export class DocSync {
       appId: config.feishuAppId,
       appSecret: config.feishuAppSecret,
       disableTokenCache: false,
+      logger: createLarkSdkLogger(logger.child({ component: 'feishu-wiki-sync' })),
     });
     this.store = new SyncStore(config.databaseDir, logger);
     this.throttleMs = config.throttleMs ?? DEFAULT_THROTTLE_MS;
