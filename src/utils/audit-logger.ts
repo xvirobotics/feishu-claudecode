@@ -3,6 +3,7 @@ import type { Logger } from './logger.js';
 export type AuditEvent =
   | 'task_start'
   | 'task_complete'
+  | 'task_waiting'
   | 'task_error'
   | 'task_timeout'
   | 'task_idle_timeout'
@@ -12,7 +13,8 @@ export type AuditEvent =
   | 'command'
   | 'auth_denied'
   | 'api_task_start'
-  | 'api_task_complete';
+  | 'api_task_complete'
+  | 'api_task_waiting';
 
 export interface AuditEntry {
   event: AuditEvent;

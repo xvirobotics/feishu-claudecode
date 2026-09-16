@@ -46,6 +46,7 @@ import {
   TASK_TIMEOUT_MESSAGE,
 } from './bridge-constants.js';
 import { CodexCommandController } from './codex-command-controller.js';
+import { activityTypeForState, hasRunningBackgroundWork } from './background-task-lifecycle.js';
 import { buildCodexGoalPrompt } from './codex-goal-policy.js';
 import { isContextOverflowError, isStaleSessionError } from './error-classifiers.js';
 import { sendFinalCardWithRetry, sendPlanContent } from './final-delivery.js';
@@ -170,7 +171,7 @@ export interface ApiTaskResult {
 }
 
 export interface ActivityEventData {
-  type: 'task_started' | 'task_completed' | 'task_failed';
+  type: 'task_started' | 'task_waiting' | 'task_completed' | 'task_failed';
   botName: string;
   chatId: string;
   userId?: string;
@@ -2589,6 +2590,7 @@ export class MessageBridge {
       const auditEvent = timedOut ? 'task_timeout' as const
         : idledOut ? 'task_idle_timeout' as const
         : lastState.status === 'error' ? 'task_error' as const
+        : hasRunningBackgroundWork(lastState) ? 'task_waiting' as const
         : 'task_complete' as const;
       this.audit.log({
         event: auditEvent,
@@ -2596,7 +2598,7 @@ export class MessageBridge {
         durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
       });
       this.emitActivity({
-        type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+        type: activityTypeForState(lastState),
         botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
         responsePreview: lastState.responseText?.slice(0, 200),
         costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
@@ -2665,12 +2667,16 @@ export class MessageBridge {
 
           const durationMs = Date.now() - startTime;
           this.audit.log({
-            event: lastState.status === 'error' ? 'task_error' : 'task_complete',
+            event: lastState.status === 'error'
+              ? 'task_error'
+              : hasRunningBackgroundWork(lastState)
+                ? 'task_waiting'
+                : 'task_complete',
             botName: this.config.name, chatId, userId, prompt: text,
             durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
           });
           this.emitActivity({
-            type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+            type: activityTypeForState(lastState),
             botName: this.config.name, chatId, userId, prompt: text?.slice(0, 200),
             responsePreview: lastState.responseText?.slice(0, 200),
             costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,
@@ -3074,11 +3080,11 @@ export class MessageBridge {
 
       const durationMs = Date.now() - startTime;
       this.audit.log({
-        event: 'api_task_complete', botName: this.config.name, chatId, userId, prompt,
+        event: hasRunningBackgroundWork(lastState) ? 'api_task_waiting' : 'api_task_complete', botName: this.config.name, chatId, userId, prompt,
         durationMs, costUsd: lastState.costUsd, error: lastState.errorMessage,
       });
       this.emitActivity({
-        type: lastState.status === 'complete' ? 'task_completed' : 'task_failed',
+        type: activityTypeForState(lastState),
         botName: this.config.name, chatId, userId, prompt: prompt?.slice(0, 200),
         responsePreview: lastState.responseText?.slice(0, 200),
         costUsd: lastState.costUsd, durationMs, errorMessage: lastState.errorMessage,

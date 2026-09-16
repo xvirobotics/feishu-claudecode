@@ -108,6 +108,44 @@ describe('sendCompletionNotice', () => {
     expect(sender.sendText).toHaveBeenCalledWith('chat', '✅ Done');
   });
 
+  it('does not announce completion while a background task is still running', async () => {
+    const sender = makeSender();
+    const state = {
+      ...makeState('complete'),
+      backgroundEvents: [{ taskId: 'monitor-1', description: 'Monitor release', status: 'running' as const }],
+    };
+
+    await sendCompletionNotice({
+      sender,
+      config: makeConfig(),
+      logger: { warn: vi.fn() } as any,
+      chatId: 'chat',
+      state,
+      durationMs: 20_000,
+    });
+
+    expect(sender.sendText).not.toHaveBeenCalled();
+  });
+
+  it('announces completion again once background work has finished', async () => {
+    const sender = makeSender();
+    const state = {
+      ...makeState('complete'),
+      backgroundEvents: [{ taskId: 'monitor-1', description: 'Monitor release', status: 'completed' as const }],
+    };
+
+    await sendCompletionNotice({
+      sender,
+      config: makeConfig(),
+      logger: { warn: vi.fn() } as any,
+      chatId: 'chat',
+      state,
+      durationMs: 20_000,
+    });
+
+    expect(sender.sendText).toHaveBeenCalledWith('chat', '✅ Done');
+  });
+
   it('sends Failed for long failed tasks', async () => {
     const sender = makeSender();
     await sendCompletionNotice({

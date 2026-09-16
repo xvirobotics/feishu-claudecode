@@ -11,7 +11,7 @@ import type { Logger } from '../utils/logger.js';
 
 export interface ActivityEvent {
   id: string;
-  type: 'task_started' | 'task_completed' | 'task_failed';
+  type: 'task_started' | 'task_waiting' | 'task_completed' | 'task_failed';
   botName: string;
   chatId: string;
   userId?: string;

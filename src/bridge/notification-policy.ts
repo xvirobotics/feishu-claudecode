@@ -3,6 +3,7 @@ import type { CardState } from '../types.js';
 import type { Logger } from '../utils/logger.js';
 import type { IMessageSender } from './message-sender.interface.js';
 import { isVoiceReplyEnabled } from './voice-reply.js';
+import { hasRunningBackgroundWork } from './background-task-lifecycle.js';
 
 export const COMPLETION_NOTICE_MIN_DURATION_MS = 10_000;
 
@@ -21,6 +22,7 @@ export async function sendCompletionNotice(opts: {
   const { sender, config, logger, chatId, state, durationMs } = opts;
 
   if (sender.skipCompletionNotice) return;
+  if (hasRunningBackgroundWork(state)) return;
   if (state.status === 'complete' && isVoiceReplyEnabled(config)) return;
   if (durationMs < COMPLETION_NOTICE_MIN_DURATION_MS) return;
 
