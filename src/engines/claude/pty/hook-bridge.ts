@@ -41,6 +41,35 @@ export interface HookBridgeOptions {
 }
 
 /**
+ * Build the `Stop` hook command that writes the sentinel file.
+ *
+ * The hook runs through the shell, so the command has to exist on the host OS:
+ *
+ *   - `cat` is not available on Windows, where hooks are executed by `cmd` —
+ *     the command fails, the sentinel is never written, and the PTY watcher
+ *     waits forever for a turn that already finished.
+ *   - An unquoted path breaks as soon as the temp dir contains a space (the OS
+ *     temp dir commonly does). Quoting also keeps shell metacharacters in the
+ *     path from being interpreted.
+ *
+ * The hook receives its JSON payload on stdin; the sentinel only has to change
+ * for the watcher to fire, so the payload itself is not needed.
+ */
+export function buildStopHookCommand(
+  sentinelPath: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === 'win32') {
+    // PowerShell single-quoted strings escape ' by doubling it.
+    const escapedPath = sentinelPath.replace(/'/g, "''");
+    return `powershell.exe -NoProfile -NonInteractive -Command "Set-Content -LiteralPath '${escapedPath}' -Value stop -Encoding UTF8"`;
+  }
+  // POSIX: close the single-quoted string, append an escaped quote, reopen.
+  const escapedPath = sentinelPath.replace(/'/g, `'"'"'`);
+  return `cat > '${escapedPath}'`;
+}
+
+/**
  * Create a new PtyHookBridge instance. Each instance owns a temp directory
  * for its sentinel/event files and generated settings.json.
  */
@@ -66,9 +95,9 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
   // ── writeSettings ────────────────────────────────────────────────────────
 
   async function writeSettings(): Promise<string> {
-    // Stop hook: Claude pipes hook JSON on stdin to the command.
-    // We `cat` stdin into the sentinel file so the watcher sees it change.
-    const stopCommand = `cat > ${sentinelPath}`;
+    // Stop hook: Claude pipes hook JSON on stdin to the command, which writes
+    // the sentinel file the watcher below polls.
+    const stopCommand = buildStopHookCommand(sentinelPath);
 
     const hooks: Record<string, unknown> = {
       Stop: [
