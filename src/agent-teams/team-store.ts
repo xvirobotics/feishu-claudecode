@@ -96,6 +96,12 @@ export interface AgentTeamConfig {
 
 export class AgentTeamStore {
   private readonly db: Database.Database;
+  /**
+   * Set once close() runs. Read accessors short-circuit to "no data" so a
+   * turn that is still finalizing during shutdown doesn't throw
+   * "The database connection is not open".
+   */
+  private closed = false;
 
   constructor(logger: Logger, dbPath?: string) {
     const dataDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
@@ -262,11 +268,13 @@ export class AgentTeamStore {
   }
 
   listTeams(): AgentTeam[] {
+    if (this.closed) return [];
     const rows = this.db.prepare('SELECT * FROM agent_teams ORDER BY updated_at DESC').all() as any[];
     return rows.map((row) => this.rowToTeam(row));
   }
 
   getTeam(name: string): AgentTeam | undefined {
+    if (this.closed) return undefined;
     const row = this.db.prepare('SELECT * FROM agent_teams WHERE name = ?').get(name) as any;
     return row ? this.rowToTeam(row) : undefined;
   }
@@ -689,7 +697,14 @@ export class AgentTeamStore {
   }
 
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     this.db.close();
+  }
+
+  /** True after close(); callers can skip store reads during shutdown. */
+  isClosed(): boolean {
+    return this.closed;
   }
 
   private requireTeam(teamName: string): void {

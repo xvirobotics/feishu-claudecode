@@ -1568,16 +1568,24 @@ export class MessageBridge {
 
   private enrichWithAgentTeams(state: CardState, chatId?: string): CardState {
     if (!this.agentTeamStore) return state;
-    const team = chatId ? this.agentTeamStore.findTeamForChat(chatId) : undefined;
-    if (!team) return state;
-    const snapshot = this.agentTeamStore.status(team.name);
-    if (!snapshot) return state;
-    const mapped = buildAgentTeamCardSnapshot(snapshot);
-    return {
-      ...state,
-      teamState: hasTeamState(state.teamState) ? state.teamState : mapped.teamState,
-      backgroundEvents: mergeBackgroundEvents(state.backgroundEvents, mapped.backgroundEvents),
-    };
+    // During shutdown the store may already be closed while a turn is still
+    // finalizing its card. Enrichment is auxiliary — never let it fail the turn.
+    try {
+      if (this.agentTeamStore.isClosed()) return state;
+      const team = chatId ? this.agentTeamStore.findTeamForChat(chatId) : undefined;
+      if (!team) return state;
+      const snapshot = this.agentTeamStore.status(team.name);
+      if (!snapshot) return state;
+      const mapped = buildAgentTeamCardSnapshot(snapshot);
+      return {
+        ...state,
+        teamState: hasTeamState(state.teamState) ? state.teamState : mapped.teamState,
+        backgroundEvents: mergeBackgroundEvents(state.backgroundEvents, mapped.backgroundEvents),
+      };
+    } catch (err) {
+      this.logger.warn({ err, chatId }, 'enrichWithAgentTeams failed; rendering card without team state');
+      return state;
+    }
   }
 
   /**

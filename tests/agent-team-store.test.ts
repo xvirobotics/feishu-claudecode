@@ -200,3 +200,28 @@ describe('AgentTeamStore', () => {
     store.close();
   });
 });
+
+describe('AgentTeamStore shutdown safety', () => {
+  it('returns empty/undefined from read accessors after close instead of throwing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'metabot-agent-teams-closed-'));
+    const store = new AgentTeamStore(logger, join(dir, 'teams.db'));
+    store.createTeam('demo', 'Demo team');
+    store.setTeamChatBindings('demo', { chatIds: ['oc_chat'] });
+
+    store.close();
+    expect(store.isClosed()).toBe(true);
+    // These used to throw "The database connection is not open" when a turn
+    // finalized its card during shutdown.
+    expect(store.listTeams()).toEqual([]);
+    expect(store.getTeam('demo')).toBeUndefined();
+    expect(store.findTeamForChat('oc_chat')).toBeUndefined();
+    expect(store.status('demo')).toBeUndefined();
+  });
+
+  it('close() is idempotent', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'metabot-agent-teams-close2-'));
+    const store = new AgentTeamStore(logger, join(dir, 'teams.db'));
+    store.close();
+    expect(() => store.close()).not.toThrow();
+  });
+});
