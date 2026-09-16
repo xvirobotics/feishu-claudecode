@@ -116,12 +116,20 @@ describe('CommandHandler /help', () => {
     expect(handled).toBe(false);
   });
 
-  it('lists Fable 5 as the default Claude model option', async () => {
-    const { handler, notices } = buildHandler();
-    await handler.handle({ ...helpMessage(), text: '/model list' });
-    const body = notices[0].content;
-    expect(body).toContain('claude-fable-5');
-    expect(body).toContain('Fable 5');
-    expect(body).toContain('native 1M context');
+  it('derives the Claude list from the endpoint aliases instead of a hardcoded catalog', async () => {
+    const previous = process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = 'endpoint-test-model';
+    try {
+      const { handler, notices } = buildHandler();
+      await handler.handle({ ...helpMessage(), text: '/model list' });
+      const body = notices[0].content;
+      expect(body).toContain('Available Claude models');
+      expect(body).toContain('endpoint-test-model');
+      // A retired model must never be advertised, even if an alias still points at it.
+      expect(body).not.toContain('claude-fable-5');
+    } finally {
+      if (previous === undefined) delete process.env.ANTHROPIC_DEFAULT_OPUS_MODEL;
+      else process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = previous;
+    }
   });
 });
