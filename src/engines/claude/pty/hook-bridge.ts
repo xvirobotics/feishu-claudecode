@@ -96,7 +96,16 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
       ];
     }
 
-    const settings = { hooks };
+    // The PTY is always launched with --dangerously-skip-permissions. Claude
+    // Code otherwise blocks its first unattended run behind an interactive
+    // acknowledgement screen, so record the matching settings acknowledgement
+    // in this ephemeral file. This does not grant anything beyond the launch
+    // flag; it only prevents the already-selected mode from hanging startup.
+    const settings = {
+      permissions: { defaultMode: 'bypassPermissions' },
+      skipDangerousModePermissionPrompt: true,
+      hooks,
+    };
 
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
     return settingsPath;
