@@ -79,4 +79,30 @@ describe('AuditLogger', () => {
     const [data] = childLogger.info.mock.calls[0];
     expect(data.position).toBe(3);
   });
+
+  it('omits the prompt when METABOT_AUDIT_INCLUDE_PROMPT=false', () => {
+    const previous = process.env.METABOT_AUDIT_INCLUDE_PROMPT;
+    process.env.METABOT_AUDIT_INCLUDE_PROMPT = 'false';
+    try {
+      const { parentLogger, childLogger } = createMockLogger();
+      const audit = new AuditLogger(parentLogger as any);
+
+      audit.log({
+        event: 'task_start',
+        botName: 'bot',
+        chatId: 'chat',
+        prompt: 'sensitive prompt',
+      });
+
+      const [data] = childLogger.info.mock.calls[0];
+      expect(data.prompt).toBeUndefined();
+      // Everything else is still audited.
+      expect(data.botName).toBe('bot');
+      expect(data.chatId).toBe('chat');
+      expect(childLogger.info.mock.calls[0][1]).toBe('audit:task_start');
+    } finally {
+      if (previous === undefined) delete process.env.METABOT_AUDIT_INCLUDE_PROMPT;
+      else process.env.METABOT_AUDIT_INCLUDE_PROMPT = previous;
+    }
+  });
 });

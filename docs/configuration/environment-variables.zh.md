@@ -20,6 +20,8 @@
 | `METABOT_CORE_DATA_DIR`         | `~/.metabot-core/data`  | Core 数据目录                                                  |
 | `METABOT_PUBLIC_DISTRIBUTION`   | `0`                     | 匿名提供 Core 安装/CLI 资源；仅在明确需要时开启                |
 | `LOG_LEVEL`                     | `info`                  | Bridge 日志级别                                                |
+| `METABOT_ACTIVITY_INCLUDE_CONTENT` | `true`               | 在 `activity.db` 中保存 prompt/回应摘要（200 字符）；`false` 只保留元数据 |
+| `METABOT_AUDIT_INCLUDE_PROMPT`  | `true`                  | 审计日志是否带（截断后的）prompt；`false` 得到不含 prompt 的审计轨迹 |
 
 Memory、Skills、Agents 和 T5T 都由 `METABOT_CORE_URL` 指向的 Core 提供。旧的独立
 MetaMemory 变量和 `8100` 端口不属于当前个人版。

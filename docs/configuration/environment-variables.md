@@ -21,6 +21,8 @@ values you need.
 | `METABOT_CORE_DATA_DIR`         | `~/.metabot-core/data`  | Core data directory                                                          |
 | `METABOT_PUBLIC_DISTRIBUTION`   | `0`                     | Serve Core install/CLI assets anonymously; enable only intentionally         |
 | `LOG_LEVEL`                     | `info`                  | Bridge log level                                                             |
+| `METABOT_ACTIVITY_INCLUDE_CONTENT` | `true`               | Store prompt/response previews (200 chars) in `activity.db`; `false` keeps only metadata |
+| `METABOT_AUDIT_INCLUDE_PROMPT`  | `true`                  | Include the truncated prompt in audit log lines; `false` leaves a prompt-free audit trail |
 
 Memory, Skills, Agents, and T5T are served by Core at `METABOT_CORE_URL`. The
 old standalone MetaMemory variables and port `8100` are not part of the current

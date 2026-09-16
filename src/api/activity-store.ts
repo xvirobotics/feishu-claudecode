@@ -29,6 +29,7 @@ const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 export class ActivityStore {
   private db: Database.Database;
   private buffer: ActivityEvent[] = [];
+  private includeContent = process.env.METABOT_ACTIVITY_INCLUDE_CONTENT !== 'false';
 
   constructor(private logger: Logger) {
     const dataDir = process.env.SESSION_STORE_DIR || path.join(os.homedir(), '.metabot');
@@ -77,8 +78,8 @@ export class ActivityStore {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, event.type, event.botName, event.chatId,
-      event.userId || null, event.prompt?.slice(0, 200) || null,
-      event.responsePreview?.slice(0, 200) || null,
+      event.userId || null, this.includeContent ? event.prompt?.slice(0, 200) || null : null,
+      this.includeContent ? event.responsePreview?.slice(0, 200) || null : null,
       event.costUsd || null, event.durationMs || null,
       event.errorMessage?.slice(0, 500) || null, event.timestamp,
     );

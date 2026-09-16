@@ -33,9 +33,11 @@ export interface AuditEntry {
  */
 export class AuditLogger {
   private logger: Logger;
+  private includePrompt: boolean;
 
   constructor(parentLogger: Logger) {
     this.logger = parentLogger.child({ audit: true });
+    this.includePrompt = process.env.METABOT_AUDIT_INCLUDE_PROMPT !== 'false';
   }
 
   log(entry: AuditEntry): void {
@@ -44,7 +46,7 @@ export class AuditLogger {
       ...rest,
       event,
       // Truncate prompt to avoid bloating logs
-      prompt: prompt ? prompt.slice(0, 200) : undefined,
+      prompt: this.includePrompt && prompt ? prompt.slice(0, 200) : undefined,
       error: error ? error.slice(0, 500) : undefined,
       ...meta,
     }, `audit:${event}`);
