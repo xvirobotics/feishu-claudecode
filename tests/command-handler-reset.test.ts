@@ -63,13 +63,13 @@ function buildHandler(opts: HandlerOpts = {}) {
   };
 }
 
-function resetMessage(): IncomingMessage {
+function resetMessage(command = '/reset'): IncomingMessage {
   return {
     messageId: 'm1',
     chatId: 'c1',
     chatType: 'p2p',
     userId: 'u1',
-    text: '/reset',
+    text: command,
     timestamp: Date.now(),
     isBotMentioned: true,
   } as IncomingMessage;
@@ -101,5 +101,21 @@ describe('CommandHandler /reset', () => {
     expect(counters().clearQueueCalls).toBe(1);
     expect(counters().resetSessionCalls).toBe(1);
     expect(counters().releaseExecutorCalls).toBe(1);
+  });
+
+  it('/new is an alias with the same reset behavior', async () => {
+    const { handler, notices, counters } = buildHandler({ hasRunningTask: true, queueDepth: 2 });
+
+    const handled = await handler.handle(resetMessage('/new'));
+
+    expect(handled).toBe(true);
+    expect(counters()).toEqual({
+      stopTaskCalls: 1,
+      clearQueueCalls: 1,
+      resetSessionCalls: 1,
+      releaseExecutorCalls: 1,
+    });
+    expect(notices).toHaveLength(1);
+    expect(notices[0].title).toContain('Session Reset');
   });
 });

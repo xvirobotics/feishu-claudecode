@@ -93,9 +93,18 @@ describe('CommandHandler /help', () => {
     const { handler, notices } = buildHandler();
     await handler.handle(helpMessage());
     const body = notices[0].content;
-    for (const cmd of ['/reset', '/stop', '/status', '/model', '/resume', '/memory', '/sync', '/help']) {
+    for (const cmd of ['/reset', '/new', '/stop', '/status', '/model', '/resume', '/memory', '/sync', '/help', '/?']) {
       expect(body, `help body missing ${cmd}`).toContain(cmd);
     }
+  });
+
+  it('/? is an alias for /help', async () => {
+    const { handler, notices } = buildHandler();
+    const handled = await handler.handle({ ...helpMessage(), text: '/?' });
+
+    expect(handled).toBe(true);
+    expect(notices).toHaveLength(1);
+    expect(notices[0].title).toContain('Help');
   });
 
   // Regression — /goal and /background are Claude Code built-ins that pass
