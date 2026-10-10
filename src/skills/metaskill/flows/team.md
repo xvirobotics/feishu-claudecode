@@ -351,6 +351,7 @@ Select servers based on your research findings. Here is the **verified catalog**
 | postgres | `@modelcontextprotocol/server-postgres` | `["-y", "@modelcontextprotocol/server-postgres", "postgresql://user:pass@host:5432/db"]` | Database operations | Projects with PostgreSQL |
 | sequential-thinking | `@modelcontextprotocol/server-sequential-thinking` | `["-y", "@modelcontextprotocol/server-sequential-thinking"]` | Structured reasoning | Complex problem-solving |
 | github | HTTP transport | N/A (see below) | GitHub API access | Any project on GitHub |
+| parallel-search | HTTP transport | N/A (see below) | Free web search and page fetching, no API key | Teams that need web research or current documentation |
 
 > **Note:** Cross-session memory is handled by MetaMemory (integrated in CLAUDE.md via `mm` CLI). No need for the `@modelcontextprotocol/server-memory` MCP package.
 
@@ -367,6 +368,21 @@ Select servers based on your research findings. Here is the **verified catalog**
 ```
 
 **CRITICAL: Only use packages from this verified catalog or packages you have confirmed exist via web search during Phase 1.** Do NOT invent or guess package names.
+
+**Parallel Search MCP** also uses HTTP transport. For Claude-backed teams that need web research, merge this optional entry into the project's `.mcp.json`, preserving any existing servers:
+
+```json
+{
+  "mcpServers": {
+    "parallel-search": {
+      "type": "http",
+      "url": "https://search.parallel.ai/mcp"
+    }
+  }
+}
+```
+
+The anonymous endpoint provides `web_search` (Fast mode) and `web_fetch` without an account or API key. No credential collection is needed for this entry in Phase 3. Free access has lower rate limits and is intended for exploration and light use. See [Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) for tool parameters and limits. Kimi and Codex use their own MCP configuration locations, as listed in Engine Compatibility above; `.mcp.json` is the Claude project configuration.
 
 Only include servers that are genuinely useful for this team type. Don't add servers just to have more — each one should serve a clear purpose.
 
