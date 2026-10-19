@@ -36,7 +36,19 @@ export async function sendFinalCardWithRetry(opts: {
   }
 
   if (chatId) {
-    logger.error({ messageId, chatId }, 'All final card retries failed, sending text fallback');
+    // Some platforms rate-limit updates to a single message (Feishu 230020:
+    // "Update the single messages too frequently"). Once that quota is
+    // exhausted, PATCHing the same card can keep failing well past the retry
+    // window. A new card is a fresh message and is not subject to the old
+    // message's quota, so try that before degrading to a truncated text reply.
+    logger.warn({ messageId, chatId }, 'All final card retries failed, sending a new card');
+    const fallbackMessageId = await sender.sendCard(chatId, state);
+    if (fallbackMessageId) {
+      void sendVoiceReplyIfEnabled({ sender, config, logger, chatId, state });
+      return;
+    }
+
+    logger.error({ messageId, chatId }, 'New card also failed, sending text fallback');
     const statusEmoji = state.status === 'complete' ? '✅' : '❌';
     const summary = state.responseText
       ? state.responseText.slice(0, 2000)
