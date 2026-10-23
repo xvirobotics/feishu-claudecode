@@ -95,6 +95,22 @@
 公开版当前运行 `codex exec --json`，通过 `codex exec resume` 续接。Codex
 app-server 和原生执行中 steering 不属于当前公开行为。
 
+### 手动压缩上下文
+
+会话空闲时发送 `/compact`，压缩已有上下文并保留原会话 ID。桥接层临时启动
+本机 Codex app-server，续接原线程并调用 `thread/compact/start`；
+普通任务仍使用 `codex exec`，无需修改传输配置。只有收到压缩完成事件及成功
+结束的回合才报告完成，不把初始请求确认当作完成。
+
+**压缩期间发送普通消息会排队，压缩结束后才处理，不会取消压缩。**
+`/stop` 会取消压缩并清空队列，`/reset` 还会按原有语义清空会话。
+忙碌时再次发送 `/compact` 会被拒绝。失败或超时不会自动重置原会话。
+压缩最长等待五分钟。
+
+需要已有 Codex 会话及支持
+[thread/compact/start](https://developers.openai.com/codex/app-server/) 的 CLI；
+命令不接受附件和额外参数。
+
 ## Kimi Code 配置 {#kimi-code-options}
 
 ```json
@@ -172,3 +188,7 @@ CLAUDE_DEFAULT_WORKING_DIRECTORY=/home/me/project
 `CLAUDE_DEFAULT_WORKING_DIRECTORY` 保留了历史名称，但会为所有引擎提供工作区。
 
 完整列表见[环境变量](environment-variables.md)。
+
+### Claude Code 手动压缩
+
+默认的持久 PTY 后端同样支持空闲时发送 `/compact`。桥接层执行原生命令，并等待 `PostCompact` 的 manual 完成信号，而不使用普通斜杠命令的空闲超时判断成功。压缩保留原会话；期间普通消息排队，完成后处理，`/stop` 或 `/reset` 可取消。需要支持 `PostCompact` 的 Claude Code（已验证 2.1.280）。旧 SDK 后端或关闭持久执行器时不支持。

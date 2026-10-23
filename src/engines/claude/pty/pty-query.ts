@@ -183,6 +183,7 @@ export const ptyQuery = (args: {
   // terminal `result` is emitted (Stop hook). The exit watchdog uses it to
   // decide whether an unexpected claude death orphaned an in-flight turn.
   let turnInFlight = false;
+  let compactInFlight = false;
   let session: ReturnType<typeof createPtyClaudeSession> | null = null;
   let scanner: ReturnType<typeof createJsonlScanner> | null = null;
   // Map the SDK-style systemPrompt ({type:'preset', append}) → --append flag.
@@ -218,7 +219,7 @@ export const ptyQuery = (args: {
 
     // Stop-hook → synthesize a terminal `result` after a short drain delay.
     hookBridge.onTurnComplete(() => {
-      if (disposed) return;
+      if (disposed || compactInFlight) return;
       // Mark the turn complete IMMEDIATELY (not in the drain timeout below) so
       // the slash-command idle watchdog stands down and never double-emits.
       turnInFlight = false;
@@ -234,6 +235,15 @@ export const ptyQuery = (args: {
             usage: { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens },
           }),
         );
+      }, RESULT_DRAIN_MS);
+    });
+
+    hookBridge.onCompactComplete?.(() => {
+      if (disposed || !compactInFlight || !turnInFlight) return;
+      compactInFlight = false;
+      turnInFlight = false;
+      setTimeout(() => {
+        if (!disposed) out.enqueue(synthesizeResult({ sessionId, resultText: '上下文压缩完成，会话 ID 保持不变。' }));
       }, RESULT_DRAIN_MS);
     });
 
@@ -457,6 +467,7 @@ export const ptyQuery = (args: {
         if (!session) await boot; // ensure session exists
         if (!session || disposed) break;
         turnInFlight = true; // a new turn starts the moment we submit the prompt
+        compactInFlight = /^\/compact(?:\s|$)/i.test(text.trim());
         await session.typePrompt(text);
         // Client-side slash commands (/effort, /model, /status, …) change a
         // setting WITHOUT a model turn → no assistant record, no Stop hook, so
@@ -465,7 +476,7 @@ export const ptyQuery = (args: {
         // synthesize a `result` ourselves. Custom-skill slash commands that DO
         // invoke the model show the "esc to interrupt" affordance → the watchdog
         // stands down and the normal Stop-hook path completes the turn.
-        if (text.trim().startsWith('/')) void watchSlashCommandCompletion();
+        if (!compactInFlight && !/^\/compact(?:\s|$)/i.test(text.trim()) && text.trim().startsWith('/')) void watchSlashCommandCompletion();
       }
     } catch (err) {
       logger.warn({ err }, 'ptyQuery: prompt loop ended with error');
@@ -567,6 +578,7 @@ export const ptyQuery = (args: {
     // double-emit against the Stop-hook path (mirrors handleSessionExit).
     if (turnInFlight && !disposed) {
       turnInFlight = false;
+      compactInFlight = false;
       logger.info('ptyQuery: turn interrupted — synthesizing terminal result');
       out.enqueue(
         synthesizeResult({

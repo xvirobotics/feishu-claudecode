@@ -52,10 +52,12 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
   mkdirSync(bridgeDir, { recursive: true });
 
   const sentinelPath = join(bridgeDir, 'stop.flag');
+  const compactPath = join(bridgeDir, 'compact.flag');
   const teamEventPath = join(bridgeDir, 'team-events.jsonl');
   const settingsPath = join(bridgeDir, 'settings.json');
 
   let turnCb: (() => void) | null = null;
+  let compactCb: (() => void) | null = null;
   let teamCb: ((event: { kind: string; payload: unknown }) => void) | null = null;
 
   let sentinelWatcher: FSWatcher | null = null;
@@ -71,6 +73,7 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
     const stopCommand = `cat > ${sentinelPath}`;
 
     const hooks: Record<string, unknown> = {
+      PostCompact: [{ matcher: 'manual', hooks: [{ type: 'command', command: `cat > ${compactPath}` }] }],
       Stop: [
         {
           hooks: [{ type: 'command', command: stopCommand }],
@@ -118,6 +121,10 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     sentinelWatcher = watch(watchDir, (eventType, filename) => {
+      if (filename === 'compact.flag') {
+        if (compactCb && !disposed) compactCb();
+        return;
+      }
       if (filename !== 'stop.flag') return;
       // Debounce — fs.watch can fire multiple events for a single write.
       if (debounceTimer) clearTimeout(debounceTimer);
@@ -215,6 +222,7 @@ export function createHookBridge(options?: HookBridgeOptions): PtyHookBridge {
   return {
     writeSettings,
     onTurnComplete,
+    onCompactComplete(cb) { compactCb = cb; startSentinelWatcher(); },
     onTeamEvent,
     dispose,
   };

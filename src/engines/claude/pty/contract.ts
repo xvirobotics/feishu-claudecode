@@ -328,6 +328,8 @@ export type SynthesizeResult = (args: SynthesizeResultArgs) => SDKMessage;
  * at small bridge scripts) and returns its path for the session to consume.
  */
 export interface PtyHookBridge {
+  /** Native manual-compaction completion; distinct from the ordinary Stop hook. */
+  onCompactComplete?(cb: () => void): void;
   /** Absolute path of the generated settings.json (with command hooks). */
   writeSettings(): Promise<string>;
   /** Register the per-turn completion callback (Stop hook sentinel). */

@@ -992,3 +992,137 @@ describe('Feishu topic session isolation', () => {
     } finally { release(); bridge.destroy(); vi.unstubAllEnvs(); fs.rmSync(directory, { recursive: true, force: true }); }
   });
 });
+
+describe('Codex manual compaction commands', () => {
+  function controls() {
+    const sender = makeSender();
+    const notice = vi.spyOn(sender, 'sendTextNotice');
+    const config = makeCodexConfig();
+    const bridge = new MessageBridge(config, mockLogger, sender as any) as any;
+    const start = vi.spyOn(bridge, 'startQuery').mockResolvedValue(undefined);
+    const executor = {
+      canSteer: vi.fn(() => true),
+      steer: vi.fn(async () => 'steered'),
+      compact: vi.fn(() => ({
+        stream: (async function* () { yield { type: 'result', is_error: false }; })(),
+        finish: vi.fn(),
+      })),
+    };
+    vi.spyOn(bridge, 'executorForEngine').mockReturnValue(executor);
+    const message = (text: string) => ({ text, chatId: 'controls-chat', chatType: 'private', messageId: 'control-msg', userId: 'u' });
+    return { bridge, start, notice, executor, message };
+  }
+
+  it('refuses compaction while a task runs', async () => {
+    const ctx = controls();
+    ctx.bridge.sessionManager.setSessionId('controls-chat', 'existing-session', 'codex');
+    vi.spyOn(ctx.bridge, 'isChatBusy').mockReturnValue(true);
+    await ctx.bridge.handleMessage(ctx.message('/compact'));
+    expect(ctx.executor.compact).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenLastCalledWith('controls-chat', '任务正在运行', expect.any(String), 'orange');
+  });
+
+  it('compacts the existing session without changing its goal or starting a query', async () => {
+    const ctx = controls();
+    ctx.bridge.sessionManager.setSessionId('controls-chat', 'existing-session', 'codex');
+    ctx.bridge.sessionManager.setGoal('controls-chat', 'keep this goal');
+    await ctx.bridge.handleMessage(ctx.message('/compact'));
+    expect(ctx.executor.compact).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'existing-session', prompt: '' }));
+    expect(ctx.bridge.sessionManager.getSession('controls-chat')).toMatchObject({ sessionId: 'existing-session', activeGoal: 'keep this goal' });
+    expect(ctx.bridge.isChatBusy('controls-chat')).toBe(false);
+    expect(ctx.start).not.toHaveBeenCalled();
+    expect(ctx.notice).toHaveBeenLastCalledWith('controls-chat', '上下文压缩完成', expect.any(String), 'green');
+  });
+
+  it('reports failed compaction without resetting the original session', async () => {
+    const ctx = controls();
+    ctx.bridge.sessionManager.setSessionId('controls-chat', 'existing-session', 'codex');
+    ctx.executor.compact.mockReturnValue({
+      stream: (async function* () { yield { type: 'result', is_error: true, errors: ['test failure'] }; })(),
+      finish: vi.fn(),
+    });
+    await ctx.bridge.handleMessage(ctx.message('/compact'));
+    expect(ctx.bridge.sessionManager.getSession('controls-chat').sessionId).toBe('existing-session');
+    expect(ctx.notice).toHaveBeenLastCalledWith('controls-chat', '压缩失败', 'test failure', 'red');
+    expect(ctx.bridge.isChatBusy('controls-chat')).toBe(false);
+  });
+
+  it('queues ordinary messages during compaction and starts them only after completion', async () => {
+    const ctx = controls();
+    ctx.bridge.sessionManager.setSessionId('controls-chat', 'existing-session', 'codex');
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
+    ctx.executor.compact.mockImplementation(() => ({
+      stream: (async function* () { await gate; yield { type: 'result', is_error: false }; })(),
+      finish: vi.fn(),
+    }));
+    const compaction = ctx.bridge.handleMessage(ctx.message('/compact'));
+    await vi.waitFor(() => expect(ctx.executor.compact).toHaveBeenCalled());
+    const signal = (ctx.executor.compact.mock.calls[0] as any)[0].abortController.signal;
+    await ctx.bridge.handleMessage(ctx.message('queued follow-up'));
+    expect(ctx.bridge.messageQueues.get('controls-chat')).toHaveLength(1);
+    expect(signal.aborted).toBe(false);
+    expect(ctx.start).not.toHaveBeenCalled();
+    release();
+    await compaction;
+    expect(ctx.start).toHaveBeenCalledWith(expect.objectContaining({ text: 'queued follow-up' }));
+    expect(ctx.bridge.messageQueues.has('controls-chat')).toBe(false);
+  });
+
+  it.each(['/stop', '/reset'])('%s cancels compaction and clears queued messages', async (command) => {
+    const ctx = controls();
+    ctx.bridge.sessionManager.setSessionId('controls-chat', 'existing-session', 'codex');
+    let signal: AbortSignal;
+    ctx.executor.compact.mockImplementation((options: any) => {
+      signal = options.abortController.signal;
+      const gate = new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+      return {
+        stream: (async function* () { await gate; yield { type: 'result', is_error: true }; })(),
+        finish: vi.fn(),
+      };
+    });
+    const compaction = ctx.bridge.handleMessage(ctx.message('/compact'));
+    await vi.waitFor(() => expect(ctx.executor.compact).toHaveBeenCalled());
+    await ctx.bridge.handleMessage(ctx.message('queued follow-up'));
+    await ctx.bridge.handleMessage(ctx.message(command));
+    await compaction;
+    expect(signal!.aborted).toBe(true);
+    expect(ctx.start).not.toHaveBeenCalled();
+    expect(ctx.bridge.messageQueues.has('controls-chat')).toBe(false);
+    expect(ctx.bridge.sessionManager.getSession('controls-chat').sessionId).toBe(command === '/reset' ? undefined : 'existing-session');
+  });
+});
+
+function claudeControls() {
+  const sender = makeSender();
+  const notice = vi.spyOn(sender, 'sendTextNotice');
+  const bridge = new MessageBridge(makeConfig(), mockLogger, sender as any) as any;
+  const start = vi.spyOn(bridge, 'startQuery').mockResolvedValue(undefined);
+  const message = (text: string) => ({ text, chatId: 'claude-controls', chatType: 'private', messageId: 'control-msg', userId: 'u' });
+  return { bridge, start, notice, message };
+}
+
+describe('Claude compaction routing', () => {
+  it('uses native compact, keeps the session and queues messages until completion', async () => {
+    const ctx = claudeControls();
+    ctx.bridge.sessionManager.setSessionId('claude-controls', 'existing-claude', 'claude');
+    let complete!: () => void;
+    const pending = new Promise<void>(resolve => { complete = resolve; });
+    const finish = vi.fn();
+    const run = vi.spyOn(ctx.bridge, 'runOneTurn').mockResolvedValue({
+      stream: (async function* () { await pending; yield { type: 'result', is_error: false }; })(), finish,
+    });
+    const drain = vi.spyOn(ctx.bridge, 'processQueue').mockImplementation(() => {});
+    const compact = ctx.bridge.handleMessage(ctx.message('/compact'));
+    await vi.waitFor(() => expect(run).toHaveBeenCalled());
+    await ctx.bridge.handleMessage(ctx.message('ordinary follow-up'));
+    expect(ctx.bridge.messageQueues.get('claude-controls')).toHaveLength(1);
+    expect(finish).not.toHaveBeenCalled();
+    expect(ctx.start).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledWith('claude-controls', 'claude', expect.objectContaining({prompt: '/compact'}));
+    complete(); await compact;
+    expect(drain).toHaveBeenCalledWith('claude-controls');
+    expect(ctx.bridge.sessionManager.getSession('claude-controls').sessionId).toBe('existing-claude');
+    expect(ctx.notice).toHaveBeenLastCalledWith('claude-controls', '上下文压缩完成', expect.any(String), 'green');
+  });
+});

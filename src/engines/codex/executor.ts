@@ -1,3 +1,4 @@
+import { startCodexCompaction } from './compaction.js';
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
@@ -353,6 +354,23 @@ export function buildCodexArgs(
 }
 
 export class CodexExecutor {
+  compact(options: ExecutorOptions): ExecutionHandle {
+    if (!options.sessionId) throw new Error('No Codex session to compact');
+    const config = this.config.codex ?? {};
+    const args = buildCodexArgs(config, options.cwd, '', undefined, options.model ?? config.model, options.reasoningEffort);
+    const command = buildCodexSpawnCommand(resolveCodexPath(config.executable), [
+      ...args.slice(0, args.indexOf('exec')), 'app-server', '--listen', 'stdio://',
+    ]);
+    return startCodexCompaction({
+      command: command.command, args: command.args, env: buildCodexEnv(config),
+      cwd: options.cwd, sessionId: options.sessionId, model: options.model ?? config.model,
+      approvalPolicy: config.dangerouslyBypassApprovalsAndSandbox ? 'never' : config.approvalPolicy ?? 'never',
+      sandbox: config.dangerouslyBypassApprovalsAndSandbox ? 'danger-full-access' : config.sandbox ?? 'workspace-write',
+      signal: options.abortController.signal,
+    });
+  }
+
+
   constructor(
     private config: BotConfigBase,
     private logger: Logger,

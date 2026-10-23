@@ -40,6 +40,8 @@ export interface Executor {
   startExecution(options: ExecutorOptions): ExecutionHandle;
   execute(options: ExecutorOptions): AsyncGenerator<SDKMessage>;
   /** Optional native mid-turn steering keyed by the bridge chat id. */
+  /** Optional manual compaction of an idle persisted session. */
+  compact?(options: ExecutorOptions): ExecutionHandle;
   canSteer?(chatId: string): boolean;
   steer?(chatId: string, prompt: string): Promise<'steered' | 'no-active-turn'>;
 }
