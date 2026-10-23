@@ -102,6 +102,91 @@ function setup(
 }
 
 describe('Feishu group reply mode dispatcher', () => {
+  it.each(['text', 'post'])('dispatches a bare bot mention in a %s message with chat history instructions', async (messageType) => {
+    const ctx = setup();
+    const event = groupTextEvent({ text: '  ', chatId: 'bare-mention-chat', mentionedBotOpenId: ctx.botOpenId });
+    await ctx.handle({ ...event, message: {
+      ...event.message,
+      message_type: messageType,
+      ...(messageType === 'post' ? { content: JSON.stringify({
+        zh_cn: { title: '', content: [[{ tag: 'at', user_id: ctx.botOpenId }]] },
+      }) } : {}),
+    } });
+    expect(ctx.onMessage).toHaveBeenCalledTimes(1);
+    expect(ctx.onMessage).toHaveBeenCalledWith(expect.objectContaining({
+      chatId: 'bare-mention-chat',
+      text: expect.stringContaining('当前聊天的近期记录（chat_id: bare-mention-chat）'),
+    }));
+    expect(ctx.onMessage.mock.calls[0][0].text).toContain('lark-cli');
+    expect(ctx.onMessage.mock.calls[0][0].text).toContain('包括前面未 @ 你的消息');
+    ctx.store.close();
+  });
+
+  it.each([
+    { thread_id: 'thread-1', root_id: 'root-1', parent_id: 'parent-1' },
+    { root_id: 'root-1' },
+    { parent_id: 'parent-1' },
+    { thread_id: 'thread-1' },
+  ])('scopes a bare mention to the topic with metadata %j', async (metadata) => {
+    const ctx = setup();
+    const event = groupTextEvent({ text: '', chatId: 'bare-topic-chat', mentionedBotOpenId: ctx.botOpenId });
+    await ctx.handle({ ...event, message: { ...event.message, ...metadata } });
+    expect(ctx.onMessage).toHaveBeenCalledTimes(1);
+    const received = ctx.onMessage.mock.calls[0][0];
+    expect(received.text).toContain('当前话题的聊天记录（chat_id: bare-topic-chat，');
+    expect(received.text).toContain(`thread_id: ${metadata.thread_id || '未提供'}`);
+    expect(received.text).toContain(`root_message_id: ${metadata.root_id || metadata.parent_id || event.message.message_id}`);
+    expect(received.threadId).toBe(metadata.thread_id);
+    expect(received.rootMessageId).toBe(metadata.root_id);
+    expect(received.parentMessageId).toBe(metadata.parent_id);
+    ctx.store.close();
+  });
+
+  it.each([undefined, 'another-bot'])('ignores empty messages without an exact bot mention even in all mode (%s)', async (mentionedBotOpenId) => {
+    const ctx = setup({ configGroupNoMention: true });
+    await ctx.handle(groupTextEvent({ text: '  ', chatId: 'bare-other-chat', mentionedBotOpenId }));
+    expect(ctx.onMessage).not.toHaveBeenCalled();
+    ctx.store.close();
+  });
+
+  it('still ignores empty direct messages', async () => {
+    const ctx = setup();
+    const event = groupTextEvent({ text: ' ', chatId: 'empty-direct-chat' });
+    await ctx.handle({ ...event, message: { ...event.message, chat_type: 'p2p' } });
+    expect(ctx.onMessage).not.toHaveBeenCalled();
+    ctx.store.close();
+  });
+
+  it('keeps rich-text images and ordinary mention text intact', async () => {
+    const ctx = setup();
+    const event = groupTextEvent({ text: 'hello', chatId: 'mention-content-chat', mentionedBotOpenId: ctx.botOpenId });
+    await ctx.handle(event);
+    expect(ctx.onMessage.mock.calls[0][0].text).toBe('hello');
+    await ctx.handle({ ...event, message: {
+      ...event.message, message_id: `post-${++sequence}`, message_type: 'post',
+      content: JSON.stringify({ zh_cn: { title: '', content: [[
+        { tag: 'at', user_id: ctx.botOpenId }, { tag: 'img', image_key: 'inline-image' },
+      ]] } }),
+    } });
+    expect(ctx.onMessage.mock.calls[1][0]).toEqual(expect.objectContaining({
+      imageKey: 'inline-image', text: '[Image 1]',
+    }));
+    ctx.store.close();
+  });
+
+  it('attaches cached media when the next message is a bare mention', async () => {
+    const ctx = setup();
+    await ctx.handle(groupImageEvent('bare-media-chat', 'member-1'));
+    await ctx.handle(groupTextEvent({
+      text: '', chatId: 'bare-media-chat', userId: 'member-1', mentionedBotOpenId: ctx.botOpenId,
+    }));
+    expect(ctx.onMessage).toHaveBeenCalledTimes(1);
+    expect(ctx.onMessage.mock.calls[0][0].extraMedia).toEqual([
+      expect.objectContaining({ imageKey: 'image-key-1' }),
+    ]);
+    ctx.store.close();
+  });
+
   it('does not attach cached media from another topic', async () => {
     const ctx = setup();
     const image = groupImageEvent('media-topic-chat', 'member-1');

@@ -412,8 +412,18 @@ export function createEventDispatcher(
           text = text.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
 
           if (!text && !imageKey) {
-            logger.debug('Empty message after stripping mentions');
-            return;
+            if (!botMentioned) {
+              logger.debug('Empty message after stripping mentions');
+              return;
+            }
+            // A bare mention asks the agent to catch up, including messages that
+            // were not addressed to it. Use transport IDs, not conversationId.
+            const { threadId, rootMessageId, parentMessageId } = replyMetadata;
+            const topic = threadId || rootMessageId || parentMessageId;
+            const scope = topic
+              ? `当前话题的聊天记录（chat_id: ${chatId}，thread_id: ${threadId || '未提供'}，root_message_id: ${rootMessageId || parentMessageId || messageId}）`
+              : `当前聊天的近期记录（chat_id: ${chatId}）`;
+            text = `用户单独 @ 了你。请先使用 lark-cli 读取${scope}，包括前面未 @ 你的消息，再根据上下文继续处理。不要仅根据这条 @ 消息猜测任务。如果无法读取记录或上下文不足，请说明并询问用户需要什么帮助。`;
           }
 
           // If text is empty but we have an image (e.g. @bot + image in group chat), set default prompt
