@@ -164,6 +164,8 @@ export interface VoiceReplyConfig {
 
 /** Codex-specific overrides. Populated only when engine === 'codex'. */
 export interface CodexBotConfig {
+  /** Opt in to native mid-turn steering via the Codex app-server. */
+  transport?: 'exec' | 'app-server';
   executable?: string;
   model?: string;
   displayModel?: string;
@@ -293,6 +295,8 @@ export interface KimiJsonConfig {
 
 /** Codex-specific overrides in bots.json. */
 export interface CodexJsonConfig {
+  /** Opt in to native mid-turn steering via the Codex app-server. */
+  transport?: 'exec' | 'app-server';
   executable?: string;
   model?: string;
   displayModel?: string;

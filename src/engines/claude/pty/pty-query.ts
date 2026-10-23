@@ -183,6 +183,7 @@ export const ptyQuery = (args: {
   // terminal `result` is emitted (Stop hook). The exit watchdog uses it to
   // decide whether an unexpected claude death orphaned an in-flight turn.
   let turnInFlight = false;
+  let typing = false;
   let session: ReturnType<typeof createPtyClaudeSession> | null = null;
   let scanner: ReturnType<typeof createJsonlScanner> | null = null;
   // Map the SDK-style systemPrompt ({type:'preset', append}) → --append flag.
@@ -457,7 +458,9 @@ export const ptyQuery = (args: {
         if (!session) await boot; // ensure session exists
         if (!session || disposed) break;
         turnInFlight = true; // a new turn starts the moment we submit the prompt
-        await session.typePrompt(text);
+        typing = true;
+        try { await session.typePrompt(text); }
+        finally { typing = false; }
         // Client-side slash commands (/effort, /model, /status, …) change a
         // setting WITHOUT a model turn → no assistant record, no Stop hook, so
         // no `result` would ever be synthesized and the caller's turn hangs.
@@ -604,6 +607,13 @@ export const ptyQuery = (args: {
   // ── The drop-in PtyQuery ─────────────────────────────────────────────────
   const query: PtyQuery = {
     [Symbol.asyncIterator]: () => out[Symbol.asyncIterator](),
+    canSteer: () => turnInFlight && !typing && !disposed && !!session?.steerPrompt,
+    async steer(text) {
+      if (!query.canSteer?.() || !session?.steerPrompt) return 'no-active-turn';
+      typing = true;
+      try { await session.steerPrompt(text); return 'steered'; }
+      finally { typing = false; }
+    },
     interrupt,
     dispose,
   };

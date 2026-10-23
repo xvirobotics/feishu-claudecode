@@ -92,8 +92,20 @@
 `reasoningEffort`、`approvalPolicy`、`sandbox`、`executable`、`extraArgs`
 和 `env`。普通订阅场景只需执行 `codex login`。
 
-公开版当前运行 `codex exec --json`，通过 `codex exec resume` 续接。Codex
-app-server 和原生执行中 steering 不属于当前公开行为。
+默认仍使用 `codex exec --json` 和 `codex exec resume`。设置
+`codex.transport: "app-server"` 并重启 MetaBot 后，可启用原生执行中插话，
+沿用已配置的模型、profile、环境变量、沙箱和审批策略。
+
+任务运行时发送 `/append 补充要求`（同义命令 `/steer`）；飞书群仅 @ 模式下
+需要 @机器人。成功提示表示 Codex 已接收，指示会在可处理的执行节点生效，
+不能撤销已完成的操作。普通消息仍排队；空闲、启动中、已结束或请求失败时
+会明确提示，不会偷偷另起任务或排队。
+
+该可选传输支持文字回复、命令事件、token 用量和阻塞式用户提问。
+交互式命令/文件审批请求会被拒绝，其他尚未支持的服务端请求返回明确错误，
+不会扩大已配置的权限。需要支持
+[app-server turn/steer](https://developers.openai.com/codex/app-server/) 的 Codex CLI，
+已使用 `0.163.0-alpha.11.1` 做真实集成验证。
 
 ## Kimi Code 配置 {#kimi-code-options}
 
@@ -172,3 +184,7 @@ CLAUDE_DEFAULT_WORKING_DIRECTORY=/home/me/project
 `CLAUDE_DEFAULT_WORKING_DIRECTORY` 保留了历史名称，但会为所有引擎提供工作区。
 
 完整列表见[环境变量](environment-variables.md)。
+
+### Claude Code 插话
+
+默认的持久 PTY 后端同样支持 `/append 内容` 和 `/steer 内容`。消息送入运行中的 Claude Code 输入框，不中断当前任务；Claude 会在可处理输入的工具执行边界读取。普通消息仍排队。权限选择、问答或输入框暂不可用时会提示未接收。旧 SDK 后端或关闭持久执行器时不支持。

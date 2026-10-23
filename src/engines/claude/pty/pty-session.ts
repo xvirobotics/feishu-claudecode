@@ -215,6 +215,23 @@ class PtyClaudeSessionImpl implements IPtyClaudeSession {
     );
   }
 
+  async steerPrompt(text: string): Promise<void> {
+    // Do not wait for idle: that would turn steering into a next-turn message.
+    if (!this.term || this.disposed) throw new Error('Claude session is closed');
+    const screen = this.screen();
+    const sq = screen.toLowerCase().replace(/\s+/g, '');
+    if (!screen.includes('❯') || sq.includes('entertoselect') || sq.includes('shift+tabtoapprove')
+        || /❯\d\./.test(sq)) throw new Error('Claude is not accepting composer input');
+    // A single bracketed paste prevents newlines/control keys from submitting
+    // commands or selecting menu entries. Prefix makes leading slashes plain text.
+    // eslint-disable-next-line no-control-regex -- strip terminal control bytes from user input
+    const safe = text.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '');
+    this.term.write('\x1b[200~用户补充要求：\n' + safe + '\x1b[201~');
+    await sleep(100);
+    if (!this.term || this.disposed) throw new Error('Claude session closed while submitting input');
+    this.term.write('\r');
+  }
+
   async typePrompt(text: string): Promise<void> {
     await this.ready(); // boot: wait for the TUI to first come up
     // Per-call readiness: ready() is memoized after boot, so on its own it would

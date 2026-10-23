@@ -41,6 +41,7 @@ import { makeCanUseTool } from './exit-plan-mode.js';
 import { ptyQuery } from './pty/pty-query.js';
 import { resolveClaudePath } from './resolve-claude.js';
 import type {
+  PtyQuery,
   PtyQueryOptions,
   PtyPromptSource,
   PtyInteractiveTool,
@@ -541,6 +542,20 @@ export class PersistentClaudeExecutor extends EventEmitter {
   }
 
   // ── Turn API ──────────────────────────────────────────────────────────────
+
+  canSteer(): boolean {
+    if (this.state !== 'ready' || !this.activeTurn || this.activeTurn.detached
+        || this.pendingQuestionResolvers.size > 0 || (this.options.backend ?? 'pty') !== 'pty') return false;
+    return (this.queryHandle as unknown as PtyQuery | undefined)?.canSteer?.() ?? false;
+  }
+
+  async steer(prompt: string): Promise<'steered' | 'no-active-turn'> {
+    if (!this.canSteer()) return 'no-active-turn';
+    const query = this.queryHandle as unknown as PtyQuery;
+    const result = await query.steer!(prompt);
+    if (result === 'steered') this.touchActivity();
+    return result;
+  }
 
   /**
    * Start a new user turn. Enqueues the prompt and returns a TurnHandle

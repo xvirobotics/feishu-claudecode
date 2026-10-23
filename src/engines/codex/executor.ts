@@ -1,3 +1,4 @@
+import { startAppServerRun, type AppServerRun } from './app-server.js';
 import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
@@ -353,12 +354,49 @@ export function buildCodexArgs(
 }
 
 export class CodexExecutor {
+  private appServerRuns = new Map<string, AppServerRun>();
+
+  canSteer(chatId: string): boolean {
+    return this.appServerRuns.get(chatId)?.canSteer() ?? false;
+  }
+
+  async steer(chatId: string, prompt: string): Promise<'steered' | 'no-active-turn'> {
+    return this.appServerRuns.get(chatId)?.steer(prompt) ?? 'no-active-turn';
+  }
+
+  private startAppServer(options: ExecutorOptions): ExecutionHandle {
+    const config = this.config.codex ?? {};
+    const metadata = resolveCodexModelMetadata(config, options.model);
+    const args = buildCodexArgs(config, options.cwd, '', undefined, options.model ?? config.model, options.reasoningEffort);
+    const command = buildCodexSpawnCommand(resolveCodexPath(config.executable), [
+      ...args.slice(0, args.indexOf('exec')), 'app-server', '--listen', 'stdio://',
+    ]);
+    const run = startAppServerRun({
+      command: command.command, args: command.args, env: buildCodexEnv(config),
+      cwd: options.cwd, prompt: this.buildPromptWithContext(options.prompt, options.outputsDir, options.apiContext),
+      sessionId: options.sessionId, model: metadata.model, contextWindow: metadata.contextWindow,
+      effort: options.reasoningEffort ?? config.reasoningEffort,
+      approvalPolicy: config.dangerouslyBypassApprovalsAndSandbox ? 'never' : config.approvalPolicy ?? 'never',
+      sandbox: config.dangerouslyBypassApprovalsAndSandbox ? 'danger-full-access' : config.sandbox ?? 'workspace-write',
+      signal: options.abortController.signal, logger: this.logger,
+    });
+    const chatId = options.apiContext?.chatId;
+    if (chatId) this.appServerRuns.set(chatId, run);
+    const finish = run.finish.bind(run);
+    run.finish = () => {
+      if (chatId && this.appServerRuns.get(chatId) === run) this.appServerRuns.delete(chatId);
+      finish();
+    };
+    return run;
+  }
+
   constructor(
     private config: BotConfigBase,
     private logger: Logger,
   ) {}
 
   startExecution(options: ExecutorOptions): ExecutionHandle {
+    if (this.config.codex?.transport === 'app-server') return this.startAppServer(options);
     const { prompt, cwd, sessionId, abortController, outputsDir, apiContext } = options;
     const codexConfig = this.config.codex ?? {};
     const model = options.model ?? codexConfig.model;
